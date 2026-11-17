@@ -31,7 +31,9 @@ struct StoreTests {
         let service = ControlledService()
         let observed = ConsoleStore(service: service)
         let task = Task { await observed.run() }
-        try await Task.sleep(for: .milliseconds(150))
+        // Wait for the first read instead of a fixed delay: slower machines (CI) take longer to start the loop.
+        let deadline = Date().addingTimeInterval(5)
+        while await service.reads == 0, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(await service.reads > 0); #expect(await service.writes == 0)
         task.cancel(); await task.value
         #expect(observed.connection == .offline && !observed.canStart && !observed.canStop)
