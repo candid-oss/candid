@@ -486,7 +486,7 @@ actor DesktopAXWorker {
         return (attribute(element, NSAccessibility.Attribute.containsProtectedContent.rawValue, budget) as? NSNumber)?.boolValue == true
     }
     private func markedTextState(_ element: AXUIElement, budget: Budget) -> Bool? {
-        if let value = range(element, NSAccessibility.Attribute.textInputMarkedRangeAttribute.rawValue, budget) {
+        if let value = range(element, "AXTextInputMarkedRange" /* NSAccessibility.Attribute.textInputMarkedRangeAttribute, spelled out for older SDKs */, budget) {
             return value.length > 0
         }
         // Public AXWebConstants.h input-method marker range. Its opaque marker
