@@ -105,7 +105,7 @@ struct CaptureControls: View {
                 }
             }
             .disabled(session.isDemo)
-            Toggle(isOn: Binding(get: { session.screenshotsEnabled }, set: session.setScreenshotsEnabled)) {
+            Toggle(isOn: Binding(get: { session.screenshotsEnabled }, set: { session.setScreenshotsEnabled($0) })) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L("窗口截图"))
                     Text(session.screenPermission ? L("%@ 个应用", session.allowedBundleIDs.count) : L("需要屏幕录制授权"))

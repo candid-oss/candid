@@ -185,7 +185,7 @@ struct MailConnectorPane: View {
     }
 
     private func toggle(_ value: Bool, _ set: @escaping (Bool) -> Void) -> some View {
-        Toggle("", isOn: Binding(get: { value }, set: set)).toggleStyle(.switch).labelsHidden().controlSize(.small)
+        Toggle("", isOn: Binding(get: { value }, set: { set($0) })).toggleStyle(.switch).labelsHidden().controlSize(.small)
     }
 }
 

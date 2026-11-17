@@ -59,7 +59,7 @@ private struct CaptureSettings: View {
                 HairlineDivider()
                 SettingRow(title: L("采集密度"), detail: L("文字停稳后保存；连续变化时按最长等待间隔保留中途内容。")) {
                     CapsuleChoice(options: [(DesktopSamplingMode.balanced, L("平衡")), (.detailed, L("较完整"))],
-                                  selection: Binding(get: { session.samplingMode }, set: session.setSamplingMode))
+                                  selection: Binding(get: { session.samplingMode }, set: { session.setSamplingMode($0) }))
                 }
                 .disabled(session.isDemo)
             }
@@ -87,10 +87,10 @@ private struct CaptureSettings: View {
 
     @ViewBuilder private var imageRows: some View {
         SwitchRow(title: L("窗口截图"), detail: L("只截「应用」里允许的软件；关闭后自动和手动截图都停止。"),
-                  isOn: Binding(get: { session.screenshotsEnabled }, set: session.setScreenshotsEnabled))
+                  isOn: Binding(get: { session.screenshotsEnabled }, set: { session.setScreenshotsEnabled($0) }))
         HairlineDivider()
         SwitchRow(title: L("自动截图"), detail: L("开始记录后按触发条件自动截图，重开后保留。"),
-                  isOn: Binding(get: { session.automaticCaptureAvailable }, set: session.setAutomaticCaptureEnabled))
+                  isOn: Binding(get: { session.automaticCaptureAvailable }, set: { session.setAutomaticCaptureEnabled($0) }))
             .disabled(!session.screenshotsEnabled)
         if session.automaticCaptureAvailable {
             InlineMessage(kind: .warning, text: L("锁屏保护待验证。")).padding(.bottom, Space.xs)
@@ -123,7 +123,7 @@ private struct CaptureSettings: View {
     @ViewBuilder private var contentRows: some View {
         SwitchRow(title: L("窗口标题"), detail: L("保存窗口或页面名称，便于搜索；关闭只影响文字字段。"), isOn: contentBinding(\.windowTitleEnabled))
         HairlineDivider()
-        SwitchRow(title: L("读取文字"), detail: L("只读取「应用」里允许的软件。"), isOn: Binding(get: { session.textEnabled }, set: session.setTextEnabled))
+        SwitchRow(title: L("读取文字"), detail: L("只读取「应用」里允许的软件。"), isOn: Binding(get: { session.textEnabled }, set: { session.setTextEnabled($0) }))
         HairlineDivider()
         SwitchRow(title: L("正文"), detail: L("保存系统能提供的可读正文；部分软件只提供少量文字。"), isOn: contentBinding(\.readableTextEnabled))
             .disabled(!session.textEnabled)
@@ -141,11 +141,11 @@ private struct CaptureSettings: View {
 
     @ViewBuilder private var triggerRows: some View {
         SwitchRow(title: L("定时记录"), detail: L("停留在同一窗口时也检查，补上阅读和收到回复等情况。"),
-                  isOn: Binding(get: { session.periodicEnabled }, set: session.setPeriodicEnabled))
+                  isOn: Binding(get: { session.periodicEnabled }, set: { session.setPeriodicEnabled($0) }))
         if session.periodicEnabled {
             HairlineDivider()
             SettingRow(title: L("定时检查间隔"), detail: L("文字没变化时不重复保存。")) {
-                secondsMenu(Binding(get: { session.periodicInterval }, set: session.setPeriodicInterval),
+                secondsMenu(Binding(get: { session.periodicInterval }, set: { session.setPeriodicInterval($0) }),
                             choices: [5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600])
             }
         }
@@ -175,7 +175,7 @@ private struct CaptureSettings: View {
             .disabled(session.samplingMode != .balanced)
         HairlineDivider()
         SettingRow(title: L("同一窗口最短截图间隔"), detail: L("相同画面只保留一张。")) {
-            secondsMenu(Binding(get: { session.minimumCaptureInterval }, set: session.setMinimumCaptureInterval), choices: intervals)
+            secondsMenu(Binding(get: { session.minimumCaptureInterval }, set: { session.setMinimumCaptureInterval($0) }), choices: intervals)
         }
         HairlineDivider()
         SettingRow(title: L("同一窗口每分钟上限"), detail: L("失败也计数；手动截图每分钟最多 12 次。")) { capacityStepper(optionBinding(\.imageCapacity)) }
@@ -351,7 +351,7 @@ private struct StorageSettings: View {
             SettingsGroup(title: L("清理")) {
                 SettingRow(title: L("保存天数"), detail: L("下次启动时清理超期记录和不再被引用的截图。")) {
                     MenuChoice(options: Array(Set([1, 3, 7, 14, 30, 90, 365, session.retentionDays])).sorted().map { ($0, L("%@ 天", $0)) },
-                               selection: Binding(get: { proposal ?? session.retentionDays }, set: propose))
+                               selection: Binding(get: { proposal ?? session.retentionDays }, set: { propose($0) }))
                 }
                 if let proposal {
                     InlinePanel {
@@ -372,7 +372,7 @@ private struct StorageSettings: View {
                 HairlineDivider()
                 SettingRow(title: L("截图空间上限"), detail: L("达到上限后停止新增截图，不提前删除未过期内容。")) {
                     MenuChoice(options: [1, 2, 5, 10, 20, 50, 100].map { (Int64($0) * 1024 * 1024 * 1024, "\($0) GiB") },
-                               selection: Binding(get: { session.maximumBytes }, set: session.setMaximumBytes))
+                               selection: Binding(get: { session.maximumBytes }, set: { session.setMaximumBytes($0) }))
                 }
                 HairlineDivider()
                 SettingRow(title: L("已用空间"), detail: L("数据卷可用空间不足 2 GiB 时也会停止新截图。")) {

@@ -61,7 +61,7 @@ struct MailScopePanel: View {
                 Text(c.detail).typography(.caption, digits: true).foregroundStyle(.secondary)
             }
             Spacer(minLength: Space.s)
-            Toggle(c.title, isOn: Binding(get: { c.on }, set: c.set)).toggleStyle(.switch).labelsHidden().controlSize(.small)
+            Toggle(c.title, isOn: Binding(get: { c.on }, set: { c.set($0) })).toggleStyle(.switch).labelsHidden().controlSize(.small)
         }
         .padding(.vertical, 5)
     }
@@ -259,7 +259,7 @@ struct MailRulesPanel: View {
         SettingRow(title: title, detail: detail) {
             HStack(spacing: Space.s) {
                 Tag(text: L("内置"))
-                Toggle("", isOn: Binding(get: { on }, set: set)).toggleStyle(.switch).labelsHidden().controlSize(.small)
+                Toggle("", isOn: Binding(get: { on }, set: { set($0) })).toggleStyle(.switch).labelsHidden().controlSize(.small)
             }
         }
     }

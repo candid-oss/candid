@@ -526,7 +526,7 @@ private struct MediaPlaybackControls: View {
                 .accessibilityIdentifier("media-play")
                 if playback.loading { ProgressView().controlSize(.mini) }
                 if playback.duration > 0 {
-                    Slider(value: Binding(get: { playback.position }, set: playback.seek), in: 0...playback.duration)
+                    Slider(value: Binding(get: { playback.position }, set: { playback.seek($0) }), in: 0...playback.duration)
                         .accessibilityLabel(L("播放位置"))
                     Text("\(mediaTime(playback.position)) / \(mediaTime(playback.duration))")
                         .typography(.caption, .regular).monospaced().foregroundStyle(.secondary)
