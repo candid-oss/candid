@@ -64,7 +64,7 @@ flowchart LR
 
 ## 快速开始
 
-**环境**：macOS 14+，推荐 Apple Silicon，Rust 1.88+，Swift 6 工具链（Xcode 或 Command Line Tools）。
+**环境**：macOS 14+，推荐 Apple Silicon，Rust 1.88+，Xcode 26 或更新版本（Swift 6.2+；CI 使用 Xcode 26.3 构建）。
 
 ```bash
 git clone https://github.com/candid-oss/candid.git

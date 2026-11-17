@@ -64,7 +64,7 @@ flowchart LR
 
 ## Quick start
 
-**Requirements:** macOS 14+, Apple Silicon recommended, Rust 1.88+, Swift 6 toolchain (Xcode or Command Line Tools).
+**Requirements:** macOS 14+, Apple Silicon recommended, Rust 1.88+, Xcode 26 or later (Swift 6.2+; CI builds with Xcode 26.3).
 
 ```bash
 git clone https://github.com/candid-oss/candid.git

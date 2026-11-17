@@ -7,7 +7,7 @@ The SwiftUI app: menu bar status, timeline, recording, screenshots with OCR, set
 ## Requirements
 
 - macOS 14 or later (developed on recent macOS; 14 is not yet verified on hardware)
-- Swift 6 toolchain (Xcode or Command Line Tools), Rust 1.88+
+- Xcode 26 or later (Swift 6.2+; CI builds with Xcode 26.3), Rust 1.88+
 - Python 3 and OpenSSL, used only by the build/signing scripts
 - Node.js, only for the agent tests (users install Node and Pi from Settings → Components)
 
@@ -57,7 +57,7 @@ Runs the style check, a recording-recovery check, builds the core and runs all S
 
 SwiftUI 客户端：菜单栏状态、时间线、录音、截图与文字识别、设置、AI 页和连接器。App 内置并以辅助进程运行 [Rust 核心](../../core/README.md)，所有数据保存在核心的时间线库中。界面规则见[设计系统](../../docs/specs/design-system-v1.md)。
 
-**环境**：macOS 14+（14 尚未实机验证）、Swift 6 工具链、Rust 1.88+；Python 3 与 OpenSSL 只在构建签名脚本中使用；Node.js 只用于 AI 页的 agent 测试。
+**环境**：macOS 14+（14 尚未实机验证）、Xcode 26 或更新版本（Swift 6.2+）、Rust 1.88+；Python 3 与 OpenSSL 只在构建签名脚本中使用；Node.js 只用于 AI 页的 agent 测试。
 
 **构建与启动**（在仓库根目录执行）：`apps/macos/script/build_and_run.sh`，产物在 `apps/macos/dist/Candid.app`，启动后默认暂停采集。`--mock` 使用隔离的合成时间线，不做真实采集也不请求权限；`--mock --dark` 为深色合成界面；`--build-only` 只构建打包；`--debug` 用 Debug 构建进入 LLDB；`--logs` 查看本 App 日志。
 
