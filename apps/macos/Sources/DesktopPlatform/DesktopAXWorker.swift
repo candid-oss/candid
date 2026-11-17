@@ -214,16 +214,20 @@ actor DesktopAXWorker {
             controlFocusAbsent = appFocus.absent && systemFocus.absent
             if let candidate = systemFocus.element {
                 var pid: pid_t = 0
-                if AXUIElementGetPid(candidate, &pid) == .success, pid == windowPID,
-                   CFEqual(candidate, window) || element(candidate, kAXWindowAttribute, budget).map({ CFEqual($0, window) }) == true {
-                    focused = candidate
+                // Spelled out without closures or autoclosures: older compilers treat capturing an AXUIElement
+                // in them as sending it across isolation.
+                if AXUIElementGetPid(candidate, &pid) == .success, pid == windowPID {
+                    var sameWindow = CFEqual(candidate, window)
+                    if !sameWindow, let owner = element(candidate, kAXWindowAttribute, budget) { sameWindow = CFEqual(owner, window) }
+                    if sameWindow { focused = candidate }
                 }
             }
         }
         let role = focused.flatMap { string($0, kAXRoleAttribute, maxBytes: 128, budget) }
         // Check protection before requesting labels, ranges, values or titles.
         // Unsupported protection attributes are never interpreted as "protected".
-        let protected = isProtected(focused, budget: budget) || isProtected(window, budget: budget)
+        var protected = isProtected(focused, budget: budget)
+        if !protected { protected = isProtected(window, budget: budget) }
         try budget.check() // Never treat an unfinished protection check as safe.
         let title = protected ? "" : (string(window, kAXTitleAttribute, maxBytes: 4096, budget) ?? "")
         let composing = !protected ? focused.flatMap { markedTextState($0, budget: budget) } : nil
@@ -236,7 +240,11 @@ actor DesktopAXWorker {
             // unsupported response remains unknown, never a false guarantee.
             context.textStatus = "composing"
         } else {
-            if contentOptions.focusEnabled, !minimalMetadata, let focused { context.focusedLabel = string(focused, kAXTitleAttribute, maxBytes: 512, budget) ?? string(focused, kAXDescriptionAttribute, maxBytes: 512, budget) }
+            if contentOptions.focusEnabled, !minimalMetadata, let focused {
+                var label = string(focused, kAXTitleAttribute, maxBytes: 512, budget)
+                if label == nil { label = string(focused, kAXDescriptionAttribute, maxBytes: 512, budget) }
+                context.focusedLabel = label
+            }
             if readsText {
                 let inputAllowed = contentOptions.inputValueBundleIDs?.contains(application.bundleID) == true
                 let editable = focused.map { boolean($0, "AXEditable", budget) == true || ["AXTextField", "AXTextArea", "AXComboBox"].contains(role ?? "") } ?? false
@@ -287,7 +295,9 @@ actor DesktopAXWorker {
                     while body.isEmpty, !queue.isEmpty, visited < 24, !budget.expired {
                         let (node, depth) = queue.removeFirst(); visited += 1
                         let nodeRole = string(node, kAXRoleAttribute, maxBytes: 128, budget)
-                        if isProtected(node, budget: budget) || (focused.map { CFEqual(node, $0) } == true && editable) || boolean(node, "AXEditable", budget) == true { continue }
+                        if isProtected(node, budget: budget) { continue }
+                        if editable, let focused, CFEqual(node, focused) { continue }
+                        if boolean(node, "AXEditable", budget) == true { continue }
                         if DesktopTextPolicy.permitsValue(role: nodeRole ?? "", subrole: nil, protected: false) {
                             if let text = readableText(node, maxBytes: 4096 - bytes, budget: budget, limited: &limited, unsupported: &unsupported), !text.isEmpty {
                                 body.append(text); bytes += text.utf8.count
@@ -393,7 +403,8 @@ actor DesktopAXWorker {
             if textNotifications, result.context.isProtected != true, let focused = element(app, kAXFocusedUIElementAttribute, budget) {
                 // Role is still needed for safe subscriptions when the user
                 // disables recording focus details; it is not emitted then.
-                let role = result.context.focusedRole ?? string(focused, kAXRoleAttribute, maxBytes: 128, budget)
+                var role = result.context.focusedRole
+                if role == nil { role = string(focused, kAXRoleAttribute, maxBytes: 128, budget) }
                 if inputNotifications || DesktopTextPolicy.permitsValue(role: role ?? "", subrole: nil, protected: result.context.isProtected == true) {
                     if selectionNotifications { add(focused, kAXSelectedTextChangedNotification) }
                     if bodyNotifications { add(focused, kAXValueChangedNotification) }
@@ -583,7 +594,8 @@ actor DesktopAXWorker {
         var stack: [(AXUIElement, Int)] = [(root, 0)]
         while let (node, depth) = stack.popLast(), visited < Self.deepTextNodeLimit, bytes < maxBytes, !budget.expired {
             visited += 1
-            if excluding.map({ CFEqual(node, $0) }) == true || boolean(node, "AXEditable", budget) == true { continue }
+            if let excluding, CFEqual(node, excluding) { continue }
+            if boolean(node, "AXEditable", budget) == true { continue }
             guard let role = string(node, kAXRoleAttribute, maxBytes: 96, budget) else { continue }
             if depth > 0, Self.deepTextSkipped.contains(role) { continue }
             if role == kAXStaticTextRole as String || role == kAXTextAreaRole as String {
