@@ -226,18 +226,31 @@ struct WindowSourceConnections: View {
     @ViewState private var choices: [AgentSessionInfo] = []
     @ViewState private var sourcePreview = ""
     @ViewState private var sourceGeneration = 0
+    // Built outside `body`: long inline option lists made the body too slow to type-check on older compilers.
+    private var windowOptions: [(String, String)] {
+        let windows: [(String, String)] = session.inputWindows.map { ($0.id, $0.label) }
+        return [("", L("选择窗口"))] + windows
+    }
+    private var sessionOptions: [(String, String)] {
+        let sessions: [(String, String)] = choices.map { item in (item.ref, Self.label(item)) }
+        return [("", L("选择会话"))] + sessions
+    }
+    private static func label(_ item: AgentSessionInfo) -> String {
+        let title: String = item.title ?? item.agent
+        let project: String = item.project.map { URL(fileURLWithPath: $0).lastPathComponent } ?? ""
+        let started: String = Date(timeIntervalSince1970: Double(item.startMs ?? 0) / 1000).formatted()
+        return title + " · " + project + " · " + started
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L("窗口与会话")).typography(.headline)
             Text(L("选择已记录的输入窗口，填入获准会话的来源引用。关联仅在本次采集有效；切换会话时请清除并重新关联。")).typography(.secondary).foregroundStyle(.secondary)
             SettingRow(title: L("输入窗口")) {
-                MenuChoice(options: [("", L("选择窗口"))] + session.inputWindows.map { ($0.id, $0.label) }, selection: $windowID)
+                MenuChoice(options: windowOptions, selection: $windowID)
             }
             SettingRow(title: L("获准的会话")) {
                 HStack(spacing: Space.xs) {
-                    MenuChoice(options: [("", L("选择会话"))] + choices.map { item in
-                        (item.ref, (item.title ?? item.agent) + " · " + (item.project.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "") + " · " + Date(timeIntervalSince1970: Double(item.startMs ?? 0) / 1000).formatted())
-                    }, selection: $reference)
+                    MenuChoice(options: sessionOptions, selection: $reference)
                     QuietButton(title: L("刷新")) { Task { await refreshChoices() } }
                 }
             }

@@ -445,7 +445,12 @@ private struct SpecimenFeedbackSection: View {
 }
 
 private struct SpecimenCaptureSection: View {
-    private let levels: [Float] = (0..<36).map { i in Float(0.12 + 0.3 * abs(sin(Double(i) * 0.55)) * (0.6 + 0.4 * cos(Double(i) * 0.21))) }
+    private let levels: [Float] = (0..<36).map { (i: Int) -> Float in
+        let x = Double(i)
+        let wave: Double = abs(sin(x * 0.55))
+        let envelope: Double = 0.6 + 0.4 * cos(x * 0.21)
+        return Float(0.12 + 0.3 * wave * envelope)
+    }
 
     var body: some View {
         SpecimenSection(title: L("采集反馈"), rule: L("录制时一定有可见的动态反馈；红色只留给正在录制。")) {

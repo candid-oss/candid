@@ -57,11 +57,14 @@ struct DayRhythmView: View {
                     }
                 }
                 let a = Angle.degrees(fraction(playhead) * 360 - 90).radians
+                let ca = CGFloat(cos(a)), sa = CGFloat(sin(a))
                 var hand = Path()
-                hand.move(to: CGPoint(x: c.x + 64 * cos(a), y: c.y + 64 * sin(a)))
-                hand.addLine(to: CGPoint(x: c.x + (radius + 12) * cos(a), y: c.y + (radius + 12) * sin(a)))
+                hand.move(to: CGPoint(x: c.x + 64 * ca, y: c.y + 64 * sa))
+                hand.addLine(to: CGPoint(x: c.x + (radius + 12) * ca, y: c.y + (radius + 12) * sa))
                 context.stroke(hand, with: .color(.primary), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                let knob = CGRect(x: c.x + radius * cos(a) - 5, y: c.y + radius * sin(a) - 5, width: 10, height: 10)
+                let knobX: CGFloat = c.x + radius * ca - 5
+                let knobY: CGFloat = c.y + radius * sa - 5
+                let knob = CGRect(x: knobX, y: knobY, width: 10, height: 10)
                 context.fill(Path(ellipseIn: knob), with: .color(Color(nsColor: .controlBackgroundColor)))
                 context.stroke(Path(ellipseIn: knob), with: .color(.primary), lineWidth: 1.5)
             }

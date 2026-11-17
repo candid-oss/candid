@@ -66,6 +66,7 @@ public enum Localization {
 public func L(_ key: String) -> String { Localization.text(key) }
 
 /// UI text with values: `L("已保存 %@ 段", count)`; each value is shown as string interpolation would show it.
-public func L(_ key: String, _ values: Any...) -> String {
-    Localization.format(Localization.text(key), values.map { String(describing: $0) })
+/// (At least one value, so a plain `L("…")` has a single candidate and large SwiftUI bodies type-check quickly.)
+public func L(_ key: String, _ first: Any, _ rest: Any...) -> String {
+    Localization.format(Localization.text(key), ([first] + rest).map { String(describing: $0) })
 }

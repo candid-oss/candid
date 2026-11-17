@@ -23,10 +23,10 @@ struct RecordingSampleStrip: View {
                 }
                 Canvas { context, size in
                     for (index, peak) in peaks.enumerated() {
-                        let width = size.width / Double(max(1, peaks.count))
-                        let height = max(1, Double(peak) * size.height)
-                        let rect = CGRect(x: Double(index) * width, y: (size.height - height) / 2,
-                                          width: max(1, width - 1), height: height)
+                        let width: CGFloat = size.width / CGFloat(max(1, peaks.count))
+                        let height: CGFloat = max(1, CGFloat(peak) * size.height)
+                        let y: CGFloat = (size.height - height) / 2
+                        let rect = CGRect(x: CGFloat(index) * width, y: y, width: max(1, width - 1), height: height)
                         context.fill(Path(rect), with: .foreground)
                     }
                 }

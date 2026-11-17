@@ -44,8 +44,10 @@ struct AudioEpisodeCard: View {
                         let fraction = Double(index) / Double(max(1, bars - 1))
                         let moment = episode.start.addingTimeInterval(fraction * episode.duration)
                         let speaking = audio?.speech.contains { $0.contains(moment) } ?? true
-                        let h = speaking ? 10 + 34 * abs(sin(Double(index) * 0.61) * cos(Double(index) * 0.23)) : 3
-                        let rect = CGRect(x: CGFloat(index) * 5, y: (size.height - h) / 2, width: 2.5, height: h)
+                        let wave: Double = abs(sin(Double(index) * 0.61) * cos(Double(index) * 0.23))
+                        let h: CGFloat = speaking ? CGFloat(10 + 34 * wave) : 3
+                        let y: CGFloat = (size.height - h) / 2
+                        let rect = CGRect(x: CGFloat(index) * 5, y: y, width: 2.5, height: h)
                         context.fill(Path(roundedRect: rect, cornerRadius: 1.25),  // style-exempt: timeline content geometry
                                      with: .color(.white.opacity(fraction <= progress ? 0.95 : 0.35)))
                     }

@@ -110,7 +110,7 @@ struct TimelineHomeView: View {
         }
     }
 
-    private var timelineBody: some View {
+    private var timelineBodyCore: some View {
         AnyView(interactiveContent)
         // The zoomed screenshot is drawn by the root view, above the navigation, so it covers the whole window.
         .preference(key: WindowOverlayKey.self, value: zoomOverlay)
@@ -130,6 +130,11 @@ struct TimelineHomeView: View {
         .onChange(of: session.selectedDate) { _, _ in
             cache?.reset(); openedID = nil; cursor.viewportReady = false; followingNow = isToday; rebuild()
         }
+    }
+
+    /// Split from `timelineBodyCore` so each modifier chain type-checks in reasonable time on older compilers.
+    private var timelineBody: some View {
+        AnyView(timelineBodyCore)
         .background {
             PlayheadEffects(scene: scene, cursor: cursor, openedID: openedID, selectedID: session.selectedID,
                             onSelectSpan: { session.selectedID = $0 },

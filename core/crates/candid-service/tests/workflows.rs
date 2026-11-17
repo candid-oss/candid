@@ -49,6 +49,20 @@ fn wait(socket: &std::path::Path) -> Value {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
+/// Waits until a job matching `select` reaches a final state and returns that job (other jobs may finish first).
+fn wait_job(socket: &std::path::Path, select: impl Fn(&Value) -> bool) -> Value {
+    let until = Instant::now() + Duration::from_secs(150);
+    loop {
+        let v = post(socket, "/local/jobs", json!({"action":"list"}));
+        if let Some(job) = v["jobs"].as_array().unwrap().iter()
+            .find(|j| select(j) && (j["state"] == "done" || j["state"] == "failed"))
+        {
+            return job.clone();
+        }
+        assert!(Instant::now() < until, "{v}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
 #[test]
 #[ignore = "explicit public sample model acceptance; requires independently running voice service"]
 fn public_voice_is_consumed_searched_and_located() {
@@ -385,18 +399,18 @@ fn long_audio_chunks_resume_after_failure_and_core_restart_without_rebilling_com
         "/local/media",
         json!({"action":"recognize","id":id}),
     );
-    let first = wait(&socket);
-    assert_eq!(first["jobs"][0]["state"], "failed");
-    assert_eq!(first["jobs"][0]["checkpoint"]["next_sample"], 240000);
+    let first = wait_job(&socket, |j| !j["checkpoint"]["next_sample"].is_null());
+    assert_eq!(first["state"], "failed");
+    assert_eq!(first["checkpoint"]["next_sample"], 240000);
     assert_eq!(requests.load(Ordering::SeqCst), 2);
-    let job = first["jobs"][0]["id"].clone();
+    let job = first["id"].clone();
     svc.stop();
     let mut options = ServeOptions::new(dir.join("root"), dir.join("run"));
     options.socket = Some(socket.clone());
     let svc = Service::start(&options, |_| {}).unwrap();
     post(&socket, "/local/jobs", json!({"action":"restart","id":job}));
-    let second = wait(&socket);
-    assert_eq!(second["jobs"][0]["state"], "done", "{second}");
+    let second = wait_job(&socket, |j| j["id"] == job && j["state"] == "done");
+    assert_eq!(second["state"], "done", "{second}");
     assert_eq!(
         requests.load(Ordering::SeqCst),
         3,

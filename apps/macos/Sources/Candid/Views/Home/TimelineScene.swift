@@ -232,9 +232,12 @@ struct TimelineScene: Equatable, Sendable {
         for span in activities where !span.bundleID.isEmpty {
             totals[span.bundleID, default: (span.appName, 0)].1 += span.duration
         }
-        return totals.map { TimelineAppTotal(bundleID: $0.key, appName: $0.value.0, seconds: $0.value.1) }
-            .sorted { $0.seconds == $1.seconds ? $0.bundleID < $1.bundleID : $0.seconds > $1.seconds }
-            .prefix(limit).map { $0 }
+        let unsorted: [TimelineAppTotal] = totals.map { TimelineAppTotal(bundleID: $0.key, appName: $0.value.0, seconds: $0.value.1) }
+        let sorted = unsorted.sorted { (a: TimelineAppTotal, b: TimelineAppTotal) -> Bool in
+            if a.seconds == b.seconds { return a.bundleID < b.bundleID }
+            return a.seconds > b.seconds
+        }
+        return Array(sorted.prefix(limit))
     }
 
     var longestEpisode: TimelineEpisode? { episodes.max { $0.duration < $1.duration } }
