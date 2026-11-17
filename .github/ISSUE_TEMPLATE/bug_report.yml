@@ -1,0 +1,25 @@
+name: Bug report / 问题报告
+description: Something does not work as expected. Do not include personal recordings, screenshots or data.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Security issues: use Security → Report a vulnerability instead. 安全问题请私下报告，不要在这里提交。"
+  - type: input
+    id: version
+    attributes: {label: Version or commit / 版本或提交}
+    validations: {required: true}
+  - type: input
+    id: macos
+    attributes: {label: macOS version and chip / 系统版本与芯片}
+  - type: textarea
+    id: steps
+    attributes: {label: Steps to reproduce / 复现步骤}
+    validations: {required: true}
+  - type: textarea
+    id: expected
+    attributes: {label: Expected and actual behavior / 期望与实际结果}
+    validations: {required: true}
+  - type: textarea
+    id: logs
+    attributes: {label: Logs (redacted) / 日志（已脱敏）, render: text}

@@ -1,0 +1,21 @@
+[package]
+name = "candid-cli"
+description = "The `candid` command: query tools, MCP over stdio and a headless serve mode."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "candid"
+path = "src/main.rs"
+
+[dependencies]
+candid-store.workspace = true
+candid-service.workspace = true
+serde_json.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+libc.workspace = true

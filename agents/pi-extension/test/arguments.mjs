@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { normalizeReadArguments } from "../index.ts";
+const first = JSON.parse(normalizeReadArguments("pv_timeline", JSON.stringify({cursor:"",level:"",kinds:["mail.message"],start:"-3d",end:"now",limit:50})));
+assert.deepEqual(first,{kinds:["mail.message"],start:"-3d",end:"now",limit:50});
+assert.deepEqual(JSON.parse(normalizeReadArguments("pv_search", '{"apps":[],"q":"","cursor":"opaque-page"}')), {cursor:"opaque-page"});
+assert.deepEqual(JSON.parse(normalizeReadArguments("pv_timeline", '{"level":"bogus","cursor":"not-a-cursor"}')), {level:"bogus",cursor:"not-a-cursor"});
+assert.equal(normalizeReadArguments("pv_annotate", '{"notes":""}'),'{"notes":""}');
+assert.equal(normalizeReadArguments("pv_propose", '{"payload":{"notes":""}}'),'{"payload":{"notes":""}}');
+assert.equal(normalizeReadArguments("pv_get_event", '{"event_id":""}'),'{"event_id":""}');
+assert.equal(normalizeReadArguments("pv_search", '{invalid'),'{invalid');
+console.log("Read argument normalization: 7 assertions passed.");

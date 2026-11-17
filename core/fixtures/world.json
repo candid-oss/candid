@@ -1,0 +1,633 @@
+{
+ "comment": "Synthetic fixture shared by the Rust tests and the Swift interop harness (the Swift QueryTests world). Every text is invented.",
+ "now_ms": 1800000000000,
+ "time_zone": "Asia/Shanghai",
+ "today_start_ms": 1799942400000,
+ "staging": {
+  "shot1": "synthetic screenshot"
+ },
+ "sources": [
+  {
+   "alias": "desktop",
+   "kind": "mac.desktop",
+   "display_name": "Synthetic Mac",
+   "policy": {
+    "version": 1,
+    "store_text": true,
+    "store_media": true,
+    "agent_visible": true,
+    "exclude": {
+     "apps": [],
+     "threads": [],
+     "patterns": []
+    }
+   }
+  },
+  {
+   "alias": "codex",
+   "kind": "ai.codex",
+   "display_name": "Synthetic Codex",
+   "policy": {
+    "version": 1,
+    "store_text": true,
+    "store_media": false,
+    "agent_visible": true,
+    "exclude": {
+     "apps": [],
+     "threads": [],
+     "patterns": []
+    }
+   }
+  },
+  {
+   "alias": "calendar",
+   "kind": "calendar.system",
+   "display_name": "Synthetic Calendar",
+   "policy": {
+    "version": 1,
+    "store_text": true,
+    "store_media": false,
+    "agent_visible": true,
+    "exclude": {
+     "apps": [],
+     "threads": [],
+     "patterns": []
+    }
+   }
+  }
+ ],
+ "clients": [
+  {
+   "alias": "full",
+   "name": "Synthetic AI",
+   "transport": "http",
+   "scope": {
+    "version": 1,
+    "sources": [
+     "*"
+    ],
+    "kinds": [
+     "*"
+    ],
+    "apps": {
+     "allow": [
+      "*"
+     ],
+     "deny": [
+      "com.apple.keychainaccess"
+     ]
+    },
+    "time": {},
+    "text": true,
+    "media": false,
+    "derived": true,
+    "propose": true,
+    "max_result_bytes": 65536
+   }
+  },
+  {
+   "alias": "narrow",
+   "name": "Narrow",
+   "transport": "mcp",
+   "scope": {
+    "version": 1,
+    "sources": [
+     "@source:codex"
+    ],
+    "kinds": [
+     "ai.turn"
+    ],
+    "apps": {
+     "allow": [
+      "*"
+     ],
+     "deny": [
+      "com.apple.keychainaccess"
+     ]
+    },
+    "time": {},
+    "text": false,
+    "media": false,
+    "derived": false,
+    "propose": false,
+    "max_result_bytes": 65536
+   }
+  },
+  {
+   "alias": "media",
+   "name": "Media",
+   "transport": "mcp",
+   "scope": {
+    "version": 1,
+    "sources": [
+     "*"
+    ],
+    "kinds": [
+     "*"
+    ],
+    "apps": {
+     "allow": [
+      "*"
+     ],
+     "deny": [
+      "com.apple.keychainaccess"
+     ]
+    },
+    "time": {},
+    "text": true,
+    "media": true,
+    "derived": true,
+    "propose": true,
+    "max_result_bytes": 65536
+   }
+  },
+  {
+   "alias": "noDerived",
+   "name": "NoDerived",
+   "transport": "mcp",
+   "scope": {
+    "version": 1,
+    "sources": [
+     "*"
+    ],
+    "kinds": [
+     "*"
+    ],
+    "apps": {
+     "allow": [
+      "*"
+     ],
+     "deny": [
+      "com.apple.keychainaccess"
+     ]
+    },
+    "time": {},
+    "text": true,
+    "media": false,
+    "derived": false,
+    "propose": true,
+    "max_result_bytes": 65536
+   }
+  },
+  {
+   "alias": "tiny",
+   "name": "Tiny",
+   "transport": "mcp",
+   "scope": {
+    "version": 1,
+    "sources": [
+     "*"
+    ],
+    "kinds": [
+     "*"
+    ],
+    "apps": {
+     "allow": [
+      "*"
+     ],
+     "deny": [
+      "com.apple.keychainaccess"
+     ]
+    },
+    "time": {},
+    "text": true,
+    "media": false,
+    "derived": true,
+    "propose": true,
+    "max_result_bytes": 1400
+   }
+  }
+ ],
+ "batches": [
+  {
+   "source": "desktop",
+   "threads": [
+    {
+     "source_key": "rec",
+     "kind": "recording",
+     "title": "standup.m4a",
+     "started_ms": 1799992800000
+    }
+   ],
+   "events": [
+    {
+     "source_key": "f1",
+     "kind": "app.focus",
+     "start_ms": 1799974800000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "reason": "switch"
+     },
+     "text": [],
+     "blobs": [],
+     "app_bundle_id": "com.example.notes",
+     "app_name": "Notes"
+    },
+    {
+     "source_key": "f2",
+     "kind": "app.focus",
+     "start_ms": 1799978400000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "reason": "switch"
+     },
+     "text": [],
+     "blobs": [],
+     "app_bundle_id": "com.example.terminal",
+     "app_name": "Terminal"
+    },
+    {
+     "source_key": "f3",
+     "kind": "app.focus",
+     "start_ms": 1799980200000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "reason": "switch"
+     },
+     "text": [],
+     "blobs": [],
+     "app_bundle_id": "com.example.notes",
+     "app_name": "Notes"
+    },
+    {
+     "source_key": "t1",
+     "kind": "screen.text",
+     "start_ms": 1799975160000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "trigger": "timer"
+     },
+     "text": [
+      {
+       "field": "body",
+       "content": "季度预算需要复核\n\n无关的第二段内容",
+       "visible": true,
+       "focus_distance": 0
+      }
+     ],
+     "blobs": [],
+     "app_bundle_id": "com.example.notes",
+     "app_name": "notes",
+     "title": "预算草稿"
+    },
+    {
+     "source_key": "t2",
+     "kind": "screen.text",
+     "start_ms": 1799975520000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "trigger": "timer"
+     },
+     "text": [
+      {
+       "field": "body",
+       "content": "季度预算需要复核\n\n新增的第三段 with budget forecast",
+       "visible": true,
+       "focus_distance": 1
+      }
+     ],
+     "blobs": [],
+     "app_bundle_id": "com.example.notes",
+     "app_name": "notes",
+     "title": "预算草稿"
+    },
+    {
+     "source_key": "t3",
+     "kind": "screen.text",
+     "start_ms": 1799978760000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "trigger": "timer"
+     },
+     "text": [
+      {
+       "field": "body",
+       "content": "running budget review script",
+       "visible": false,
+       "focus_distance": 7
+      }
+     ],
+     "blobs": [],
+     "app_bundle_id": "com.example.terminal",
+     "app_name": "terminal",
+     "title": "build log"
+    },
+    {
+     "source_key": "t4",
+     "kind": "screen.text",
+     "start_ms": 1799979120000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "trigger": "timer"
+     },
+     "text": [
+      {
+       "field": "body",
+       "content": "secret-token 预算 hidden"
+      }
+     ],
+     "blobs": [],
+     "app_bundle_id": "com.apple.keychainaccess",
+     "app_name": "keychainaccess",
+     "title": "Keychain"
+    },
+    {
+     "source_key": "shot1",
+     "kind": "screen.shot",
+     "start_ms": 1799975340000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "trigger": "timer"
+     },
+     "text": [],
+     "blobs": [
+      {
+       "staging_path": "@stage:shot1",
+       "sha256": "@sha:shot1",
+       "role": "original",
+       "mime_type": "image/jpeg",
+       "pixel_w": 4,
+       "pixel_h": 3
+      }
+     ],
+     "app_bundle_id": "com.example.notes",
+     "app_name": "Notes",
+     "title": "预算草稿",
+     "parent_key": "t1"
+    },
+    {
+     "source_key": "gap1",
+     "kind": "coverage.gap",
+     "start_ms": 1799987400000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "reason_code": "paused"
+     },
+     "text": [],
+     "blobs": [],
+     "end_ms": 1799989200000
+    },
+    {
+     "source_key": "rec1",
+     "kind": "audio.recording",
+     "start_ms": 1799992800000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "codec": "aac"
+     },
+     "text": [],
+     "blobs": [],
+     "end_ms": 1799994600000,
+     "title": "standup.m4a",
+     "thread_key": "rec"
+    },
+    {
+     "source_key": "seg1",
+     "kind": "speech.segment",
+     "start_ms": 1799992836000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "recording_event_id": "x",
+      "speaker_label": "S1"
+     },
+     "text": [
+      {
+       "field": "transcript",
+       "content": "我们先过一遍预算"
+      }
+     ],
+     "blobs": [],
+     "end_ms": 1799992872000,
+     "title": "standup.m4a",
+     "thread_key": "rec",
+     "parent_key": "rec1"
+    },
+    {
+     "source_key": "seg2",
+     "kind": "speech.segment",
+     "start_ms": 1799992908000,
+     "time_basis": "observed",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "recording_event_id": "x"
+     },
+     "text": [
+      {
+       "field": "transcript",
+       "content": "second synthetic line"
+      }
+     ],
+     "blobs": [],
+     "end_ms": 1799992944000,
+     "title": "standup.m4a",
+     "thread_key": "rec",
+     "parent_key": "rec1"
+    }
+   ]
+  },
+  {
+   "source": "codex",
+   "threads": [
+    {
+     "source_key": "sess",
+     "kind": "ai_session",
+     "title": "Synthetic session"
+    }
+   ],
+   "events": [
+    {
+     "source_key": "u1",
+     "kind": "ai.turn",
+     "start_ms": 1799982000000,
+     "time_basis": "source",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "role": "user"
+     },
+     "text": [
+      {
+       "field": "message",
+       "content": "请汇总预算"
+      }
+     ],
+     "blobs": [],
+     "thread_key": "sess"
+    },
+    {
+     "source_key": "a1",
+     "kind": "ai.turn",
+     "start_ms": 1799982036000,
+     "time_basis": "source",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "role": "assistant",
+      "model": "synthetic-model",
+      "usage": {
+       "input": 100,
+       "output": 40,
+       "cache_read": 10,
+       "cache_write": 0
+      }
+     },
+     "text": [
+      {
+       "field": "message",
+       "content": "预算汇总：synthetic result"
+      }
+     ],
+     "blobs": [],
+     "thread_key": "sess"
+    }
+   ]
+  },
+  {
+   "source": "calendar",
+   "threads": [],
+   "events": [
+    {
+     "source_key": "c1",
+     "kind": "calendar.event",
+     "start_ms": 1799982000000,
+     "time_basis": "source",
+     "actor": "self",
+     "sensitivity": "normal",
+     "payload_version": 1,
+     "payload": {
+      "calendar_id": "cal-1"
+     },
+     "text": [],
+     "blobs": [],
+     "end_ms": 1799985600000,
+     "title": "预算评审会"
+    }
+   ]
+  }
+ ],
+ "sql": [
+  {
+   "sql": "INSERT INTO episodes(episode_id,rev,start_ms,end_ms,title,summary,kind,status,producer,created_ms) VALUES('ep1',1,?,?,'写预算草稿','synthetic summary','activity','confirmed','rules/1',1)",
+   "params": [
+    1799974800000,
+    1799978400000
+   ]
+  },
+  {
+   "sql": "INSERT INTO episodes(episode_id,rev,start_ms,end_ms,title,kind,status,producer,created_ms) VALUES('ep2',1,?,?,'被拒绝的片段','activity','rejected','rules/1',1)",
+   "params": [
+    1799978400000,
+    1799982000000
+   ]
+  },
+  {
+   "sql": "INSERT INTO episode_evidence(episode_id,rev,event_id,role,selector_json) VALUES('ep1',1,?,?,'{\"type\":\"text\"}')",
+   "params": [
+    "@id:t1",
+    "primary"
+   ]
+  },
+  {
+   "sql": "INSERT INTO episode_evidence(episode_id,rev,event_id,role,selector_json) VALUES('ep1',1,?,?,'{\"type\":\"text\"}')",
+   "params": [
+    "@id:t2",
+    "supporting"
+   ]
+  },
+  {
+   "sql": "INSERT INTO episode_evidence(episode_id,rev,event_id,role,selector_json) VALUES('ep1',1,?,?,'{\"type\":\"text\"}')",
+   "params": [
+    "@id:t4",
+    "context"
+   ]
+  },
+  {
+   "sql": "INSERT INTO ai_calls(call_id,started_ms,feature,client,provider_id,model_id,destination,input_tokens,output_tokens,cost,currency,cost_source,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'ok')",
+   "params": [
+    "c1",
+    1799951040000,
+    "episode",
+    "app",
+    "prov",
+    "m1",
+    "cloud",
+    1000,
+    5,
+    0.5,
+    "USD",
+    "provider"
+   ]
+  },
+  {
+   "sql": "INSERT INTO ai_calls(call_id,started_ms,feature,client,provider_id,model_id,destination,input_tokens,output_tokens,cost,currency,cost_source,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'ok')",
+   "params": [
+    "c2",
+    1799959680000,
+    "episode",
+    "app",
+    "prov",
+    "m1",
+    "cloud",
+    500,
+    5,
+    0.25,
+    "USD",
+    "estimated"
+   ]
+  },
+  {
+   "sql": "INSERT INTO ai_calls(call_id,started_ms,feature,client,provider_id,model_id,destination,input_tokens,output_tokens,cost,currency,cost_source,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,'ok')",
+   "params": [
+    "c3",
+    1799856000000,
+    "daily_review",
+    "app",
+    "prov",
+    "m2",
+    "cloud",
+    200,
+    5,
+    null,
+    null,
+    null
+   ]
+  }
+ ]
+}

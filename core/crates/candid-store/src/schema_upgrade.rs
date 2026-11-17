@@ -1,0 +1,190 @@
+//! Transactional upgrades v1 → v2 → v3 → v4 → v5. The database commit precedes atomic store.json replacement;
+//! a durable marker permits only that particular interrupted replacement to resume.
+use crate::{
+    db::{text, Db, RowExt},
+    schema,
+    types::StoreIdentity,
+    Result, TimelineError,
+};
+use std::{fs, path::Path};
+
+pub(crate) fn upgrade(
+    db: &Db,
+    root: &Path,
+    identity: &mut StoreIdentity,
+    version: i64,
+) -> Result<()> {
+    if version == 1 && identity.schema_version == 1 {
+        db.execute("PRAGMA foreign_keys=OFF", &[])?;
+        let result = db.transaction(|| {
+            // SQLite's documented create/copy/drop/rename procedure leaves referencing tables intact.
+            rebuild(db, &["sources", "threads", "event_text"], "v2")?;
+            db.execute("CREATE UNIQUE INDEX sources_agent ON sources(json_extract(policy_json,'$.agent')) WHERE kind='agent.transcript'",&[])?;
+            db.script("CREATE TABLE agent_event_revisions(event_id TEXT NOT NULL REFERENCES events(event_id) ON DELETE CASCADE, revision INTEGER NOT NULL, event_json TEXT NOT NULL, created_ms INTEGER NOT NULL, PRIMARY KEY(event_id,revision)) STRICT;")?;
+            for k in schema::KINDS.iter().filter(|k| k.kind == "ai.prompt" || k.kind == "ai.work") {
+                db.execute("INSERT INTO event_kinds VALUES(?,?,?,1,?)", &[text(k.kind),text(k.layer),crate::db::boolean(k.is_span),text(k.description)])?;
+            }
+            if !db.query("PRAGMA foreign_key_check", &[], |_| true)?.is_empty() { return Err(TimelineError::InvalidStore("升级后的来源引用不完整".into())); }
+            db.execute("INSERT INTO store_meta(key,value) VALUES('schema.upgrade','1:2')", &[])?;
+            db.execute("PRAGMA user_version=2", &[])
+        });
+        db.execute("PRAGMA foreign_keys=ON", &[])?;
+        result?;
+    } else if version != identity.schema_version {
+        let marker = db.first("SELECT value FROM store_meta WHERE key='schema.upgrade'", &[], |r| r.text(0))?;
+        let pending = (version == 8 && identity.schema_version <= 7 && marker.as_deref() == Some("7:8"))
+            || (version == 7 && identity.schema_version <= 6 && marker.as_deref() == Some("6:7"))
+            || (version == 6 && identity.schema_version <= 5 && marker.as_deref() == Some("5:6"))
+            || (version == 5 && identity.schema_version <= 4 && marker.as_deref() == Some("4:5"))
+            || (version == 4
+            && identity.schema_version <= 3
+            && db.first("SELECT value FROM store_meta WHERE key='schema.upgrade'", &[], |r| r.text(0))?.as_deref() == Some("3:4"))
+            || (version == 3
+            && identity.schema_version <= 2
+            && db
+                .first(
+                    "SELECT value FROM store_meta WHERE key='schema.upgrade'",
+                    &[],
+                    |r| r.text(0),
+                )?
+                .as_deref()
+                == Some("2:3"))
+            || version == 2
+                && identity.schema_version == 1
+                && db
+                    .first(
+                        "SELECT value FROM store_meta WHERE key='schema.upgrade'",
+                        &[],
+                        |r| r.text(0),
+                    )?
+                    .as_deref()
+                    == Some("1:2");
+        if !pending {
+            return Err(TimelineError::InvalidStore(
+                "store.json 与数据库版本不一致".into(),
+            ));
+        }
+    }
+    if version < 1 || version > schema::SCHEMA_VERSION {
+        return Err(TimelineError::InvalidStore("不支持的旧数据库版本".into()));
+    }
+    let current = db.scalar("PRAGMA user_version", &[])?;
+    if current == 2 {
+        db.transaction(|| {
+            db.script(crate::durable::DDL)?;
+            db.execute(
+                "INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','2:3')",
+                &[],
+            )?;
+            db.execute("PRAGMA user_version=3", &[])
+        })?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 3 {
+        // v4: mail/browser source kinds, the `quoted` text field, `source_deleted` tombstones, `browser.visit`.
+        db.execute("PRAGMA foreign_keys=OFF", &[])?;
+        let result = db.transaction(|| {
+            rebuild(db, &["sources", "event_text", "tombstones"], "v4")?;
+            for k in schema::KINDS.iter().filter(|k| k.kind == "browser.visit") {
+                db.execute("INSERT OR IGNORE INTO event_kinds VALUES(?,?,?,1,?)", &[text(k.kind), text(k.layer), crate::db::boolean(k.is_span), text(k.description)])?;
+            }
+            if !db.query("PRAGMA foreign_key_check", &[], |_| true)?.is_empty() {
+                return Err(TimelineError::InvalidStore("升级后的来源引用不完整".into()));
+            }
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','3:4')", &[])?;
+            db.execute("PRAGMA user_version=4", &[])
+        });
+        db.execute("PRAGMA foreign_keys=ON", &[])?;
+        result?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 4 {
+        // v5: derived layer for the AI design (timeline-v1 §4.8.1): digests, entities, wider memory and
+        // correction kinds, and the feature a job belongs to.
+        db.execute("PRAGMA foreign_keys=OFF", &[])?;
+        let result = db.transaction(|| {
+            rebuild(db, &["memories", "corrections"], "v5")?;
+            for name in ["digests", "entities", "entity_aliases", "entity_mentions"] {
+                create(db, name)?;
+            }
+            db.execute("ALTER TABLE jobs ADD COLUMN feature TEXT", &[])?;
+            if !db.query("PRAGMA foreign_key_check", &[], |_| true)?.is_empty() {
+                return Err(TimelineError::InvalidStore("升级后的派生引用不完整".into()));
+            }
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','4:5')", &[])?;
+            db.execute("PRAGMA user_version=5", &[])
+        });
+        db.execute("PRAGMA foreign_keys=ON", &[])?;
+        result?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 5 {
+        db.transaction(|| {
+            crate::performance::install(db)?;
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','5:6')", &[])?;
+            db.execute("PRAGMA user_version=6", &[])
+        })?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 6 {
+        db.execute("PRAGMA foreign_keys=OFF", &[])?;
+        let result = db.transaction(|| {
+            rebuild(db, &["sources"], "v7")?;
+            if !db.query("PRAGMA foreign_key_check", &[], |_| true)?.is_empty() {
+                return Err(TimelineError::InvalidStore("升级后的来源引用不完整".into()));
+            }
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','6:7')", &[])?;
+            db.execute("PRAGMA user_version=7", &[])
+        });
+        db.execute("PRAGMA foreign_keys=ON", &[])?;
+        result?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 7 {
+        db.transaction(|| {
+            db.script(crate::agents::CHECKPOINT_DDL)?;
+            crate::performance::install_media_projection(db)?;
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','7:8')", &[])?;
+            db.execute("PRAGMA user_version=8", &[])
+        })?;
+    }
+    if identity.schema_version != schema::SCHEMA_VERSION {
+        identity.schema_version = schema::SCHEMA_VERSION;
+        let temp = root.join(".store.json.tmp");
+        let file = fs::File::create(&temp)?;
+        serde_json::to_writer(&file, &identity)
+            .map_err(|e| TimelineError::InvalidStore(e.to_string()))?;
+        file.sync_all()?;
+        fs::rename(&temp, root.join("store.json"))?;
+        fs::File::open(root)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// SQLite's documented create/copy/drop/rename procedure; the target DDL is the current one, so a table rebuilt
+/// at an earlier step is simply copied again. Indices on the table are recreated from their stored SQL.
+fn rebuild(db: &Db, names: &[&str], suffix: &str) -> Result<()> {
+    for name in names {
+        let indices = db.query("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", &[text(*name)], |r| r.text(0))?;
+        let triggers = db.query("SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name=? AND sql IS NOT NULL", &[text(*name)], |r| r.text(0))?;
+        let marker = format!("CREATE TABLE {name} (");
+        let start = schema::DDL.find(&marker).unwrap();
+        let end = start + schema::DDL[start..].find(") STRICT;").unwrap() + ") STRICT;".len();
+        let ddl = schema::DDL[start..end].replacen(&marker, &format!("CREATE TABLE {name}_{suffix} ("), 1);
+        db.script(&ddl)?;
+        db.script(&format!("INSERT INTO {name}_{suffix} SELECT * FROM {name}; DROP TABLE {name}; ALTER TABLE {name}_{suffix} RENAME TO {name};"))?;
+        for trigger in triggers { db.script(&trigger)?; }
+        for index in indices {
+            db.script(&index)?;
+        }
+    }
+    Ok(())
+}
+
+/// Creates a table added in a later version, with its indices, from the current DDL (one source of truth).
+fn create(db: &Db, name: &str) -> Result<()> {
+    let marker = format!("CREATE TABLE {name} (");
+    let start = schema::DDL.find(&marker).unwrap();
+    let end = start + schema::DDL[start..].find(") STRICT;").unwrap() + ") STRICT;".len();
+    db.script(&schema::DDL[start..end])?;
+    let on = format!(" ON {name}(");
+    for line in schema::DDL.lines().filter(|l| l.starts_with("CREATE INDEX") && l.contains(&on)) {
+        db.script(line)?;
+    }
+    Ok(())
+}

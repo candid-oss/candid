@@ -1,0 +1,8 @@
+# Default rules plus an allowlist for clearly synthetic test values.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic secrets in tests"
+regexes = ['''SYNTHETIC''', '''VERY-SECRET-VALUE''', '''PRIVATE BODY''']
+paths = ['''agents/pi-extension/package-lock\.json''', '''core/Cargo\.lock''']

@@ -1,0 +1,18 @@
+[package]
+name = "candid-service"
+description = "Loopback HTTP service, MCP stdio shell and HTTP client for the Candid timeline."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+candid-store.workspace = true
+candid-connectors.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+base64.workspace = true
+libc.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls", "socks"] }

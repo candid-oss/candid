@@ -1,0 +1,36 @@
+# Build output
+core/target/
+apps/macos/.build/
+apps/macos/dist/
+apps/macos/qa/
+node_modules/
+
+# Python
+.venv*/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Local data: models, samples, recordings, databases (never commit)
+data/
+*.sqlite
+*.sqlite3
+*.db
+*.wav
+*.m4a
+*.mp3
+*.opus
+*.mov
+*.mp4
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

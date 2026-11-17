@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: Rust core
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: Public speech samples
+        run: sh services/voice/scripts/fetch_samples.sh
+      - name: Test
+        working-directory: core
+        run: cargo test --workspace --locked
+
+  licenses:
+    name: Dependency licenses and advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: core/Cargo.toml
+          command: check licenses bans sources
+
+  macos:
+    name: macOS app
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Agent extension dependencies
+        run: npm ci --prefix agents/pi-extension --ignore-scripts
+      - name: Test
+        run: CANDID_PI_NODE="$(command -v node)" apps/macos/script/test.sh
+
+  voice:
+    name: Voice service
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Test
+        run: |
+          uv venv --python 3.12 .venv-asr-mlx
+          uv pip sync --python .venv-asr-mlx/bin/python services/voice/asr/requirements-speaker.lock.txt
+          uv pip install --python .venv-asr-mlx/bin/python pytest
+          .venv-asr-mlx/bin/python -m pytest -q services/voice/tests
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar xz gitleaks
+          ./gitleaks detect --source . --redact --config .gitleaks.toml -v

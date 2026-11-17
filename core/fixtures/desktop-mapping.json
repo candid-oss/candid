@@ -1,0 +1,585 @@
+{
+  "cases": [
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.notes",
+        "app_name": "Notes",
+        "blobs": [],
+        "kind": "app.focus",
+        "payload": {
+          "legacy": {
+            "run_id": "synthetic-run"
+          },
+          "reason": "switch"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-app",
+        "start_ms": 1790000000000,
+        "text": [],
+        "time_basis": "observed"
+      },
+      "record": {
+        "appName": "Notes",
+        "bundleID": "com.example.notes",
+        "detail": "",
+        "id": "rec-app",
+        "kind": "application",
+        "runID": "synthetic-run",
+        "timestamp": 811692800,
+        "trigger": "switch",
+        "windowTitle": ""
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.notes",
+        "app_name": "Notes",
+        "blobs": [],
+        "kind": "window.focus",
+        "payload": {
+          "coverage": "window",
+          "legacy": {
+            "activity_id": "act-1",
+            "run_id": "synthetic-run"
+          },
+          "window_token": "93fd90a045a5289a"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-win",
+        "start_ms": 1790000001000,
+        "text": [],
+        "time_basis": "observed",
+        "title": "预算草稿"
+      },
+      "record": {
+        "activityID": "act-1",
+        "appName": "Notes",
+        "bundleID": "com.example.notes",
+        "detail": "",
+        "id": "rec-win",
+        "kind": "window",
+        "runID": "synthetic-run",
+        "timestamp": 811692801,
+        "windowTitle": "预算草稿"
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.notes",
+        "app_name": "Notes",
+        "blobs": [],
+        "kind": "screen.text",
+        "payload": {
+          "focused_label": "正文",
+          "focused_role": "AXTextArea",
+          "is_composing": null,
+          "legacy": {
+            "activity_id": "act-1",
+            "run_id": "synthetic-run"
+          },
+          "reader": {
+            "deep_pass": false,
+            "nodes": 0,
+            "version": 0
+          },
+          "text_status": "ok",
+          "trigger": "timer"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-ctx1",
+        "start_ms": 1790000002000,
+        "text": [
+          {
+            "content": "合成的预算说明：本季度预算需要复核。\n\nsecond synthetic paragraph",
+            "field": "body"
+          },
+          {
+            "content": "预算",
+            "field": "selection"
+          }
+        ],
+        "time_basis": "observed",
+        "title": "预算草稿"
+      },
+      "record": {
+        "activityID": "act-1",
+        "appName": "Notes",
+        "bundleID": "com.example.notes",
+        "context": {
+          "focusedLabel": "正文",
+          "focusedRole": "AXTextArea",
+          "readableText": "合成的预算说明：本季度预算需要复核。\n\nsecond synthetic paragraph",
+          "selectedText": "预算",
+          "textStatus": "ok"
+        },
+        "detail": "",
+        "id": "rec-ctx1",
+        "kind": "context",
+        "runID": "synthetic-run",
+        "timestamp": 811692802,
+        "trigger": "timer",
+        "windowTitle": "预算草稿"
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.notes",
+        "app_name": "Notes",
+        "blobs": [
+          {
+            "mime_type": "image/jpeg",
+            "pixel_h": 30,
+            "pixel_w": 40,
+            "role": "original",
+            "sha256": "1901da1c9f699b48f6b2636e65cbf73abf99d0441ef67f5c540a42f7051dec6f",
+            "staging_path": "<staged>"
+          },
+          {
+            "mime_type": "application/json",
+            "role": "derived",
+            "sha256": "4b9279dc127d8a58f148b86c3e7f35a91151a173c7eb08aeeedf9014b44e527c",
+            "staging_path": "<staged>"
+          }
+        ],
+        "kind": "screen.shot",
+        "parent_key": "rec-win",
+        "payload": {
+          "ax_evidence_ref": "4b9279dc127d8a58f148b86c3e7f35a91151a173c7eb08aeeedf9014b44e527c",
+          "legacy": {
+            "run_id": "synthetic-run"
+          },
+          "pixel_h": 30,
+          "pixel_w": 40,
+          "trigger": "timer"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-shot",
+        "start_ms": 1790000003000,
+        "text": [],
+        "time_basis": "observed",
+        "title": "预算草稿"
+      },
+      "record": {
+        "appName": "Notes",
+        "bundleID": "com.example.notes",
+        "context": {
+          "axEvidence": {
+            "nodes": [
+              {
+                "bounds": [
+                  0,
+                  0,
+                  1000,
+                  1000
+                ],
+                "label": "预算草稿",
+                "role": "AXWindow"
+              },
+              {
+                "destination": "https://example.com/a/b",
+                "focused": true,
+                "parent": 0,
+                "role": "AXLink",
+                "text": "https://example.com/a/b"
+              }
+            ],
+            "observedAt": 811692803.25,
+            "partial": false
+          }
+        },
+        "detail": "",
+        "id": "rec-shot",
+        "imageHash": "1901da1c9f699b48f6b2636e65cbf73abf99d0441ef67f5c540a42f7051dec6f",
+        "imageHeight": 30,
+        "imageWidth": 40,
+        "kind": "screenshot",
+        "parentID": "rec-win",
+        "runID": "synthetic-run",
+        "timestamp": 811692803,
+        "trigger": "timer",
+        "windowTitle": "预算草稿"
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.notes",
+        "app_name": "Notes",
+        "blobs": [],
+        "kind": "screen.text",
+        "payload": {
+          "focused_label": null,
+          "focused_role": null,
+          "is_composing": null,
+          "legacy": {
+            "activity_id": "act-1",
+            "run_id": "synthetic-run"
+          },
+          "reader": {
+            "deep_pass": false,
+            "nodes": 0,
+            "version": 0
+          },
+          "text_status": "ok",
+          "trigger": "timer"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-ctx2",
+        "start_ms": 1790000062000,
+        "text": [
+          {
+            "content": "合成的预算说明：本季度预算需要复核。\n\nthird synthetic paragraph",
+            "field": "body"
+          }
+        ],
+        "time_basis": "observed",
+        "title": "预算草稿"
+      },
+      "record": {
+        "activityID": "act-1",
+        "appName": "Notes",
+        "bundleID": "com.example.notes",
+        "context": {
+          "readableText": "合成的预算说明：本季度预算需要复核。\n\nthird synthetic paragraph",
+          "textStatus": "ok"
+        },
+        "detail": "",
+        "id": "rec-ctx2",
+        "kind": "context",
+        "runID": "synthetic-run",
+        "timestamp": 811692862,
+        "trigger": "timer",
+        "windowTitle": "预算草稿"
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.vault",
+        "app_name": "Vault",
+        "blobs": [],
+        "kind": "screen.text",
+        "payload": {
+          "focused_label": null,
+          "focused_role": null,
+          "is_composing": null,
+          "legacy": {
+            "activity_id": "act-2",
+            "run_id": "synthetic-run"
+          },
+          "reader": {
+            "deep_pass": false,
+            "nodes": 0,
+            "version": 0
+          },
+          "text_status": "protected",
+          "trigger": "timer"
+        },
+        "payload_version": 1,
+        "sensitivity": "protected",
+        "source_key": "rec-prot",
+        "start_ms": 1790000070000,
+        "text": [],
+        "time_basis": "observed",
+        "title": "Synthetic secret window"
+      },
+      "record": {
+        "activityID": "act-2",
+        "appName": "Vault",
+        "bundleID": "com.example.vault",
+        "context": {
+          "isProtected": true,
+          "textStatus": "protected"
+        },
+        "detail": "",
+        "id": "rec-prot",
+        "kind": "context",
+        "runID": "synthetic-run",
+        "timestamp": 811692870,
+        "trigger": "timer",
+        "windowTitle": "Synthetic secret window"
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "blobs": [],
+        "kind": "marker",
+        "payload": {
+          "label": "synthetic marker",
+          "legacy": {
+            "detail": "note body",
+            "run_id": "synthetic-run"
+          },
+          "note": "note body"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-mark",
+        "start_ms": 1790000080000,
+        "text": [],
+        "time_basis": "observed",
+        "title": "synthetic marker"
+      },
+      "record": {
+        "appName": "",
+        "bundleID": "",
+        "detail": "note body",
+        "id": "rec-mark",
+        "kind": "marker",
+        "runID": "synthetic-run",
+        "timestamp": 811692880,
+        "windowTitle": "synthetic marker"
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "blobs": [],
+        "kind": "system.state",
+        "payload": {
+          "change": "wake",
+          "legacy": {
+            "detail": "system did wake",
+            "run_id": "synthetic-run"
+          },
+          "value": "system did wake"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-sys",
+        "start_ms": 1790000090000,
+        "text": [],
+        "time_basis": "observed"
+      },
+      "record": {
+        "appName": "",
+        "bundleID": "",
+        "detail": "system did wake",
+        "id": "rec-sys",
+        "kind": "system",
+        "runID": "synthetic-run",
+        "timestamp": 811692890,
+        "windowTitle": ""
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "blobs": [],
+        "kind": "coverage.gap",
+        "payload": {
+          "legacy": {
+            "detail": "recording paused",
+            "run_id": "synthetic-run"
+          },
+          "reason_code": "paused"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-gap",
+        "start_ms": 1790000100000,
+        "text": [],
+        "time_basis": "observed"
+      },
+      "record": {
+        "appName": "",
+        "bundleID": "",
+        "detail": "recording paused",
+        "id": "rec-gap",
+        "kind": "gap",
+        "runID": "synthetic-run",
+        "timestamp": 811692900,
+        "windowTitle": ""
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.notes",
+        "app_name": "Notes",
+        "blobs": [],
+        "kind": "screen.text",
+        "payload": {
+          "focused_label": null,
+          "focused_role": null,
+          "idle_seconds": 2.5,
+          "is_composing": false,
+          "legacy": {
+            "activity_id": "act-9",
+            "run_id": "synthetic-run"
+          },
+          "low_power": true,
+          "on_battery": false,
+          "reader": {
+            "deep_pass": false,
+            "nodes": 0,
+            "version": 0
+          },
+          "session_active": true,
+          "text_status": "captured",
+          "thermal_state": "nominal",
+          "trigger": "content"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-state",
+        "start_ms": 1790000100500,
+        "text": [
+          {
+            "content": "合成正文\n\n第二段",
+            "field": "body"
+          },
+          {
+            "content": "选中",
+            "field": "selection"
+          }
+        ],
+        "time_basis": "observed",
+        "title": "合成"
+      },
+      "record": {
+        "activityID": "act-9",
+        "appName": "Notes",
+        "bundleID": "com.example.notes",
+        "context": {
+          "idleSeconds": 2.5,
+          "isComposing": false,
+          "lowPower": true,
+          "onBattery": false,
+          "readableText": "合成正文\n\n第二段",
+          "selectedText": "选中",
+          "sessionActive": true,
+          "textStatus": "captured",
+          "thermalState": "nominal"
+        },
+        "detail": "",
+        "id": "rec-state",
+        "kind": "context",
+        "runID": "synthetic-run",
+        "timestamp": 811692900.5,
+        "trigger": "content",
+        "windowTitle": "合成"
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "app_bundle_id": "com.example.notes",
+        "app_name": "Notes",
+        "blobs": [],
+        "kind": "screen.text",
+        "payload": {
+          "focused_label": null,
+          "focused_role": null,
+          "is_composing": true,
+          "legacy": {
+            "run_id": "synthetic-run"
+          },
+          "reader": {
+            "deep_pass": false,
+            "nodes": 0,
+            "version": 0
+          },
+          "text_status": "composing",
+          "trigger": "unknown"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-compose",
+        "start_ms": 1790000101500,
+        "text": [],
+        "time_basis": "observed"
+      },
+      "record": {
+        "appName": "Notes",
+        "bundleID": "com.example.notes",
+        "context": {
+          "isComposing": true,
+          "textStatus": "composing"
+        },
+        "detail": "",
+        "id": "rec-compose",
+        "kind": "context",
+        "runID": "synthetic-run",
+        "timestamp": 811692901.5,
+        "windowTitle": ""
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "blobs": [],
+        "kind": "coverage.gap",
+        "parent_key": "rec-state",
+        "payload": {
+          "legacy": {
+            "activity_id": "act-9",
+            "detail": "截图未保存：没有屏幕录制权限",
+            "run_id": "synthetic-run"
+          },
+          "reason_code": "permission_denied"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-gap2",
+        "start_ms": 1790000102500,
+        "text": [],
+        "time_basis": "observed"
+      },
+      "record": {
+        "activityID": "act-9",
+        "appName": "",
+        "bundleID": "",
+        "detail": "截图未保存：没有屏幕录制权限",
+        "id": "rec-gap2",
+        "kind": "gap",
+        "parentID": "rec-state",
+        "runID": "synthetic-run",
+        "timestamp": 811692902.5,
+        "windowTitle": ""
+      }
+    },
+    {
+      "event": {
+        "actor": "self",
+        "blobs": [],
+        "kind": "system.state",
+        "payload": {
+          "change": "sleep",
+          "legacy": {
+            "detail": "系统进入睡眠",
+            "run_id": "synthetic-run"
+          },
+          "value": "系统进入睡眠"
+        },
+        "payload_version": 1,
+        "sensitivity": "normal",
+        "source_key": "rec-sys2",
+        "start_ms": 1790000103500,
+        "text": [],
+        "time_basis": "observed"
+      },
+      "record": {
+        "appName": "",
+        "bundleID": "",
+        "detail": "系统进入睡眠",
+        "id": "rec-sys2",
+        "kind": "system",
+        "runID": "synthetic-run",
+        "timestamp": 811692903.5,
+        "trigger": "system",
+        "windowTitle": ""
+      }
+    }
+  ]
+}

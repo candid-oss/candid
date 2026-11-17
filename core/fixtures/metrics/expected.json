@@ -1,0 +1,21 @@
+{
+  "synthetic": true,
+  "date": "2026-11-10",
+  "counts": {"screenshots":150,"usage_segment":60,"visits":120,"input_sessions":40,"sent_inputs":25,"reading_records":119,"input_records":40,"audio_recording":2,"audio_segment":60,"speech_segment":60,"calendar_item":3,"mail_item":4,"gap.locked":1,"gap.paused":1,"gap.idle":1,"gap.permission":1},
+  "metrics": {
+    "redundancy": {"numerator":0,"denominator":4763,"value":0},
+    "input_completeness": {"numerator":25,"denominator":25,"value":1},
+    "input_fragmentation": {"numerator":40,"denominator":40,"value":1},
+    "visit_fragmentation": {"numerator":119,"denominator":120,"value":0.9916666666666667},
+    "text_coverage": {"numerator":28560000,"denominator":28800000,"value":0.9916666666666667},
+    "object_identification": {"numerator":120,"denominator":120,"value":1},
+    "screenshot_bytes": {"numerator":15000000,"denominator":1,"value":15000000},
+    "screenshot_unique_bytes": {"numerator":15000000,"denominator":1,"value":15000000},
+    "capture_cpu": {"numerator":32400,"denominator":32400000,"value":0.1},
+    "capture_wakeups": {"numerator":3240,"denominator":32400000,"value":0.1},
+    "searchable_latency_mean": {"numerator":80000,"denominator":40,"value":2000},
+    "searchable_latency_p95": {"numerator":2000,"denominator":1,"value":2000},
+    "search_probe_unresolved": {"numerator":0,"denominator":40,"value":0},
+    "search_probe_poll_interval_max": {"numerator":100,"denominator":1,"value":100}
+  }
+}

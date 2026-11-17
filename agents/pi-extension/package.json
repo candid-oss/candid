@@ -1,0 +1,11 @@
+{
+  "name": "candid-pi-extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Candid's Pi extension: the only tools the attached Pi agent has; every call goes to the core, which checks scope.",
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "1.5.2"
+  }
+}

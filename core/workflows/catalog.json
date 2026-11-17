@@ -1,0 +1,280 @@
+{
+  "format": "candid-workflows/1",
+  "workflows": [
+    {
+      "id": "recording",
+      "version": 1,
+      "title": "录音整理",
+      "implemented": true,
+      "trigger": "sealed_audio",
+      "steps": [
+        {
+          "id": "transcribe",
+          "role": "asr",
+          "output": "candid-voice-result/1"
+        },
+        {
+          "id": "title",
+          "role": "title",
+          "output": "draft/1"
+        },
+        {
+          "id": "summary",
+          "role": "summary",
+          "optional": true,
+          "output": "draft/1"
+        }
+      ]
+    },
+    {
+      "id": "conversation",
+      "version": 1,
+      "title": "多人分段与已有声纹候选",
+      "implemented": true,
+      "role": "diarization",
+      "output": "candid-voice-result/1"
+    },
+    {
+      "id": "decisions",
+      "version": 1,
+      "title": "决定与待办草稿",
+      "implemented": true,
+      "role": "summary",
+      "output": "draft/1"
+    },
+    {
+      "id": "tags",
+      "version": 1,
+      "title": "标签草稿",
+      "implemented": true,
+      "role": "title",
+      "output": "draft/1"
+    },
+    {
+      "id": "screenshot",
+      "version": 1,
+      "title": "截图文字整理",
+      "implemented": true,
+      "role": "vision",
+      "output": "draft/1"
+    },
+    {
+      "id": "daily",
+      "version": 1,
+      "title": "录音日回顾",
+      "implemented": true,
+      "role": "summary",
+      "output": "draft/1"
+    }
+  ],
+  "features": [
+    {
+      "id": "transcribe",
+      "title": "录音转写与说话人",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "录音保存后",
+      "role": "diarization",
+      "job_kind": "speech.recognize",
+      "sources": [
+        "import",
+        "mac_microphone",
+        "mac_system_audio",
+        "mac_region"
+      ],
+      "default_enabled": true,
+      "default_daily_calls": 100,
+      "allow_remote": true,
+      "notifications": false
+    },
+    {
+      "id": "title",
+      "title": "录音命名",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "转写完成后",
+      "role": "title",
+      "job_kind": "workflow.title",
+      "sources": [
+        "import",
+        "mac_microphone",
+        "mac_system_audio",
+        "mac_region"
+      ],
+      "default_enabled": true,
+      "default_daily_calls": 100,
+      "allow_remote": true,
+      "notifications": false
+    },
+    {
+      "id": "summary",
+      "title": "录音摘要",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "整段录音结束后",
+      "role": "summary",
+      "job_kind": "workflow.summary",
+      "sources": [
+        "import",
+        "mac_microphone",
+        "mac_system_audio",
+        "mac_region"
+      ],
+      "default_enabled": true,
+      "default_daily_calls": 100,
+      "allow_remote": true,
+      "notifications": false
+    },
+    {
+      "id": "decisions",
+      "title": "决定与待办",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "summary",
+      "job_kind": "workflow.decisions",
+      "sources": [
+        "import",
+        "mac_microphone",
+        "mac_system_audio",
+        "mac_region"
+      ],
+      "default_enabled": true,
+      "default_daily_calls": 100,
+      "allow_remote": true,
+      "notifications": false
+    },
+    {
+      "id": "tags",
+      "title": "标签",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "title",
+      "job_kind": "workflow.tags",
+      "sources": [
+        "import",
+        "mac_microphone",
+        "mac_system_audio",
+        "mac_region"
+      ],
+      "default_enabled": true,
+      "default_daily_calls": 100,
+      "allow_remote": true,
+      "notifications": false
+    },
+    {
+      "id": "screenshot",
+      "title": "截图文字整理",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "vision",
+      "job_kind": "workflow.screenshot",
+      "sources": [
+        "import",
+        "mac_microphone",
+        "mac_system_audio",
+        "mac_region"
+      ],
+      "default_enabled": true,
+      "default_daily_calls": 100,
+      "allow_remote": true,
+      "notifications": false
+    },
+    {
+      "id": "daily",
+      "title": "录音日回顾",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "summary",
+      "job_kind": "workflow.daily",
+      "sources": [
+        "import",
+        "mac_microphone",
+        "mac_system_audio",
+        "mac_region"
+      ],
+      "default_enabled": true,
+      "default_daily_calls": 100,
+      "allow_remote": true,
+      "notifications": false
+    },
+    {
+      "id": "screen-episodes",
+      "title": "屏幕片段整理",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "片段结束后",
+      "role": "episode",
+      "sources": [
+        "*"
+      ],
+      "default_enabled": false,
+      "default_daily_calls": 24,
+      "allow_remote": false,
+      "notifications": false,
+      "job_kind": "screen.summarize",
+      "output": "screen-summary/1"
+    },
+    {
+      "id": "hourly-weekly",
+      "title": "小时与周汇总",
+      "mode": "core",
+      "implemented": false,
+      "trigger": "定时",
+      "role": "summary"
+    },
+    {
+      "id": "daily-review",
+      "title": "日回顾",
+      "mode": "agent",
+      "implemented": true,
+      "trigger": "每天 21:00 · 仅手动",
+      "role": "agent_chat",
+      "settings": "automation",
+      "output": "candid-agent-run/1"
+    },
+    {
+      "id": "references-replies",
+      "title": "资料与回复检索",
+      "mode": "agent",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "agent_chat",
+      "settings": "automation",
+      "output": "candid-agent-run/1"
+    },
+    {
+      "id": "commitment-tracker",
+      "title": "承诺追踪",
+      "mode": "agent",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "agent_chat",
+      "settings": "automation",
+      "output": "candid-agent-run/1"
+    },
+    {
+      "id": "meeting-review",
+      "title": "会议整理",
+      "mode": "agent",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "agent_chat",
+      "settings": "automation",
+      "output": "candid-agent-run/1"
+    },
+    {
+      "id": "project-history",
+      "title": "项目经过",
+      "mode": "agent",
+      "implemented": true,
+      "trigger": "手动",
+      "role": "agent_chat",
+      "settings": "automation",
+      "output": "candid-agent-run/1"
+    }
+  ]
+}
