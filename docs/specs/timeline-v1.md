@@ -1,5 +1,7 @@
 # 时间线库、查询接口与连接器 v1
 
+**中文** · [English](timeline-v1.en.md)
+
 **状态**：写成的规格。已实现 T1–T6（见第 10 节）；T7 未实现。Mac 桌面采集经入库接口直接写进本库，原桌面账本在核对通过后退役、只读保留（§9.1）；Hub 资料库仍由核心每 30 秒增量镜像。时间线界面从本库读取。公共封套、引用和可迁移包仍以 artifact v1 为准；Mac 采集规则以 桌面采集 v1 为准；模型角色与处理流水线以 智能处理 为准。本文只规定这三者之间的统一存储、查询接口和来源接入。
 
 <a id="decisions"></a>
@@ -672,7 +674,7 @@ HTTP（`/v1/<tool>`）、MCP 和命令行（`candid <tool> --json`）三种方�
 | HTTP | `http://127.0.0.1:<端口>/v1/<tool>`。服务启动后把端口写入本机运行时文件（Mac：`~/Library/Application Support/Candid/run/endpoint.json`），不放在数据根目录里 | 每个访问方一个 Bearer 令牌；同时检查 `Host` 和 `Origin` |
 | MCP | `candid mcp`（stdio），读取令牌后转发到 HTTP | 每个 MCP 访问方在 `clients` 中单独登记，有自己的权限范围 |
 | 命令行 | `candid <tool> [--参数 值]`，或 `--json '{...}'` | 使用当前用户的本机令牌（运行目录里的 `cli.token`，权限 0600），范围与「本机命令行」访问方一致 |
-| 本地通道（只供 App） | 运行目录里的 Unix 域套接字（文件 0600、目录 0700），HTTP/1.1。除 `/v1/<tool>` 外还有访问方管理、立即同步与核对、「有新数据」推送、健康检查和 App 自用的入库接口，接口清单见 [software/core](../../core/README.md#local-channel) | 只有当前用户能连接；App 是内部访问方（`transport='internal'`），带令牌时按该访问方。管理、推送、健康和入库接口在回环 HTTP 上一律拒绝（403 `local_only`） |
+| 本地通道（只供 App） | 运行目录里的 Unix 域套接字（文件 0600、目录 0700），HTTP/1.1。除 `/v1/<tool>` 外还有访问方管理、立即同步与核对、「有新数据」推送、健康检查和 App 自用的入库接口，接口清单见 [core](../../core/README.md#local-channel) | 只有当前用户能连接；App 是内部访问方（`transport='internal'`），带令牌时按该访问方。管理、推送、健康和入库接口在回环 HTTP 上一律拒绝（403 `local_only`） |
 
 访问方在 设置 →「外部访问」登记：每个工具一个令牌，只显示一次，同时给出 Claude Code 命令、Codex 配置和通用 JSON。默认范围：最近 90 天、正文与派生内容可读、截图和录音不可读、不能提交提案（App 内还没有批准界面）。环境变量 `CANDID_TOKEN`、`CANDID_ENDPOINT`、`CANDID_RUN_DIR` 可覆盖令牌、地址和运行目录。命令行和 MCP 外壳按 App 的「网络代理」设置连接（默认系统代理，可选不走代理）。
 

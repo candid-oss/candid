@@ -331,8 +331,15 @@ fn ingest_is_idempotent_and_rejects_bad_batches() {
     let (_, again) = call(&f.socket, "POST", "/local/ingest", sent);
     assert_eq!((again["inserted"].as_i64(), again["duplicates"].as_i64(), again["conflicts"].as_i64()), (Some(0), Some(2), Some(0)));
     assert_eq!(again["event_ids"], first["event_ids"]);
-    let (_, status) = call(&f.socket, "GET", "/local/status", Value::Null);
-    assert_eq!(status["events"], 2);
+    // The status count is refreshed in the background after ingest; wait for it rather than racing it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let mut events = Value::Null;
+    while std::time::Instant::now() < deadline {
+        events = call(&f.socket, "GET", "/local/status", Value::Null).1["events"].clone();
+        if events == 2 { break; }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(events, 2);
     assert_eq!(call(&f.socket, "POST", "/local/ingest", batch("no-such-source", &["k3"])).0, 404);
     assert_eq!(call(&f.socket, "POST", "/local/ingest", json!({"events": "x"})).0, 400);
     let mut bad_kind = batch(&src, &["k4"]);
