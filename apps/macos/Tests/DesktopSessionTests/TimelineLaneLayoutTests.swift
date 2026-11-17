@@ -55,7 +55,9 @@ import Testing
         let icons = TimelineLaneLayout.icons(items, width: 400)
         // Icons never overlap, and every episode is either shown or counted in a +N badge.
         #expect(zip(icons, icons.dropFirst()).allSatisfy { $1.x - $0.x >= TimelineLaneLayout.iconSpacing })
-        #expect(icons.reduce(0) { $0 + 1 + $1.extra } == items.reduce(0) { $0 + $1.episodes.count })
+        let shownOrCounted: Int = icons.reduce(0) { (sum: Int, icon) in sum + 1 + icon.extra }
+        let episodeCount: Int = items.reduce(0) { (sum: Int, item) in sum + item.episodes.count }
+        #expect(shownOrCounted == episodeCount)
         #expect(icons[1].extra >= 5)
     }
 
