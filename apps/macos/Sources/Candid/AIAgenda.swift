@@ -1,4 +1,5 @@
 import EventKit
+import CandidLocalization
 import Foundation
 
 // The AI page's system calendar and Reminders (agent-platform-v1 §4.2 ai-settings): read through EventKit each time the
@@ -65,13 +66,13 @@ enum AgendaWriteError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .noAccess(.calendar): "没有日历权限，请在系统设置 → 隐私与安全性 → 日历里允许 Candid"
-        case .noAccess(.reminders): "没有提醒事项权限，请在系统设置 → 隐私与安全性 → 提醒事项里允许 Candid"
-        case .incomplete(let what): "提案缺少\(what)"
-        case .noContainer(.calendar): "系统里没有可写入的日历"
-        case .noContainer(.reminders): "系统里没有可写入的提醒事项列表"
-        case .missing(.calendar): "日历里找不到这条日程，可能已被改动或删除"
-        case .missing(.reminders): "提醒事项里找不到这条提醒，可能已被完成或删除"
+        case .noAccess(.calendar): L("没有日历权限，请在系统设置 → 隐私与安全性 → 日历里允许 Candid")
+        case .noAccess(.reminders): L("没有提醒事项权限，请在系统设置 → 隐私与安全性 → 提醒事项里允许 Candid")
+        case .incomplete(let what): L("提案缺少%@", what)
+        case .noContainer(.calendar): L("系统里没有可写入的日历")
+        case .noContainer(.reminders): L("系统里没有可写入的提醒事项列表")
+        case .missing(.calendar): L("日历里找不到这条日程，可能已被改动或删除")
+        case .missing(.reminders): L("提醒事项里找不到这条提醒，可能已被完成或删除")
         }
     }
 }
@@ -155,7 +156,7 @@ final class EventKitAgenda: SystemAgenda, @unchecked Sendable {
 
     func createEvent(_ draft: AgendaDraft) async throws -> AgendaReceipt {
         guard access(.calendar) == .granted else { throw AgendaWriteError.noAccess(.calendar) }
-        guard let start = draft.start else { throw AgendaWriteError.incomplete("开始时间") }
+        guard let start = draft.start else { throw AgendaWriteError.incomplete(L("开始时间")) }
         guard let calendar = store.defaultCalendarForNewEvents else { throw AgendaWriteError.noContainer(.calendar) }
         let event = EKEvent(eventStore: store)
         event.title = draft.title

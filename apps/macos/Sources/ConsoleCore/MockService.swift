@@ -1,8 +1,9 @@
 import Foundation
+import CandidLocalization
 
 /// An isolated demonstration. No sockets, device access, or model calls.
 public actor MockService: ConsoleService {
-    public nonisolated let endpoint = "隔离 Mock · 无设备与网络访问"
+    public nonisolated let endpoint = L("隔离 Mock · 无设备与网络访问")
     public nonisolated let isMock = true
     private var current: BenchState
     private var started: Date?
@@ -31,13 +32,13 @@ public actor MockService: ConsoleService {
             started = nil; current.serial_device?.status.recording?.state = "ready"
         case "vad.start": current.serial_device?.status.vad?.enabled = true
         case "vad.stop": current.serial_device?.status.vad?.enabled = false
-        default: throw ConsoleError.rejected("Mock 不支持该命令")
+        default: throw ConsoleError.rejected(L("Mock 不支持该命令"))
         }
         return CommandResult(ok: true, state: request.command == "record.stop" ? "verified" : "recording", error: nil, asset: request.command == "record.stop" ? current.audioAssets.first : nil)
     }
     public func pauseMonitor() async throws { current.serial_device?.status.vad?.enabled = false }
     public func transcribe(assetID: String) async throws {
-        let result = TranscriptResult(text: "这是隔离 Mock 的合成文字，用于验证点击转写与结果展示。", provider: "mock", model: "Mock · 无模型调用", model_revision: nil, timestamps_available: false)
+        let result = TranscriptResult(text: L("这是隔离 Mock 的合成文字，用于验证点击转写与结果展示。"), provider: "mock", model: L("Mock · 无模型调用"), model_revision: nil, timestamps_available: false)
         current.transcripts.insert(Transcript(job_id: UUID().uuidString, asset_id: assetID, status: "completed", error: nil, result: result), at: 0)
     }
     public func media(assetID: String) async throws -> Data { SyntheticTone.wav() }

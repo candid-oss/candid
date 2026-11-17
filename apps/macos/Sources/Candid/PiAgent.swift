@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidClient
 
 // The attached Pi agent (agent-platform-v1 §4.1): Pi runs in RPC mode as a process the App manages, with only
@@ -69,10 +70,10 @@ enum PiAgentError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .notInstalled: "AI 助手的运行环境还没有安装：在「设置 → 组件」里安装 Node 和 Pi"
-        case .noCore: "时间线库尚未打开"
-        case .notRunning: "AI 还没有启动"
-        case .busy: "上一轮还没结束"
+        case .notInstalled: L("AI 助手的运行环境还没有安装：在「设置 → 组件」里安装 Node 和 Pi")
+        case .noCore: L("时间线库尚未打开")
+        case .notRunning: L("AI 还没有启动")
+        case .busy: L("上一轮还没结束")
         }
     }
 }
@@ -145,9 +146,9 @@ enum PiRecord {
             let text = content.compactMap { $0["text"] as? String }.joined()
             return [.toolFinished(id: record["toolCallId"] as? String ?? "", name: record["toolName"] as? String ?? "", result: text, isError: record["isError"] as? Bool ?? false)]
         case "agent_settled": return [.settled(aborted: record["aborted"] as? Bool ?? false)]
-        case "extension_error": return [.error(record["error"] as? String ?? "插件出错")]
+        case "extension_error": return [.error(record["error"] as? String ?? L("插件出错"))]
         case "response":
-            if record["success"] as? Bool == false { return [.error(record["error"] as? String ?? "Pi 拒绝了命令")] }
+            if record["success"] as? Bool == false { return [.error(record["error"] as? String ?? L("Pi 拒绝了命令"))] }
             if record["command"] as? String == "prompt", (record["data"] as? [String: Any])?["disposition"] as? String == "handled" { return [.settled(aborted: false)] }
             return []
         default: return []
@@ -327,13 +328,13 @@ enum PiRecord {
         process = nil; input = nil
         if busy {
             busy = false
-            onEvent?(.error("Pi 意外退出（\(status)），这一轮没有完成"))
+            onEvent?(.error(L("Pi 意外退出（%@），这一轮没有完成", status)))
             onEvent?(.settled(aborted: true))
         }
         if Date().timeIntervalSince(launchedAt) > 60 { restarts = 0 }
         let delay = backoff(restarts)
         restarts += 1
-        onEvent?(.restarting(after: delay, reason: "Pi 退出（\(status)）"))
+        onEvent?(.restarting(after: delay, reason: L("Pi 退出（%@）", status)))
         restartTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled, !self.stopping else { return }
@@ -349,7 +350,7 @@ enum PiRecord {
             let state: State? = try? await channel()?.get("/local/pi/run")
             if state?.run?.run_id == run.run_id, let reason = state?.run?.stopped {
                 // An exhausted budget is not reset by a crash.
-                onEvent?(.error("本次运行已停止（\(reason)），请开始新的对话"))
+                onEvent?(.error(L("本次运行已停止（%@），请开始新的对话", reason)))
                 await stop()
                 return
             }
@@ -359,7 +360,7 @@ enum PiRecord {
             }
             try launch(current)
         } catch {
-            onEvent?(.error("Pi 无法重启：\(error.localizedDescription)"))
+            onEvent?(.error(L("Pi 无法重启：%@", error.localizedDescription)))
             exitedWithoutProcess()
         }
     }
@@ -367,7 +368,7 @@ enum PiRecord {
     private func exitedWithoutProcess() {
         let delay = backoff(restarts)
         restarts += 1
-        onEvent?(.restarting(after: delay, reason: "重启失败"))
+        onEvent?(.restarting(after: delay, reason: L("重启失败")))
         restartTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard let self, !Task.isCancelled, !self.stopping else { return }

@@ -1,4 +1,5 @@
 import Darwin
+import CandidLocalization
 import Foundation
 import CandidClient
 
@@ -154,14 +155,14 @@ public actor DesktopOutbox {
     public static func writeDurably(_ data: Data, to url: URL, rename: Bool = true) throws {
         let part = rename ? url.appendingPathExtension("part") : url
         guard FileManager.default.createFile(atPath: part.path, contents: data, attributes: [.posixPermissions: 0o600]) else {
-            throw DesktopStoreError.unavailable("无法写入待发队列")
+            throw DesktopStoreError.unavailable(L("无法写入待发队列"))
         }
         let handle = try FileHandle(forWritingTo: part)
         try handle.synchronize(); try handle.close()
         // rename(2) replaces an existing file atomically (a settings file is rewritten in place).
         if rename, Darwin.rename(part.path, url.path) != 0 {
             try? FileManager.default.removeItem(at: part)
-            throw DesktopStoreError.unavailable("无法写入 \(url.lastPathComponent)")
+            throw DesktopStoreError.unavailable(L("无法写入 %@", url.lastPathComponent))
         }
     }
 

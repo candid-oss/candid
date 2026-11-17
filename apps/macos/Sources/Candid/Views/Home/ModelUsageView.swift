@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import SwiftUI
 
 /// Calls, tokens and cost by day, feature or model. Cost is split by how it was obtained; an estimate is never
@@ -9,8 +10,8 @@ struct ModelUsageView: View {
     @ViewState private var grouping = "day"
 
     private static let featureNames = [
-        "agent_chat": "对话 Agent", "daily_review": "每日回顾", "episode": "片段整理", "recognition": "屏幕识别",
-        "embedding": "文本嵌入", "summary": "摘要", "relevance": "相关性初筛", "vision": "图像理解", "ocr": "文字识别"
+        "agent_chat": L("对话 Agent"), "daily_review": L("每日回顾"), "episode": L("片段整理"), "recognition": L("屏幕识别"),
+        "embedding": L("文本嵌入"), "summary": L("摘要"), "relevance": L("相关性初筛"), "vision": L("图像理解"), "ocr": L("文字识别")
     ]
 
     private var totals: UsageTotals { UsageSummary.totals(model.calls) }
@@ -20,16 +21,16 @@ struct ModelUsageView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
-            PillSwitcher(items: [(1, "今天"), (7, "7 天"), (30, "30 天")], selection: $days, scale: .secondary).offset(x: -13)
+            PillSwitcher(items: [(1, L("今天")), (7, L("7 天")), (30, L("30 天"))], selection: $days, scale: .secondary).offset(x: -13)
             HStack(alignment: .top, spacing: 40) {
-                figure("调用", "\(totals.calls)", totals.failed > 0 ? "\(totals.failed) 次失败" : nil)
-                figure("令牌", compact(totals.totalTokens), "输入 \(compact(totals.inputTokens)) · 输出 \(compact(totals.outputTokens))" + (totals.cacheTokens > 0 ? " · 缓存 \(compact(totals.cacheTokens))" : ""))
+                figure(L("调用"), "\(totals.calls)", totals.failed > 0 ? L("%@ 次失败", totals.failed) : nil)
+                figure(L("令牌"), compact(totals.totalTokens), L("输入 %@ · 输出 %@", compact(totals.inputTokens), compact(totals.outputTokens)) + (totals.cacheTokens > 0 ? L(" · 缓存 %@", compact(totals.cacheTokens)) : ""))
                 costFigure
             }
             if model.calls.isEmpty {
-                Text("这段时间还没有模型调用。").typography(.body).foregroundStyle(.secondary)
+                Text(L("这段时间还没有模型调用。")).typography(.body).foregroundStyle(.secondary)
             } else {
-                PillSwitcher(items: [("day", "按日"), ("feature", "按功能"), ("model", "按模型")], selection: $grouping, scale: .secondary).offset(x: -13)
+                PillSwitcher(items: [("day", L("按日")), ("feature", L("按功能")), ("model", L("按模型"))], selection: $grouping, scale: .secondary).offset(x: -13)
                 let peak = max(1, groups.map(\.totals.totalTokens).max() ?? 1)
                 VStack(spacing: 0) {
                     ForEach(groups) { g in
@@ -38,7 +39,7 @@ struct ModelUsageView: View {
                     }
                 }
             }
-            Text("「估算」按价格表乘以令牌数，不是账单；「未知」多为本机模型或没有填价格。外部工具（Codex、Claude Code）的用量不在这里。")
+            Text(L("「估算」按价格表乘以令牌数，不是账单；「未知」多为本机模型或没有填价格。外部工具（Codex、Claude Code）的用量不在这里。"))
                 .typography(.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .task(id: days) { await model.loadUsage(days: days) }
@@ -57,12 +58,12 @@ struct ModelUsageView: View {
         let reported = totals.reportedCost, estimated = totals.estimatedCost
         let all = reported.merging(estimated, uniquingKeysWith: +)
         return VStack(alignment: .leading, spacing: 3) {
-            Text("费用").typography(.secondary).foregroundStyle(.secondary)
+            Text(L("费用")).typography(.secondary).foregroundStyle(.secondary)
             Text(all.isEmpty ? "—" : money(all)).typography(.display, digits: true).contentTransition(.numericText())
             VStack(alignment: .leading, spacing: 1) {
-                if !reported.isEmpty { Text("服务商返回 \(money(reported))") }
-                if !estimated.isEmpty { Text("估算 \(money(estimated))") }
-                if totals.unknownCostCalls > 0 { Text("\(totals.unknownCostCalls) 次费用未知") }
+                if !reported.isEmpty { Text(L("服务商返回 %@", money(reported))) }
+                if !estimated.isEmpty { Text(L("估算 %@", money(estimated))) }
+                if totals.unknownCostCalls > 0 { Text(L("%@ 次费用未知", totals.unknownCostCalls)) }
             }.typography(.secondary).foregroundStyle(.secondary)
         }
     }
@@ -76,7 +77,7 @@ struct ModelUsageView: View {
                     .frame(width: max(3, geo.size.width * CGFloat(t.totalTokens) / CGFloat(peak)), height: 5)
                     .frame(maxHeight: .infinity, alignment: .center)
             }.frame(height: 18)
-            Text("\(t.calls) 次").typography(.secondary, digits: true).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+            Text(L("%@ 次", t.calls)).typography(.secondary, digits: true).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
             Text(compact(t.totalTokens)).typography(.secondary, digits: true).foregroundStyle(.secondary).frame(width: 58, alignment: .trailing)
             costCell(t).frame(width: 96, alignment: .trailing)
         }
@@ -88,7 +89,7 @@ struct ModelUsageView: View {
         if all.isEmpty { Text("—").typography(.secondary).foregroundStyle(.secondary) }
         else {
             HStack(spacing: 4) {
-                if t.reportedCost.isEmpty { Text("估").typography(.caption, .semibold).foregroundStyle(.orange) }
+                if t.reportedCost.isEmpty { Text(L("估")).typography(.caption, .semibold).foregroundStyle(.orange) }
                 Text(money(all)).typography(.secondary, digits: true)
             }
         }

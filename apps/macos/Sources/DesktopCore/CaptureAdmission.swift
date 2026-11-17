@@ -1,8 +1,9 @@
 import Foundation
+import CandidLocalization
 
 public enum CaptureAdmissionError: Error, LocalizedError {
     case staleEpoch
-    public var errorDescription: String? { "采集范围已变化，已丢弃旧截图结果。" }
+    public var errorDescription: String? { L("采集范围已变化，已丢弃旧截图结果。") }
 }
 
 /// The publication boundary is serialized with pause/scope changes, not just

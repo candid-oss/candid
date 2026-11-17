@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import Carbon
 import SwiftUI
 
@@ -44,7 +45,7 @@ import SwiftUI
         errors = [:]; var used: Set<String> = []
         for action in QuickAction.allCases {
             guard let value = bindings[action.rawValue] else { continue }
-            if !used.insert("\(value.key):\(value.modifiers)").inserted { errors[action.rawValue] = "与另一项快捷键重复" }
+            if !used.insert("\(value.key):\(value.modifiers)").inserted { errors[action.rawValue] = L("与另一项快捷键重复") }
         }
     }
     private func register() {
@@ -52,10 +53,10 @@ import SwiftUI
         var used: Set<String> = []
         for (index, action) in QuickAction.allCases.enumerated() {
             guard let value = bindings[action.rawValue] else { continue }
-            guard used.insert("\(value.key):\(value.modifiers)").inserted else { errors[action.rawValue] = "与另一项快捷键重复"; continue }
+            guard used.insert("\(value.key):\(value.modifiers)").inserted else { errors[action.rawValue] = L("与另一项快捷键重复"); continue }
             var ref: EventHotKeyRef?
             let result = RegisterEventHotKey(value.key, value.modifiers, EventHotKeyID(signature: 0x50564149, id: UInt32(index + 1)), GetApplicationEventTarget(), 0, &ref)
-            if result == noErr, let ref { refs.append(ref) } else { errors[action.rawValue] = "快捷键已被占用，请换一个" }
+            if result == noErr, let ref { refs.append(ref) } else { errors[action.rawValue] = L("快捷键已被占用，请换一个") }
         }
     }
 }
@@ -65,13 +66,13 @@ struct HotkeySettingsView: View {
     @AppStorage("candid.floating") private var floating = false
     var body: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            Text("快捷操作").typography(.title)
-            ToggleChip(title: "显示悬浮控件", isOn: $floating)
+            Text(L("快捷操作")).typography(.title)
+            ToggleChip(title: L("显示悬浮控件"), isOn: $floating)
             ForEach(QuickAction.allCases) { action in
                 HStack {
                     Text(action.title).typography(.body)
                     Spacer()
-                    MenuChoice(options: [(UInt32.max, "关闭")] + GlobalHotkeys.keys.map { ($0.1, "⇧⌘" + $0.0) },
+                    MenuChoice(options: [(UInt32.max, L("关闭"))] + GlobalHotkeys.keys.map { ($0.1, "⇧⌘" + $0.0) },
                                selection: Binding(get: { model.bindings[action.rawValue]?.key ?? UInt32.max }, set: { model.configure(action, key: $0 == UInt32.max ? nil : $0) }))
                 }
                 if let error = model.errors[action.rawValue] { Text(error).typography(.secondary).foregroundStyle(.red) }

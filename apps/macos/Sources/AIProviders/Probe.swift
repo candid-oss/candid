@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidShared
 
 public struct ProbeResult: Sendable {
@@ -41,12 +42,12 @@ public struct CapabilityProbe: Sendable {
 
     static func describe(_ e: AIError) -> String {
         switch e {
-        case .http(let s, let m): s == 401 || s == 403 ? "密钥无效或无权限（\(s)）" : "服务返回 \(s)\(m.isEmpty ? "" : "：\(m)")"
-        case .network(let m): "连不上：\(m)"
-        case .timeout: "连接超时"
-        case .missingSecret: "还没有保存密钥"
-        case .decoding(let m): "响应格式不认识：\(m)"
-        case .unsupportedAPI(let api): "暂不支持 \(api.rawValue)"
+        case .http(let s, let m): s == 401 || s == 403 ? L("密钥无效或无权限（%@）", s) : L("服务返回 %@%@", s, m.isEmpty ? "" : L("：%@", m))
+        case .network(let m): L("连不上：%@", m)
+        case .timeout: L("连接超时")
+        case .missingSecret: L("还没有保存密钥")
+        case .decoding(let m): L("响应格式不认识：%@", m)
+        case .unsupportedAPI(let api): L("暂不支持 %@", api.rawValue)
         default: e.code
         }
     }

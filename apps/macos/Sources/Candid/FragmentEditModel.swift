@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import Observation
 import CandidClient
 
@@ -27,7 +28,7 @@ struct FragmentEditTarget {
     }
     private func changed() { requestID = UUID().uuidString }
     private func channel() throws -> LocalChannel {
-        guard let channel = suppliedChannel ?? TimelineService.shared.channel else { throw CoreError.unreachable("尚未就绪") }
+        guard let channel = suppliedChannel ?? TimelineService.shared.channel else { throw CoreError.unreachable(L("尚未就绪")) }
         return channel
     }
     func load() async {
@@ -52,7 +53,7 @@ struct FragmentEditTarget {
             title = answer.annotation?.title ?? ""; notes = answer.annotation?.notes ?? ""
             automaticTitle = answer.annotation?.title == nil; automaticNotes = answer.annotation?.notes == nil
             error = nil
-        } catch { self.error = "片段暂不可用，可重试" }
+        } catch { self.error = L("片段暂不可用，可重试") }
     }
     func clear() { title = ""; notes = ""; automaticTitle = false; automaticNotes = false }
     func reset() { title = ""; notes = ""; automaticTitle = true; automaticNotes = true }
@@ -65,6 +66,6 @@ struct FragmentEditTarget {
             let _: CoreJSON = try await channel().post("/local/records", body: ["action": CoreJSON.string("annotation_save"), "event_ids": .array(eventIDs.map(CoreJSON.string)), "request_id": .string(key), "title": autoTitle ? .null : .string(submittedTitle), "notes": autoNotes ? .null : .string(submittedNotes)])
             error = nil
             return key == requestID
-        } catch { self.error = "未保存，可重试"; return false }
+        } catch { self.error = L("未保存，可重试"); return false }
     }
 }

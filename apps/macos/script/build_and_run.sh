@@ -54,6 +54,8 @@ mkdir -p "$STAGED_APP/Contents/Helpers"
 # Node and Pi are not bundled; the user installs them from Settings → 组件 (see Sources/Candid/Components.swift).
 # License and third-party notices, shown in Settings → 关于.
 cp "$ROOT_DIR/../../LICENSE" "$ROOT_DIR/../../THIRD_PARTY_LICENSES.txt" "$STAGED_APP/Contents/Resources/"
+# English UI text (Sources/CandidLocalization); Chinese is the source language.
+cp "$ROOT_DIR/Resources/Localizable.en.json" "$STAGED_APP/Contents/Resources/"
 PI_SKELETON="$STAGED_APP/Contents/Resources/Pi"
 EXTENSION_DIR="$ROOT_DIR/../../agents/pi-extension"
 rm -rf "$PI_SKELETON" && mkdir -p "$PI_SKELETON"
@@ -63,6 +65,7 @@ cp -R "$EXTENSION_DIR/../skills" "$PI_SKELETON/skills"
 WIDGET="$STAGED_APP/Contents/PlugIns/CandidWidget.appex"
 mkdir -p "$WIDGET/Contents/MacOS"
 cp "$BUILD_DIR/CandidWidget" "$WIDGET/Contents/MacOS/CandidWidget"
+mkdir -p "$WIDGET/Contents/Resources" && cp "$ROOT_DIR/Resources/Localizable.en.json" "$WIDGET/Contents/Resources/"
 cat > "$WIDGET/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -101,6 +104,8 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>Candid</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
+<key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
 <key>NSScreenCaptureUsageDescription</key><string>在你开启截图时保存画面；在你开始系统内录时获取播放声音，内录不保存屏幕画面。</string>
 <key>NSMicrophoneUsageDescription</key><string>在你点击录音或通话提醒的开始内录后使用麦克风，与系统声音混合按段保存，可随时停止。</string>
 <key>NSCalendarsFullAccessUsageDescription</key><string>AI 页显示今天的日程；只在你批准某条提案后才写入日历。日程不保存进资料库。</string>

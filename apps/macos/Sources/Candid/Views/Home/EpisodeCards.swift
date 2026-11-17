@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// Glyph for library items on cards, the timeline and details.
 struct MediaGlyph: View {
@@ -58,7 +59,7 @@ struct AudioEpisodeCard: View {
                     }
                     .animation(.easeOut(duration: 0.25), value: spoken.0.text)
                 } else {
-                    Text("还没有转写").typography(.section).opacity(0.7)
+                    Text(L("还没有转写")).typography(.section).opacity(0.7)
                 }
                 Spacer(minLength: 0)
                 HStack(alignment: .bottom) {

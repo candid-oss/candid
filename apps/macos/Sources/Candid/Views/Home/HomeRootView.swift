@@ -1,4 +1,5 @@
 import ConsoleCore
+import CandidLocalization
 import SwiftUI
 
 enum HomePage: Hashable { case timeline, library, ai, connections, device, settings, specimen }
@@ -90,7 +91,7 @@ struct HomeRootView: View {
                 if let data = try? await channel.send("POST", "/v1/get_event", body: JSONSerialization.data(withJSONObject: ["event_id": id])).checked(),
                    let ref = PiToolResult.records("<candid_data>" + (String(data: data, encoding: .utf8) ?? "") + "</candid_data>").first,
                    let start = AgendaDate.parse(ref.start) { pendingJump = start; page = .timeline }
-                else { actionError = "这条来源已不可用" }
+                else { actionError = L("这条来源已不可用") }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .candidActionError)) { actionError = $0.object as? String }
@@ -135,8 +136,8 @@ struct HomeRootView: View {
                         ConsoleView(store: deviceStore, openConnectionSettings: { settingsTab = "console"; page = .settings })
                     } else {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("服务地址无效").typography(.headline)
-                            Text(configurationError ?? "请检查启动参数").typography(.secondary).foregroundStyle(.secondary)
+                            Text(L("服务地址无效")).typography(.headline)
+                            Text(configurationError ?? L("请检查启动参数")).typography(.secondary).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.page).padding(.top, Space.l)
                     }
@@ -169,9 +170,9 @@ struct HomeRootView: View {
                 SearchCapsule(text: $session.searchText, focused: $searchFocused, onSearch: requestSearch) { if page != .timeline { page = .timeline } }
                 CaptureControls(session: session, media: media, openSettings: { settingsTab = "capture"; page = .settings })
                 if showsSpecimen {
-                    ChromeButton(systemImage: "swatchpalette", help: "设计样张", active: page == .specimen) { toggle(.specimen) }
+                    ChromeButton(systemImage: "swatchpalette", help: L("设计样张"), active: page == .specimen) { toggle(.specimen) }
                 }
-                ChromeButton(systemImage: "gearshape", help: "设置", active: page == .settings) { toggle(.settings) }
+                ChromeButton(systemImage: "gearshape", help: L("设置"), active: page == .settings) { toggle(.settings) }
             }
         }
         .padding(.horizontal, 14)
@@ -209,7 +210,7 @@ private struct SearchCapsule: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").typography(.secondary, .medium).foregroundStyle(.secondary)
-            TextField("搜索", text: $text)
+            TextField(L("搜索"), text: $text)
                 .opacity(focused || !text.isEmpty ? 1 : 0)
                 .textFieldStyle(.plain).typography(.body)
                 .focused($focused)
@@ -218,7 +219,7 @@ private struct SearchCapsule: View {
                 .onSubmit(onEdit)
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
-                    .buttonStyle(.plain).accessibilityLabel("清除搜索")
+                    .buttonStyle(.plain).accessibilityLabel(L("清除搜索"))
             }
         }
         .padding(.horizontal, focused || !text.isEmpty ? 11 : 8)
@@ -228,7 +229,7 @@ private struct SearchCapsule: View {
         .background(Capsule().fill(focused ? Surface.hover.color : Surface.fill.color))
         .animation(Motion.bouncy, value: focused)
         .background {
-            Button("搜索", action: onSearch).keyboardShortcut("f", modifiers: .command).opacity(0).allowsHitTesting(false)
+            Button(L("搜索"), action: onSearch).keyboardShortcut("f", modifiers: .command).opacity(0).allowsHitTesting(false)
         }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 import UniformTypeIdentifiers
 import ConsoleCore
 
@@ -22,19 +23,19 @@ struct ConsoleView: View {
                 Spacer()
                 ConnectionIndicator(store: store)
                 if panel == .library {
-                    QuietButton(title: "导入录音") { importing = true }
+                    QuietButton(title: L("导入录音")) { importing = true }
                         .disabled(!canImport).keyboardShortcut("o", modifiers: [.command])
-                        .help("导入 WAV，最多 20 MiB")
+                        .help(L("导入 WAV，最多 20 MiB"))
                 }
-                if store.connection != .online { QuietButton(title: "连接设置", action: openConnectionSettings) }
-                QuietButton(title: "刷新") { Task { await store.refresh() } }.disabled(store.busy != nil)
+                if store.connection != .online { QuietButton(title: L("连接设置"), action: openConnectionSettings) }
+                QuietButton(title: L("刷新")) { Task { await store.refresh() } }.disabled(store.busy != nil)
             }
             .padding(.horizontal, Space.page).padding(.top, Space.s).padding(.bottom, Space.s)
             if let error = store.error, store.snapshot != nil {
                 HStack(alignment: .firstTextBaseline) {
                     InlineMessage(kind: .error, text: error)
                     Spacer()
-                    QuietButton(title: "关闭", action: store.dismissError)
+                    QuietButton(title: L("关闭"), action: store.dismissError)
                 }
                 .padding(.horizontal, Space.page).padding(.bottom, Space.s)
             }
@@ -72,12 +73,12 @@ struct ConsoleView: View {
 
     private var connectionEmptyState: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(store.connection == .connecting ? "正在连接设备服务" : "设备服务未连接").typography(.headline)
+            Text(store.connection == .connecting ? L("正在连接设备服务") : L("设备服务未连接")).typography(.headline)
             Text(store.service.endpoint).typography(.secondary).monospaced().foregroundStyle(.secondary).textSelection(.enabled)
             if let error = store.error { InlineMessage(kind: .error, text: error) }
             HStack(spacing: Space.xxs) {
-                QuietButton(title: "连接设置", emphasized: true, action: openConnectionSettings)
-                QuietButton(title: "重试") { Task { await store.refresh() } }
+                QuietButton(title: L("连接设置"), emphasized: true, action: openConnectionSettings)
+                QuietButton(title: L("重试")) { Task { await store.refresh() } }
             }
             .offset(x: -9)
         }
@@ -89,13 +90,13 @@ struct ConsoleView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.l) {
                 DeviceControlView(store: store)
-                SettingsGroup(title: "连接") {
-                    SettingRow(title: "本机服务") { Text(store.service.endpoint).typography(.body).monospaced().foregroundStyle(.secondary) }
+                SettingsGroup(title: L("连接")) {
+                    SettingRow(title: L("本机服务")) { Text(store.service.endpoint).typography(.body).monospaced().foregroundStyle(.secondary) }
                     HairlineDivider()
-                    SettingRow(title: "USB 端口") { Text(store.snapshot?.serial?.path ?? "未连接").typography(.body).foregroundStyle(.secondary) }
+                    SettingRow(title: L("USB 端口")) { Text(store.snapshot?.serial?.path ?? L("未连接")).typography(.body).foregroundStyle(.secondary) }
                     HairlineDivider()
-                    SettingRow(title: "最近更新") {
-                        Text(store.lastUpdated?.formatted(date: .abbreviated, time: .standard) ?? "尚无状态").typography(.body, digits: true).foregroundStyle(.secondary)
+                    SettingRow(title: L("最近更新")) {
+                        Text(store.lastUpdated?.formatted(date: .abbreviated, time: .standard) ?? L("尚无状态")).typography(.body, digits: true).foregroundStyle(.secondary)
                     }
                 }
                 .textSelection(.enabled)
@@ -115,7 +116,7 @@ struct ConsoleView: View {
 struct ConnectionIndicator: View {
     let store: ConsoleStore
     var body: some View {
-        StatusDot(state: store.connection == .online ? .on : .off, text: store.service.isMock ? "合成样例" : store.connection.rawValue)
+        StatusDot(state: store.connection == .online ? .on : .off, text: store.service.isMock ? L("合成样例") : store.connection.rawValue)
             .help(store.service.endpoint)
     }
 }
@@ -127,24 +128,24 @@ struct ConsoleConnectionSettings: View {
     @ViewState private var validationError: String?
 
     var body: some View {
-        SettingsPage(title: "设备") {
-            SettingsGroup(title: "设备服务") {
-                SwitchRow(title: "合成样例", detail: "不连接真实设备，用合成数据演示。", isOn: $demo)
+        SettingsPage(title: L("设备")) {
+            SettingsGroup(title: L("设备服务")) {
+                SwitchRow(title: L("合成样例"), detail: L("不连接真实设备，用合成数据演示。"), isOn: $demo)
                 HairlineDivider()
-                QuietField(title: "服务地址", text: $endpoint, placeholder: "http://127.0.0.1:8766", mono: true)
+                QuietField(title: L("服务地址"), text: $endpoint, placeholder: "http://127.0.0.1:8766", mono: true)
                     .disabled(demo).opacity(demo ? 0.5 : 1).padding(.vertical, Space.row)
                 if let validationError { InlineMessage(kind: .error, text: validationError).padding(.bottom, Space.xs) }
-                if !store.canChangeConnection { InlineMessage(kind: .note, text: "请先结束录音、文件接收或 VAD 监听。").padding(.bottom, Space.xs) }
+                if !store.canChangeConnection { InlineMessage(kind: .note, text: L("请先结束录音、文件接收或 VAD 监听。")).padding(.bottom, Space.xs) }
                 HStack(spacing: 6) {
-                    QuietButton(title: "恢复默认地址") { endpoint = "http://127.0.0.1:8766" }.offset(x: -9)
+                    QuietButton(title: L("恢复默认地址")) { endpoint = "http://127.0.0.1:8766" }.offset(x: -9)
                     Spacer()
-                    PrimaryButton(title: "应用连接", action: apply)
+                    PrimaryButton(title: L("应用连接"), action: apply)
                         .disabled(!store.canChangeConnection || !hasChanges).opacity(!store.canChangeConnection || !hasChanges ? 0.45 : 1)
                 }
             }
-            SettingsGroup(title: "当前") {
-                SettingRow(title: "地址") {
-                    Text(store.service.isMock ? "合成样例" : store.service.endpoint).typography(.body).monospaced().foregroundStyle(.secondary)
+            SettingsGroup(title: L("当前")) {
+                SettingRow(title: L("地址")) {
+                    Text(store.service.isMock ? L("合成样例") : store.service.endpoint).typography(.body).monospaced().foregroundStyle(.secondary)
                 }
             }
         }

@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 public struct ServiceConfig: Decodable, Sendable {
     let session_token: String
@@ -26,7 +27,7 @@ public struct BenchState: Decodable, Sendable {
 public enum Transport: String, CaseIterable, Sendable, Identifiable {
     case serial, http
     public var id: String { rawValue }
-    public var title: String { self == .serial ? "USB · 服务现有连接" : "Wi-Fi · 服务现有连接" }
+    public var title: String { self == .serial ? L("USB · 服务现有连接") : L("Wi-Fi · 服务现有连接") }
 }
 public struct SerialInfo: Decodable, Sendable { public let path: String; public let baud: Int }
 public struct DeviceSnapshot: Decodable, Sendable {

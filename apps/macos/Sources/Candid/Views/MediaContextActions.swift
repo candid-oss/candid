@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 /// Library rows and timeline menus use the same native media originals and detail query.
@@ -48,16 +49,16 @@ import SwiftUI
                 return destination
             }.value
             if !NSWorkspace.shared.open(copy) { throw MediaWorkspaceError.malformed }
-        } catch { store.error = "原件暂不可用，可重试。" }
+        } catch { store.error = L("原件暂不可用，可重试。") }
     }
 
     static func copyText(_ item: MediaLibraryRecord, store: MediaWorkspaceStore) async {
         do {
             let detail = store.isDemo ? item : try await MediaLibraryClient(profile: store.profile).item(item.id)
             let text = detail.segments.map(\.text).joined(separator: "\n")
-            guard !text.isEmpty else { store.error = "这条资料还没有识别文字。"; return }
+            guard !text.isEmpty else { store.error = L("这条资料还没有识别文字。"); return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-        } catch { store.error = "文字读取失败，可重试。" }
+        } catch { store.error = L("文字读取失败，可重试。") }
     }
 }
 
@@ -67,18 +68,18 @@ struct MediaContextActions: View {
     let edit: () -> Void
     let remove: () -> Void
     var body: some View {
-        Button((item.recordingParts?.count ?? 0) > 1 ? "打开第一段原件" : "打开原件") { Task { await MediaOriginalActions.open(item, store: store, reveal: false) } }.disabled(store.isDemo)
-        Button("在 Finder 中显示原件") { Task { await MediaOriginalActions.open(item, store: store, reveal: true) } }.disabled(store.isDemo)
-        Button("复制文字") { Task { await MediaOriginalActions.copyText(item, store: store) } }
-        Button("复制引用") {
+        Button((item.recordingParts?.count ?? 0) > 1 ? L("打开第一段原件") : L("打开原件")) { Task { await MediaOriginalActions.open(item, store: store, reveal: false) } }.disabled(store.isDemo)
+        Button(L("在 Finder 中显示原件")) { Task { await MediaOriginalActions.open(item, store: store, reveal: true) } }.disabled(store.isDemo)
+        Button(L("复制文字")) { Task { await MediaOriginalActions.copyText(item, store: store) } }
+        Button(L("复制引用")) {
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString("资料：\(item.displayTitle)\n时间：\(item.displayedDate.ISO8601Format())\n原始文件：\(item.filename)\nmedia_id: \(item.id.uuidString.lowercased())", forType: .string)
+            NSPasteboard.general.setString(L("资料：%@\n时间：%@\n原始文件：%@\nmedia_id: %@", item.displayTitle, item.displayedDate.ISO8601Format(), item.filename, item.id.uuidString.lowercased()), forType: .string)
         }
-        Button("编辑标题与备注", action: edit).disabled(store.isDemo || store.busy)
+        Button(L("编辑标题与备注"), action: edit).disabled(store.isDemo || store.busy)
         if item.kind == .audio {
-            Button("重新转写") { Task { await store.recognize(item, mode: .quick) } }.disabled(store.isDemo || item.processingStatus.isActive)
+            Button(L("重新转写")) { Task { await store.recognize(item, mode: .quick) } }.disabled(store.isDemo || item.processingStatus.isActive)
         }
         Divider() // style-exempt: native context menu separator
-        Button("删除…", role: .destructive, action: remove).disabled(store.isDemo || store.busy)
+        Button(L("删除…"), role: .destructive, action: remove).disabled(store.isDemo || store.busy)
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 import TimelineConnectors
 import CandidClient
 
@@ -29,7 +30,7 @@ final class AgentConnectionsModel {
         self.store = store
         let remote = client ?? AgentCoreClient(transport: { path, body in
             let channel = await MainActor.run { TimelineService.shared.channel }
-            guard let channel else { throw CoreError.unreachable("时间线核心尚未就绪") }
+            guard let channel else { throw CoreError.unreachable(L("时间线核心尚未就绪")) }
             return try await channel.send(body == nil ? "GET" : "POST", path, body: body).checked()
         })
         self.client = remote
@@ -48,7 +49,7 @@ final class AgentConnectionsModel {
                     if let c = consents.first(where: { $0.agent == rows[i].id }) { rows[i].consent = c }
                 }
                 saveError = nil
-            } catch { saveError = "连接设置暂不可用"; return }
+            } catch { saveError = L("连接设置暂不可用"); return }
         }
         guard detect else { return }
         for (i, c) in connectors.enumerated() {
@@ -69,7 +70,7 @@ final class AgentConnectionsModel {
         let removal = (old.activity && !c.activity) || (old.read && !c.read && (storedCounts[agent] ?? 0) > 0)
         if let store {
             do { try store.save(c); saveError = nil; rows[i].consent = c; if removal { pendingRemoval = agent } }
-            catch { saveError = "无法保存设置" }
+            catch { saveError = L("无法保存设置") }
             return
         }
         rows[i].consent = c
@@ -87,7 +88,7 @@ final class AgentConnectionsModel {
                 dirty.remove(agent)
                 guard let consent = rows.first(where: { $0.id == agent })?.consent else { break }
                 do { try await client.save(consent); saveError = nil }
-                catch { saveError = "无法保存设置"; failed = true; break }
+                catch { saveError = L("无法保存设置"); failed = true; break }
             } while dirty.contains(agent)
             inFlight.remove(agent)
             if !failed { NotificationCenter.default.post(name: .candidAgentConsentChanged, object: self) }
@@ -100,7 +101,7 @@ final class AgentConnectionsModel {
         guard !saving, let agent = pendingRemoval, let row = rows.first(where: { $0.id == agent }) else { return }
         saving = true
         do { try await client.save(row.consent, deleteStored: true); pendingRemoval = nil; saveError = nil; await refresh() }
-        catch { saveError = "删除未完成，可重试" }
+        catch { saveError = L("删除未完成，可重试") }
         saving = false
     }
 
@@ -122,13 +123,13 @@ final class AgentConnectionsModel {
     }
 
     static func statusText(_ r: Row) -> (text: String, on: Bool) {
-        guard let d = r.detection else { return ("检测中…", false) }
+        guard let d = r.detection else { return (L("检测中…"), false) }
         switch d.state {
-        case .notFound: return ("未发现", false)
-        case .unknownFormat: return ("格式未知，已停止读取", false)
+        case .notFound: return (L("未发现"), false)
+        case .unknownFormat: return (L("格式未知，已停止读取"), false)
         case .found:
-            if r.consent.read { return (r.consent.activity ? "已授权：纳入活动" : (r.consent.search ? "已授权：读取、搜索" : "已授权：读取"), true) }
-            return ("已发现，未授权", false)
+            if r.consent.read { return (r.consent.activity ? L("已授权：纳入活动") : (r.consent.search ? L("已授权：读取、搜索") : L("已授权：读取")), true) }
+            return (L("已发现，未授权"), false)
         }
     }
 }
@@ -158,34 +159,34 @@ struct AgentDetailPane: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("读取 \(row.description.displayName) 的本机会话文件。纳入活动后保存你发出的指令和工作摘要；回复正文不存，用时从文件现读。")
+            Text(L("读取 %@ 的本机会话文件。纳入活动后保存你发出的指令和工作摘要；回复正文不存，用时从文件现读。", row.description.displayName))
                 .typography(.body).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, Space.m)
-            SettingsGroup(title: "授权") {
-                switchRow("读取", detail: "允许 Candid 打开这些文件", isOn: row.consent.read, enabled: available || row.consent.read) { v in model.update(row.id) { $0.read = v } }
+            SettingsGroup(title: L("授权")) {
+                switchRow(L("读取"), detail: L("允许 Candid 打开这些文件"), isOn: row.consent.read, enabled: available || row.consent.read) { v in model.update(row.id) { $0.read = v } }
                 HairlineDivider()
-                switchRow("纳入搜索", detail: "指令可以被搜索到；会同时打开读取", isOn: row.consent.search, enabled: available || row.consent.read) { v in model.update(row.id) { $0.search = v } }
+                switchRow(L("纳入搜索"), detail: L("指令可以被搜索到；会同时打开读取"), isOn: row.consent.search, enabled: available || row.consent.read) { v in model.update(row.id) { $0.search = v } }
                 HairlineDivider()
-                switchRow("纳入活动", detail: "指令和工作出现在时间线的 AI 轨；会同时打开读取", isOn: row.consent.activity, enabled: available || row.consent.read) { v in model.update(row.id) { $0.activity = v } }
+                switchRow(L("纳入活动"), detail: L("指令和工作出现在时间线的 AI 轨；会同时打开读取"), isOn: row.consent.activity, enabled: available || row.consent.read) { v in model.update(row.id) { $0.activity = v } }
             }
             if model.pendingRemoval == row.id {
                 HStack(spacing: Space.xs) {
-                    Text("已停止同步。删除已保存的消息和工作摘要？").typography(.secondary)
+                    Text(L("已停止同步。删除已保存的消息和工作摘要？")).typography(.secondary)
                     Spacer()
-                    QuietButton(title: "保留") { model.keepStored() }
-                    QuietButton(title: "删除", role: .destructive) { Task { await model.deleteStored() } }
+                    QuietButton(title: L("保留")) { model.keepStored() }
+                    QuietButton(title: L("删除"), role: .destructive) { Task { await model.deleteStored() } }
                 }
                 .disabled(model.saving)
                 .padding(.top, Space.s)
             }
-            SettingsGroup(title: "范围") {
+            SettingsGroup(title: L("范围")) {
                 VStack(alignment: .leading, spacing: Space.s) {
-                    QuietField(title: "对话文件夹（留空用默认）", text: $pathText, placeholder: row.description.defaultPaths.joined(separator: ", "), mono: true)
-                    QuietField(title: "排除的项目目录（逗号分隔）", text: $excludeText, placeholder: "/path/to/project", mono: true)
-                    QuietField(title: "排除的会话（逗号分隔）", text: $sessionText, placeholder: "会话来源引用", mono: true)
+                    QuietField(title: L("对话文件夹（留空用默认）"), text: $pathText, placeholder: row.description.defaultPaths.joined(separator: ", "), mono: true)
+                    QuietField(title: L("排除的项目目录（逗号分隔）"), text: $excludeText, placeholder: "/path/to/project", mono: true)
+                    QuietField(title: L("排除的会话（逗号分隔）"), text: $sessionText, placeholder: L("会话来源引用"), mono: true)
                     HStack {
                         Spacer()
-                        SecondaryButton(title: "保存范围") {
+                        SecondaryButton(title: L("保存范围")) {
                             model.update(row.id) { consent in
                                 consent.paths = AgentConnectionsModel.split(pathText)
                                 consent.exclude.projects = AgentConnectionsModel.split(excludeText)
@@ -227,28 +228,28 @@ struct WindowSourceConnections: View {
     @ViewState private var sourceGeneration = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("窗口与会话").typography(.headline)
-            Text("选择已记录的输入窗口，填入获准会话的来源引用。关联仅在本次采集有效；切换会话时请清除并重新关联。").typography(.secondary).foregroundStyle(.secondary)
-            SettingRow(title: "输入窗口") {
-                MenuChoice(options: [("", "选择窗口")] + session.inputWindows.map { ($0.id, $0.label) }, selection: $windowID)
+            Text(L("窗口与会话")).typography(.headline)
+            Text(L("选择已记录的输入窗口，填入获准会话的来源引用。关联仅在本次采集有效；切换会话时请清除并重新关联。")).typography(.secondary).foregroundStyle(.secondary)
+            SettingRow(title: L("输入窗口")) {
+                MenuChoice(options: [("", L("选择窗口"))] + session.inputWindows.map { ($0.id, $0.label) }, selection: $windowID)
             }
-            SettingRow(title: "获准的会话") {
+            SettingRow(title: L("获准的会话")) {
                 HStack(spacing: Space.xs) {
-                    MenuChoice(options: [("", "选择会话")] + choices.map { item in
+                    MenuChoice(options: [("", L("选择会话"))] + choices.map { item in
                         (item.ref, (item.title ?? item.agent) + " · " + (item.project.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "") + " · " + Date(timeIntervalSince1970: Double(item.startMs ?? 0) / 1000).formatted())
                     }, selection: $reference)
-                    QuietButton(title: "刷新") { Task { await refreshChoices() } }
+                    QuietButton(title: L("刷新")) { Task { await refreshChoices() } }
                 }
             }
             if !sourcePreview.isEmpty { Text(sourcePreview).typography(.secondary).textSelection(.enabled) }
             HStack(spacing: Space.xs) {
-                QuietButton(title: "清除关联") { session.clearWindowLinks(); result = "已清除" }
-                QuietButton(title: "确认这段输入已发出") { result = session.confirmScreenInput(windowID) ? "已确认，正在按屏幕来源保存" : "输入已失效，请重新采集后核对" }
+                QuietButton(title: L("清除关联")) { session.clearWindowLinks(); result = L("已清除") }
+                QuietButton(title: L("确认这段输入已发出")) { result = session.confirmScreenInput(windowID) ? L("已确认，正在按屏幕来源保存") : L("输入已失效，请重新采集后核对") }
                 Spacer()
-                PrimaryButton(title: "关联会话") { Task { result = await session.associateWindow(windowID, with: reference) ? "已关联" : "关联未完成，请检查授权与引用" } }
+                PrimaryButton(title: L("关联会话")) { Task { result = await session.associateWindow(windowID, with: reference) ? L("已关联") : L("关联未完成，请检查授权与引用") } }
                     .disabled(reference.isEmpty)
             }.disabled(windowID.isEmpty)
-            Text("云端 AI 应用或网页没有会话文件时，可核对已保存的完整输入后确认；回车、点击和清空本身不会确认发出。").typography(.secondary).foregroundStyle(.secondary)
+            Text(L("云端 AI 应用或网页没有会话文件时，可核对已保存的完整输入后确认；回车、点击和清空本身不会确认发出。")).typography(.secondary).foregroundStyle(.secondary)
             if let window = session.inputWindows.first(where: { $0.id == windowID }), let text = window.record.context?.recordEvidence?.input_value { Text(text).typography(.secondary).textSelection(.enabled) }
             if !result.isEmpty { Text(result).typography(.secondary) }
         }
@@ -280,11 +281,11 @@ struct WindowSourceConnections: View {
             for connector in AgentConnectors.all(client: client) where consents.contains(where: { $0.agent == connector.describe().agent && $0.read && $0.activity }) {
                 let page = try await connector.sessions(range: DateInterval(start: Date().addingTimeInterval(-7 * 86400), end: Date().addingTimeInterval(1)), project: nil)
                 found += page.sessions
-                if page.limited == true { result = "仅显示已核对的部分会话，可缩小来源目录后重试" }
+                if page.limited == true { result = L("仅显示已核对的部分会话，可缩小来源目录后重试") }
             }
             guard ticket == sourceGeneration else { return }
             choices = found
             if !choices.contains(where: { $0.ref == reference }) { reference = ""; sourcePreview = "" }
-        } catch { if ticket == sourceGeneration { choices = []; reference = ""; sourcePreview = ""; result = "会话列表未能读取，可重试" } }
+        } catch { if ticket == sourceGeneration { choices = []; reference = ""; sourcePreview = ""; result = L("会话列表未能读取，可重试") } }
     }
 }

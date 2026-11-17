@@ -1,4 +1,5 @@
 import Darwin
+import CandidLocalization
 import Foundation
 
 /// The per-user run directory: `~/Library/Application Support/Candid/run`, or `CANDID_RUN_DIR` when set.
@@ -130,14 +131,14 @@ public struct CoreLaunch: Sendable, Equatable {
                 continue
             }
             guard FileManager.default.isExecutableFile(atPath: launch.executable.path) else {
-                state = .failed("找不到核心程序：\(launch.executable.path)")
+                state = .failed(L("找不到核心程序：%@", launch.executable.path))
                 return
             }
             state = .starting
             let started = Date()
             let exit: AsyncStream<Int32>
             do { exit = try spawn() } catch {
-                state = .failed("无法启动核心：\(error.localizedDescription)")
+                state = .failed(L("无法启动核心：%@", error.localizedDescription))
                 return
             }
             var healthy = false
@@ -160,8 +161,8 @@ public struct CoreLaunch: Sendable, Equatable {
             if Date().timeIntervalSince(started) > 60 { failures = 0 }
             let delay = backoff(failures)
             failures += 1; restarts += 1
-            let code = exitCode.map { $0 == 75 ? "另一个核心正在运行" : "退出码 \($0)" } ?? "已退出"
-            let detail = log.lastLine.map { "\(code)：\($0)" } ?? code
+            let code = exitCode.map { $0 == 75 ? L("另一个核心正在运行") : L("退出码 %@", $0) } ?? L("已退出")
+            let detail = log.lastLine.map { L("%@：%@", code, $0) } ?? code
             state = .restarting(after: delay, reason: detail)
             try? await Task.sleep(for: .seconds(delay))
         }

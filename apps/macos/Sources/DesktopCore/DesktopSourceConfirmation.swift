@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 /// Source-specific proof policy. Ordinary AX text has no message identity and
 /// cannot confirm a send. State is bounded and cleared when capture is paused
@@ -26,7 +27,7 @@ public struct DesktopSourceConfirmation: Sendable {
             guard let id = message.occurrence, !previous.contains(id), seen[source]?.contains(id) != true else { continue }
             seen[source, default: []].insert(id)
             var proof = record; proof.kind = .context; proof.id = UUID().uuidString; proof.trigger = "send_confirmed"
-            proof.detail = "来源消息已确认发出"
+            proof.detail = L("来源消息已确认发出")
             var e = evidence
             e.field = fields[source] ?? "source-outgoing"
             e.input_value = message.text; e.input_status = "captured"

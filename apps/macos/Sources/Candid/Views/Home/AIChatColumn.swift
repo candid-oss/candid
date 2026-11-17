@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import SwiftUI
 
 /// The AI page's chat with Pi (agent-platform-v1 §4.2, mockup ④): your messages as bubbles on the right, Pi's answers
@@ -45,12 +46,12 @@ struct AIChatColumn: View {
 
     private var contextRow: some View {
         HStack(spacing: Space.xxs) {
-            Text("上下文").typography(.caption).foregroundStyle(.tertiary)
+            Text(L("上下文")).typography(.caption).foregroundStyle(.tertiary)
             ForEach(model.context) { item in
                 HStack(spacing: 3) {
                     Text(item.chip).typography(.caption, .medium).lineLimit(1)
                     Button { model.removeContext(item) } label: { Image(systemName: "xmark").typography(.caption, .bold).foregroundStyle(.secondary) }
-                        .buttonStyle(.plain).accessibilityLabel("移除上下文 \(item.title)")
+                        .buttonStyle(.plain).accessibilityLabel(L("移除上下文 %@", item.title))
                 }
                 .padding(.horizontal, Space.xs).frame(height: ControlHeight.chip)
                 .background(Capsule().fill(Surface.fill.color))
@@ -63,9 +64,9 @@ struct AIChatColumn: View {
         VStack(alignment: .leading, spacing: Space.xs) {
             HStack(spacing: Space.xs) {
                 AIMark()
-                Text("问点什么，或者让它整理").typography(.section)
+                Text(L("问点什么，或者让它整理")).typography(.section)
             }
-            Text("它能查你的时间线、改标题和备注、标资料；写进提醒事项或日历前会先给你批准。左边任何一条点「问 AI」可以带进来，输入 @ 可以引用一条记录。")
+            Text(L("它能查你的时间线、改标题和备注、标资料；写进提醒事项或日历前会先给你批准。左边任何一条点「问 AI」可以带进来，输入 @ 可以引用一条记录。"))
                 .typography(.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, Space.l)
@@ -94,26 +95,26 @@ struct AIChatColumn: View {
             }
             if let skill = model.pendingSkill {
                 HStack(spacing: Space.xxs) {
-                    Tag(text: "技能 · " + skill.title, tint: Palette.accent)
-                    Text("写下" + (skill.input ?? "要做什么") + "，或在左栏点「问 AI」带上一条，再发送").typography(.caption).foregroundStyle(.secondary)
+                    Tag(text: L("技能 · ") + skill.title, tint: Palette.accent)
+                    Text(L("写下") + (skill.input ?? L("要做什么")) + L("，或在左栏点「问 AI」带上一条，再发送")).typography(.caption).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
-                    ChipButton(title: "不用技能", systemImage: "xmark") { model.pendingSkill = nil }
+                    ChipButton(title: L("不用技能"), systemImage: "xmark") { model.pendingSkill = nil }
                 }
             }
-            TextField("问点什么，或者让它整理…　输入 @ 引用一条记录", text: $model.draft, axis: .vertical)
+            TextField(L("问点什么，或者让它整理…　输入 @ 引用一条记录"), text: $model.draft, axis: .vertical)
                 .textFieldStyle(.plain).typography(.body).lineLimit(2...6)
                 .focused($focused)
                 .onSubmit { Task { await model.send() } }
                 .onChange(of: model.draft) { _, _ in model.draftChanged() }
             HStack(spacing: Space.xxs) {
-                chip("Pi · " + (AIPageModel.qaAgentDestination()?.label ?? "未选模型"))
-                chip("范围：允许给 AI 的全部来源")
+                chip("Pi · " + (AIPageModel.qaAgentDestination()?.label ?? L("未选模型")))
+                chip(L("范围：允许给 AI 的全部来源"))
                 Spacer(minLength: Space.xs)
                 if model.turnRunning {
-                    RunButton(title: "发送", runningTitle: model.liveCall.map { PiToolResult.live($0.tool, arguments: $0.arguments) } ?? "正在回答…",
+                    RunButton(title: L("发送"), runningTitle: model.liveCall.map { PiToolResult.live($0.tool, arguments: $0.arguments) } ?? L("正在回答…"),
                               running: true, start: {}, cancel: { model.cancelRun() })
                 } else {
-                    PrimaryButton(title: "发送") { Task { await model.send() } }
+                    PrimaryButton(title: L("发送")) { Task { await model.send() } }
                         .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.context.isEmpty)
                 }
             }
@@ -172,13 +173,13 @@ struct AIMessageView: View {
                         }
                         .transition(.opacity)
                     } else if message.text.isEmpty && live {
-                        HStack(spacing: Space.xs) { ProgressView().controlSize(.mini); Text("正在想…").typography(.secondary).foregroundStyle(.secondary) }
+                        HStack(spacing: Space.xs) { ProgressView().controlSize(.mini); Text(L("正在想…")).typography(.secondary).foregroundStyle(.secondary) }
                     }
                     if !message.text.isEmpty {
                         AIMarkdownView(text: message.text, label: model.recordLabel)
                     }
                     ForEach(message.actions) { action in AIActionCard(model: model, action: action) }
-                    if message.stopped == true { Text("已停止").typography(.caption).foregroundStyle(.tertiary) }
+                    if message.stopped == true { Text(L("已停止")).typography(.caption).foregroundStyle(.tertiary) }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -199,7 +200,7 @@ struct AIMessageView: View {
                     .background(Capsule().fill(Surface.fill.color)).contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(summary + (stepsOpen ? "，收起" : "，展开每次调用"))
+                .accessibilityLabel(summary + (stepsOpen ? L("，收起") : L("，展开每次调用")))
                 if stepsOpen {
                     VStack(alignment: .leading, spacing: Space.xxs) {
                         ForEach(message.calls ?? []) { call in
@@ -300,8 +301,8 @@ struct AIActionCard: View {
                     row(symbol: action.status == "undone" ? "arrow.uturn.backward" : "checkmark", tint: action.status == "undone" ? .secondary : Palette.success,
                         text: action.summary,
                         trailing: HStack(spacing: Space.xxs) {
-                            Text(action.status == "undone" ? "已撤销" : "本库 · 已完成").typography(.caption).foregroundStyle(.tertiary)
-                            if action.status == "done" { ChipButton(title: "撤销", systemImage: "arrow.uturn.backward") { Task { await model.undo(action) } }.disabled(model.working.contains(key)) }
+                            Text(action.status == "undone" ? L("已撤销") : L("本库 · 已完成")).typography(.caption).foregroundStyle(.tertiary)
+                            if action.status == "done" { ChipButton(title: L("撤销"), systemImage: "arrow.uturn.backward") { Task { await model.undo(action) } }.disabled(model.working.contains(key)) }
                         })
                     if let problem = model.problems[key] { InlineMessage(kind: .error, text: problem) }
                 }
@@ -318,7 +319,7 @@ struct AIActionCard: View {
     }
 
     private func label(_ status: String) -> String {
-        ["pending": "等你批准", "approved": "正在执行", "executed": "已完成", "failed": "失败", "rejected": "已拒绝"][status] ?? status
+        ["pending": L("等你批准"), "approved": L("正在执行"), "executed": L("已完成"), "failed": L("失败"), "rejected": L("已拒绝")][status] ?? status
     }
 
     private func row(symbol: String, tint: Color, text: String, trailing: some View) -> some View {

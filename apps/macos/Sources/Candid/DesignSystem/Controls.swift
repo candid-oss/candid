@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 // Shared controls. Each has one look; a page that needs something else adds a variant here, not a local copy.
 
@@ -55,7 +56,7 @@ struct ConfirmButton: View {
     var body: some View {
         HStack(spacing: Space.xxs) {
             if asking {
-                QuietButton(title: "取消") { asking = false }
+                QuietButton(title: L("取消")) { asking = false }
                 QuietButton(title: confirmTitle, role: .destructive) { asking = false; action() }
                     .transition(.opacity.combined(with: .scale(scale: 0.96)))
             } else {
@@ -177,7 +178,7 @@ struct MenuChoice<Value: Hashable>: View {
     let options: [(Value, String)]
     @Binding var selection: Value
     /// Shown when the selection matches no option.
-    var placeholder = "选择"
+    var placeholder = L("选择")
 
     private var current: String { options.first { $0.0 == selection }?.1 ?? placeholder }
 
@@ -281,7 +282,7 @@ struct SearchField: View {
             field
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
-                    .buttonStyle(.plain).accessibilityLabel("清空搜索")
+                    .buttonStyle(.plain).accessibilityLabel(L("清空搜索"))
             }
         }
         .padding(.horizontal, Space.s).frame(height: ControlHeight.field)
@@ -402,11 +403,11 @@ struct RunButton: View {
                     ProgressView().controlSize(.mini)
                     Text(runningTitle).typography(.caption, .semibold).foregroundStyle(.secondary).lineLimit(1)
                     Button(action: cancel) {
-                        Text("取消").typography(.caption, .semibold).foregroundStyle(Palette.accent)
+                        Text(L("取消")).typography(.caption, .semibold).foregroundStyle(Palette.accent)
                             .padding(.horizontal, 7).frame(height: ControlHeight.chip - 4)
                             .background(Capsule().fill(Surface.selected.color)).contentShape(Capsule())
                     }
-                    .buttonStyle(.plain).accessibilityLabel("取消" + title)
+                    .buttonStyle(.plain).accessibilityLabel(L("取消") + title)
                 }
                 .padding(.leading, 8).padding(.trailing, 2).frame(height: ControlHeight.chip)
                 .background(Capsule().fill(Surface.fill.color))

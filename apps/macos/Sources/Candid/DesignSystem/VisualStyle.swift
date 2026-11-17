@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 /// The window's overall look. Every style shares the same type, spacing, radii and components;
@@ -14,7 +15,7 @@ enum VisualStyle: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     var title: String {
-        switch self { case .ambient: "氛围"; case .frosted: "毛玻璃"; case .flat: "纯色" }
+        switch self { case .ambient: L("氛围"); case .frosted: L("毛玻璃"); case .flat: L("纯色") }
     }
 
     static let key = "home.style"

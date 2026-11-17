@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import Foundation
 import Observation
 
@@ -27,7 +28,7 @@ import Observation
     }
 
     func reload() {
-        do { config = try store.load() } catch { self.error = "读取模型配置失败：\(error.localizedDescription)" }
+        do { config = try store.load() } catch { self.error = L("读取模型配置失败：%@", error.localizedDescription) }
         keyPresent = Set(config.providers.compactMap { p in
             guard let ref = p.secretRef, (try? secrets.hasSecret(for: ref)) == true else { return nil }
             return p.providerID
@@ -41,10 +42,10 @@ import Observation
             NotificationCenter.default.post(name: Self.configChanged, object: nil)
             if !AIRuntime.isTesting {
                 UserDefaults.standard.set(true, forKey: AIRuntime.pendingCoreConfig)
-                Task { do { try await AIRuntime.shared.syncCore() } catch { self.error = "模型设置等待核心恢复后同步" } }
+                Task { do { try await AIRuntime.shared.syncCore() } catch { self.error = L("模型设置等待核心恢复后同步") } }
             }
         }
-        catch { self.error = "保存失败：\(error)" }
+        catch { self.error = L("保存失败：%@", error) }
     }
 
     // MARK: Providers
@@ -55,7 +56,7 @@ import Observation
         if !trimmed.isEmpty {
             let ref = p.secretRef ?? "provider.\(p.providerID)"
             do { try secrets.setSecret(trimmed, for: ref); p.secretRef = ref; keyPresent.insert(p.providerID) }
-            catch { self.error = "钥匙串写入失败：\(error)"; return }
+            catch { self.error = L("钥匙串写入失败：%@", error); return }
         }
         commit { try $0.upsert(p) }
     }
@@ -80,7 +81,7 @@ import Observation
             if result.reachable {
                 probes[provider.providerID] = .ok(latencyMs: result.latencyMs ?? 0, models: result.models.count)
                 commit { $0.merge(probed: result.models, for: provider.providerID) }
-            } else { probes[provider.providerID] = .failed(result.error ?? "失败") }
+            } else { probes[provider.providerID] = .failed(result.error ?? L("失败")) }
         }
     }
 

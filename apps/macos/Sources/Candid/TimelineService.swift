@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import Observation
 import CandidClient
 
@@ -132,7 +133,7 @@ import CandidClient
         case .restarting(let after, let reason):
             feed?.cancel(); feed = nil
             endpoint = nil
-            phase = .failed("核心进程已退出（\(reason)），\(Int(after.rounded())) 秒后重启。")
+            phase = .failed(L("核心进程已退出（%@），%@ 秒后重启。", reason, Int(after.rounded())))
         case .failed(let message):
             endpoint = nil
             phase = .failed(message)
@@ -223,7 +224,7 @@ import CandidClient
         } catch CoreError.service(_, _, let message) {
             cutoverError = message
         } catch {
-            cutoverError = "未切换到直写：" + error.localizedDescription
+            cutoverError = L("未切换到直写：") + error.localizedDescription
         }
         if let status = try? await channel.status() { apply(status) }
     }
@@ -249,7 +250,7 @@ import CandidClient
 
     /// Registers an MCP client and returns its token once, with ready-to-paste setup for common AI clients.
     func addClient(name: String) async throws -> ClientSetup {
-        guard let channel else { throw CoreError.unreachable("时间线库尚未打开") }
+        guard let channel else { throw CoreError.unreachable(L("时间线库尚未打开")) }
         let setup = try await channel.registerClient(name: name)
         await refreshClients()
         return ClientSetup(name: setup.name, token: setup.token, claudeCode: setup.claude_code, codex: setup.codex, json: setup.json)

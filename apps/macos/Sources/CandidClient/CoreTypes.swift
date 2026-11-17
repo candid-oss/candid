@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 /// A registered external client as the core lists it (`GET /local/clients`).
 public struct ClientInfo: Codable, Sendable, Equatable, Identifiable {
@@ -88,8 +89,8 @@ public enum CoreError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .service(_, _, let message): message
-        case .unreachable(let detail): "时间线核心没有响应：\(detail)"
-        case .badResponse: "时间线核心的响应无效。"
+        case .unreachable(let detail): L("时间线核心没有响应：%@", detail)
+        case .badResponse: L("时间线核心的响应无效。")
         }
     }
 }

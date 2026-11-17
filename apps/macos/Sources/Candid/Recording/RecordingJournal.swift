@@ -1,4 +1,5 @@
 import AVFoundation
+import CandidLocalization
 import CryptoKit
 import Darwin
 import Foundation
@@ -45,9 +46,9 @@ enum RecordingJournalError: LocalizedError {
     case invalid, overflow, inputStopped
     var errorDescription: String? {
         switch self {
-        case .invalid: "录音分段未通过完整性校验，原件已保留。"
-        case .overflow: "录音保存跟不上采样，已停止麦克风。已保存分段保留。"
-        case .inputStopped: "麦克风已停止提供声音，录音已结束。已保存分段保留。"
+        case .invalid: L("录音分段未通过完整性校验，原件已保留。")
+        case .overflow: L("录音保存跟不上采样，已停止麦克风。已保存分段保留。")
+        case .inputStopped: L("麦克风已停止提供声音，录音已结束。已保存分段保留。")
         }
     }
 }
@@ -119,26 +120,26 @@ struct RecordingJournal: Sendable {
                     } else {
                         // Only the unfinished tail may be absent. Preserve its .part for inspection.
                         if session.id != activeID {
-                            result.warnings.append("一段录音未封存或原件缺失；其余已保存分段可继续使用。")
+                            result.warnings.append(L("一段录音未封存或原件缺失；其余已保存分段可继续使用。"))
                         }
                         continue
                     }
                     if wasRecovered { segment.recovered = true }
                     if session.id != activeID && segment != original { try save(segment) }
                     if segment.sampleStart > expectedStart || segment.index > previousIndex + 1 {
-                        result.warnings.append("录音存在缺段，已保留原始时间位置。")
+                        result.warnings.append(L("录音存在缺段，已保留原始时间位置。"))
                     }
                     expectedStart = segment.sampleStart + segment.sampleCount
                     previousIndex = segment.index
                     result.segments.append(segment)
                     if !FileManager.default.fileExists(atPath: file(segment, ".receipt").path) { result.pending.append(segment) }
                   } catch {
-                    result.warnings.append("一段录音未通过校验，原件保留；其余分段继续恢复。")
+                    result.warnings.append(L("一段录音未通过校验，原件保留；其余分段继续恢复。"))
                   }
                 }
                 if interrupted { session.state = "recovered"; try save(session) }
             } catch {
-                result.warnings.append("一份录音暂时无法恢复，原件保留在 Recordings 文件夹。\(error.localizedDescription)")
+                result.warnings.append(L("一份录音暂时无法恢复，原件保留在 Recordings 文件夹。%@", error.localizedDescription))
             }
         }
         result.segments.sort { $0.occurredAt < $1.occurredAt }

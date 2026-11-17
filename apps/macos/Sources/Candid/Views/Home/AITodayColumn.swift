@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// The AI page's left column 「今天」 (agent-platform-v1 §4.2, mockup ④): 日程, 提醒, 待你处理, 回顾, and a footer line for
 /// jobs. Agenda items are read-only context; the agent proposes changes for the user to approve.
@@ -46,13 +47,13 @@ struct AITodayColumn: View {
     private func accessLine(_ kind: AgendaKind, _ access: AgendaAccess) -> some View {
         HStack(spacing: Space.xs) {
             if access == .notDetermined {
-                Text(kind == .calendar ? "允许读取日历后在这里显示今天的日程" : "允许读取提醒事项后在这里显示今天和逾期的提醒")
+                Text(kind == .calendar ? L("允许读取日历后在这里显示今天的日程") : L("允许读取提醒事项后在这里显示今天和逾期的提醒"))
                     .typography(.secondary).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
-                ChipButton(title: "允许", emphasized: true) { Task { await model.requestAccess(kind) } }
+                ChipButton(title: L("允许"), emphasized: true) { Task { await model.requestAccess(kind) } }
             } else {
-                InlineMessage(kind: .note, text: kind == .calendar ? "没有日历权限：在 系统设置 → 隐私与安全性 → 日历 里允许 Candid"
-                                                                   : "没有提醒事项权限：在 系统设置 → 隐私与安全性 → 提醒事项 里允许 Candid")
+                InlineMessage(kind: .note, text: kind == .calendar ? L("没有日历权限：在 系统设置 → 隐私与安全性 → 日历 里允许 Candid")
+                                                                   : L("没有提醒事项权限：在 系统设置 → 隐私与安全性 → 提醒事项 里允许 Candid"))
             }
         }
     }
@@ -60,14 +61,14 @@ struct AITodayColumn: View {
     // MARK: 日程
 
     private var scheduleCard: some View {
-        card("日程", source: "日历") {
+        card(L("日程"), source: L("日历")) {
             if model.calendarAccess != .granted {
                 accessLine(.calendar, model.calendarAccess)
             } else {
                 if model.day.rows.isEmpty && model.day.allDay.isEmpty {
-                    Text("今天没有日程").typography(.secondary).foregroundStyle(.secondary)
+                    Text(L("今天没有日程")).typography(.secondary).foregroundStyle(.secondary)
                 }
-                ForEach(model.day.allDay) { event in eventRow(event, leading: "全天", phase: .later) }
+                ForEach(model.day.allDay) { event in eventRow(event, leading: L("全天"), phase: .later) }
                 ForEach(Array(model.day.rows.enumerated()), id: \.element.id) { index, row in
                     if index > 0 || !model.day.allDay.isEmpty { HairlineDivider() }
                     eventRow(row.event, leading: Self.time.string(from: row.event.start), phase: row.phase, detail: Self.eventDetail(row, now: model.currentTime))
@@ -91,67 +92,67 @@ struct AITodayColumn: View {
     static func eventDetail(_ row: AgendaDay.Row, now: Date) -> String {
         var parts: [String] = []
         switch row.phase {
-        case .past: parts.append("已结束")
+        case .past: parts.append(L("已结束"))
         case .now:
             let minutes = Int(row.event.start.timeIntervalSince(now) / 60)
-            parts.append(minutes > 0 ? "\(minutes) 分钟后" : "进行中，到 " + time.string(from: row.event.end))
-        case .later: parts.append("到 " + time.string(from: row.event.end))
+            parts.append(minutes > 0 ? L("%@ 分钟后", minutes) : L("进行中，到 ") + time.string(from: row.event.end))
+        case .later: parts.append(L("到 ") + time.string(from: row.event.end))
         }
         if let location = row.event.location, !location.isEmpty { parts.append(location) }
         return parts.joined(separator: " · ")
     }
 
     static func context(_ event: AgendaEvent) -> AIContextItem {
-        AIContextItem(id: "event:" + event.id, kind: "日程", title: (event.isAllDay ? "全天 " : time.string(from: event.start) + " ") + event.title,
+        AIContextItem(id: "event:" + event.id, kind: L("日程"), title: (event.isAllDay ? L("全天 ") : time.string(from: event.start) + " ") + event.title,
                       detail: [event.isAllDay ? nil : time.string(from: event.start) + "–" + time.string(from: event.end), event.location, event.calendar]
-                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "，"))
+                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: L("，")))
     }
 
     // MARK: 提醒
 
     private var remindersCard: some View {
         let count = model.reminders.items.count + model.commitments.count
-        return card("提醒" + (count > 0 ? " · \(count)" : ""), source: "提醒事项") {
+        return card(L("提醒") + (count > 0 ? " · \(count)" : ""), source: L("提醒事项")) {
             if model.remindersAccess != .granted {
                 accessLine(.reminders, model.remindersAccess)
             }
             ForEach(model.reminders.items) { item in reminderRow(item) }
             ForEach(model.commitments) { commitment in candidateRow(commitment) }
             if model.reminders.tomorrow > 0 {
-                Text("＋ \(model.reminders.tomorrow) 条明天到期").typography(.caption).foregroundStyle(.tertiary).padding(.top, 2)
+                Text(L("＋ %@ 条明天到期", model.reminders.tomorrow)).typography(.caption).foregroundStyle(.tertiary).padding(.top, 2)
             }
             if model.remindersAccess == .granted && count == 0 {
-                Text("今天没有到期的提醒").typography(.secondary).foregroundStyle(.secondary)
+                Text(L("今天没有到期的提醒")).typography(.secondary).foregroundStyle(.secondary)
             }
         }
     }
 
     private func reminderRow(_ item: ReminderGroups.Item) -> some View {
         let r = item.reminder
-        let detail = (item.overdueDays > 0 ? "逾期 \(item.overdueDays) 天" : "今天到期") + (Calendar.current.component(.hour, from: r.due) == 0 ? "" : " " + Self.time.string(from: r.due))
+        let detail = (item.overdueDays > 0 ? L("逾期 %@ 天", item.overdueDays) : L("今天到期")) + (Calendar.current.component(.hour, from: r.due) == 0 ? "" : " " + Self.time.string(from: r.due))
         return VStack(alignment: .leading, spacing: Space.xxs) {
             AgendaItemRow(title: r.title, detail: detail, detailTint: Palette.warning, dimmed: false,
-                          ask: { model.ask(AIContextItem(id: "reminder:" + r.id, kind: "提醒", title: r.title, detail: detail + "，列表 " + r.list)) })
+                          ask: { model.ask(AIContextItem(id: "reminder:" + r.id, kind: L("提醒"), title: r.title, detail: detail + L("，列表 ") + r.list)) })
 
         }
     }
 
     private func candidateRow(_ c: AgendaCommitment) -> some View {
         let key = "commitment:" + c.id
-        let origin = ["AI 提的", c.source.map { Self.sourceLabel($0) }].compactMap { $0 }.joined(separator: " · ")
+        let origin = [L("AI 提的"), c.source.map { Self.sourceLabel($0) }].compactMap { $0 }.joined(separator: " · ")
         return VStack(alignment: .leading, spacing: Space.xxs) {
             HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
                 Image(systemName: "circle.dashed").foregroundStyle(Palette.ai).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(c.text).typography(.body)
-                    Text(origin + (AgendaDate.parse(c.due).map { " · 到期 " + Self.dayTime($0) } ?? "")).typography(.caption).foregroundStyle(.tertiary)
+                    Text(origin + (AgendaDate.parse(c.due).map { L(" · 到期 ") + Self.dayTime($0) } ?? "")).typography(.caption).foregroundStyle(.tertiary)
                 }
             }
             HStack(spacing: Space.xxs) {
-                ChipButton(title: "问 AI", systemImage: "sparkle") { model.ask(AIContextItem(id: "commitment:" + c.id, kind: "承诺", title: c.text, detail: origin)) }
+                ChipButton(title: L("问 AI"), systemImage: "sparkle") { model.ask(AIContextItem(id: "commitment:" + c.id, kind: L("承诺"), title: c.text, detail: origin)) }
                 Spacer(minLength: 0)
-                ChipButton(title: "忽略") { Task { await model.ignore(c) } }
-                PrimaryButton(title: "加到提醒") { Task { await model.addToReminders(c) } }
+                ChipButton(title: L("忽略")) { Task { await model.ignore(c) } }
+                PrimaryButton(title: L("加到提醒")) { Task { await model.addToReminders(c) } }
             }
             .disabled(model.working.contains(key))
             if let problem = model.problems[key] { InlineMessage(kind: .error, text: problem) }
@@ -167,15 +168,15 @@ struct AITodayColumn: View {
     }
 
     static func dayTime(_ date: Date) -> String {
-        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 HH:mm"
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = L("M月d日 HH:mm")
         return f.string(from: date)
     }
 
     // MARK: 待你处理
 
     private var waitingCard: some View {
-        card("待你处理" + (model.waitingCount > 0 ? " · \(model.waitingCount)" : "")) {
-            if model.waitingCount == 0 { Text("没有要你处理的事").typography(.secondary).foregroundStyle(.secondary) }
+        card(L("待你处理") + (model.waitingCount > 0 ? " · \(model.waitingCount)" : "")) {
+            if model.waitingCount == 0 { Text(L("没有要你处理的事")).typography(.secondary).foregroundStyle(.secondary) }
             ForEach(Array(model.waiting.enumerated()), id: \.element.id) { index, proposal in
                 if index > 0 { HairlineDivider() }
                 ProposalRow(model: model, proposal: proposal, compact: false)
@@ -186,14 +187,14 @@ struct AITodayColumn: View {
                     HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
                         Text("?").typography(.body, .bold).foregroundStyle(.tertiary).frame(width: 16).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(speaker.key) 可能是\(speaker.name)").typography(.body)
+                            Text(L("%@ 可能是%@", speaker.key, speaker.name)).typography(.body)
                             Text(speaker.recording + (speaker.percent.map { " · \($0)%" } ?? "")).typography(.caption).foregroundStyle(.tertiary)
                         }
                     }
                     HStack(spacing: Space.xxs) {
-                        ChipButton(title: "问 AI", systemImage: "sparkle") { model.ask(AIContextItem(id: key, kind: "说话人", title: "\(speaker.key) 可能是\(speaker.name)", detail: speaker.recording)) }
+                        ChipButton(title: L("问 AI"), systemImage: "sparkle") { model.ask(AIContextItem(id: key, kind: L("说话人"), title: L("%@ 可能是%@", speaker.key, speaker.name), detail: speaker.recording)) }
                         Spacer(minLength: 0)
-                        SecondaryButton(title: "是\(speaker.name)") { Task { await model.confirm(speaker) } }
+                        SecondaryButton(title: L("是%@", speaker.name)) { Task { await model.confirm(speaker) } }
                     }
                     .disabled(model.working.contains(key))
                     if let problem = model.problems[key] { InlineMessage(kind: .error, text: problem) }
@@ -205,7 +206,7 @@ struct AITodayColumn: View {
     // MARK: 回顾
 
     private var reviewCard: some View {
-        card("回顾", source: model.review.flatMap { AgendaDate.parse($0.created) }.map { Self.dayTime($0) }) {
+        card(L("回顾"), source: model.review.flatMap { AgendaDate.parse($0.created) }.map { Self.dayTime($0) }) {
             if let review = model.review {
                 AIMarkdownView(text: review.text, label: model.recordLabel)
                     .lineLimit(reviewOpen ? nil : 4)
@@ -213,13 +214,13 @@ struct AITodayColumn: View {
                 HStack(spacing: Space.xxs) {
                     Text(review.producer.hasPrefix("pi") ? "Pi 草稿" : "AI 草稿").typography(.caption, .semibold).foregroundStyle(Palette.ai)
                     Spacer(minLength: 0)
-                    ChipButton(title: reviewOpen ? "收起" : "展开", systemImage: reviewOpen ? "chevron.up" : "chevron.down") { withAnimation(Motion.spring) { reviewOpen.toggle() } }
-                    ChipButton(title: "问 AI", systemImage: "sparkle") { model.ask(AIContextItem(id: "review:" + review.digest_id, kind: "回顾", title: String(review.text.prefix(30)), detail: review.digest_id)) }
+                    ChipButton(title: reviewOpen ? L("收起") : L("展开"), systemImage: reviewOpen ? "chevron.up" : "chevron.down") { withAnimation(Motion.spring) { reviewOpen.toggle() } }
+                    ChipButton(title: L("问 AI"), systemImage: "sparkle") { model.ask(AIContextItem(id: "review:" + review.digest_id, kind: L("回顾"), title: String(review.text.prefix(30)), detail: review.digest_id)) }
                 }
                 HStack { Spacer(minLength: 0); reviewButton(again: true) }
             } else {
                 HStack {
-                    Text("还没有日回顾").typography(.secondary).foregroundStyle(.secondary)
+                    Text(L("还没有日回顾")).typography(.secondary).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                     reviewButton(again: false)
                 }
@@ -229,7 +230,7 @@ struct AITodayColumn: View {
     }
 
     private func reviewButton(again: Bool) -> some View {
-        RunButton(title: again ? "重新回顾今天" : "回顾今天", systemImage: "text.append", runningTitle: "正在回顾今天…",
+        RunButton(title: again ? L("重新回顾今天") : L("回顾今天"), systemImage: "text.append", runningTitle: L("正在回顾今天…"),
                   running: model.isRunning(.skill("daily-review")),
                   start: { Task { await model.reviewToday() } }, cancel: { model.cancelRun() })
             .disabled(model.turnRunning && !model.isRunning(.skill("daily-review")))
@@ -242,15 +243,15 @@ struct AITodayColumn: View {
         return VStack(alignment: .leading, spacing: Space.xs) {
             HStack(spacing: Space.xs) {
                 if active.isEmpty && failed.isEmpty {
-                    StatusDot(state: .off, text: "没有正在处理的任务")
+                    StatusDot(state: .off, text: L("没有正在处理的任务"))
                 } else {
                     StatusDot(state: failed.isEmpty ? .on : .attention,
-                              text: (active.isEmpty ? "" : "正在处理 \(active.count) 项" + (active.first.map { " · " + $0.title } ?? ""))
-                                + (failed.isEmpty ? "" : (active.isEmpty ? "" : "，") + "\(failed.count) 项失败"))
+                              text: (active.isEmpty ? "" : L("正在处理 %@ 项", active.count) + (active.first.map { " · " + $0.title } ?? ""))
+                                + (failed.isEmpty ? "" : (active.isEmpty ? "" : L("，")) + L("%@ 项失败", failed.count)))
                 }
                 Spacer(minLength: 0)
                 if !(active.isEmpty && failed.isEmpty) {
-                    ChipButton(title: jobsOpen ? "收起" : "详情", systemImage: jobsOpen ? "chevron.down" : "chevron.up") { withAnimation(Motion.spring) { jobsOpen.toggle() } }
+                    ChipButton(title: jobsOpen ? L("收起") : L("详情"), systemImage: jobsOpen ? "chevron.down" : "chevron.up") { withAnimation(Motion.spring) { jobsOpen.toggle() } }
                 }
             }
             if jobsOpen && !(active.isEmpty && failed.isEmpty) {
@@ -265,8 +266,8 @@ struct AITodayColumn: View {
                                         .typography(.caption).foregroundStyle(job.state == "failed" ? Palette.warning : .secondary).lineLimit(2)
                                 }
                                 Spacer(minLength: 0)
-                                if job.state == "failed" { ChipButton(title: "重试", systemImage: "arrow.clockwise", emphasized: true) { Task { await model.retry(job) } } }
-                                else { HStack(spacing: Space.xxs) { ProgressView().controlSize(.mini); ChipButton(title: "取消") { Task { await model.cancel(job) } } }.help("取消后不再保存返回结果。正在运行的模型可能继续处理。") }
+                                if job.state == "failed" { ChipButton(title: L("重试"), systemImage: "arrow.clockwise", emphasized: true) { Task { await model.retry(job) } } }
+                                else { HStack(spacing: Space.xxs) { ProgressView().controlSize(.mini); ChipButton(title: L("取消")) { Task { await model.cancel(job) } } }.help(L("取消后不再保存返回结果。正在运行的模型可能继续处理。")) }
                             }
                         }
                     }
@@ -309,7 +310,7 @@ struct AgendaItemRow: View {
                 Button { withAnimation(Motion.snappy) { checked = true }; check() } label: {
                     Image(systemName: checked ? "checkmark.circle.fill" : "circle").foregroundStyle(checked ? Palette.accent : .secondary)
                 }
-                .buttonStyle(.plain).help("完成").accessibilityLabel("完成 \(title)")
+                .buttonStyle(.plain).help(L("完成")).accessibilityLabel(L("完成 %@", title))
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).typography(.body, highlighted ? .semibold : nil).lineLimit(2)
@@ -317,8 +318,8 @@ struct AgendaItemRow: View {
                 if !detail.isEmpty { Text(detail).typography(.caption).foregroundStyle(detailTint ?? .secondary).lineLimit(1) }
                 if highlighted, let prepare {
                     HStack(spacing: Space.xxs) {
-                        RunButton(title: "会前要点", systemImage: "list.bullet", runningTitle: "正在整理会前要点…", running: preparing, start: prepare, cancel: cancel)
-                        if !preparing { ChipButton(title: "问 AI", systemImage: "sparkle", action: ask) }
+                        RunButton(title: L("会前要点"), systemImage: "list.bullet", runningTitle: L("正在整理会前要点…"), running: preparing, start: prepare, cancel: cancel)
+                        if !preparing { ChipButton(title: L("问 AI"), systemImage: "sparkle", action: ask) }
                     }
                     .padding(.top, 2)
                 }
@@ -326,8 +327,8 @@ struct AgendaItemRow: View {
             Spacer(minLength: 0)
             if hovering {
                 HStack(spacing: Space.xxs) {
-                    if let open { ChipButton(title: "编辑", systemImage: "pencil", action: open) }
-                    if !(highlighted && prepare != nil) { ChipButton(title: "问 AI", systemImage: "sparkle", action: ask) }
+                    if let open { ChipButton(title: L("编辑"), systemImage: "pencil", action: open) }
+                    if !(highlighted && prepare != nil) { ChipButton(title: L("问 AI"), systemImage: "sparkle", action: ask) }
                 }
                 .transition(.opacity)
             }
@@ -359,14 +360,14 @@ struct ProposalRow: View {
                     Text("!").typography(.body, .bold).foregroundStyle(Palette.warning).frame(width: 16).accessibilityHidden(true)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(compact ? "\(proposal.what)：\(proposal.title)" : proposal.title).typography(.body)
+                    Text(compact ? L("%@：%@", proposal.what, proposal.title) : proposal.title).typography(.body)
                     Text(subtitle).typography(.caption).foregroundStyle(.tertiary)
                 }
                 if compact { Spacer(minLength: Space.xs); buttons }
             }
             if !compact {
                 HStack(spacing: Space.xxs) {
-                    ChipButton(title: "问 AI", systemImage: "sparkle") { model.ask(AIContextItem(id: "proposal:" + proposal.id, kind: "提案", title: proposal.title, detail: proposal.what)) }
+                    ChipButton(title: L("问 AI"), systemImage: "sparkle") { model.ask(AIContextItem(id: "proposal:" + proposal.id, kind: L("提案"), title: proposal.title, detail: proposal.what)) }
                     Spacer(minLength: 0)
                     buttons
                 }
@@ -382,31 +383,31 @@ struct ProposalRow: View {
         switch proposal.status {
         case "pending", "failed":
             if confirmingDelete {
-                ChipButton(title: "不删") { confirmingDelete = false }
-                ChipButton(title: "确认删除", systemImage: "trash", role: .destructive) { confirmingDelete = false; Task { await model.approve(proposal) } }
+                ChipButton(title: L("不删")) { confirmingDelete = false }
+                ChipButton(title: L("确认删除"), systemImage: "trash", role: .destructive) { confirmingDelete = false; Task { await model.approve(proposal) } }
             } else {
-                SecondaryButton(title: "拒绝") { Task { await model.reject(proposal) } }
+                SecondaryButton(title: L("拒绝")) { Task { await model.reject(proposal) } }
                 if proposal.executable {
-                    PrimaryButton(title: proposal.status == "failed" ? "重试" : "批准") {
+                    PrimaryButton(title: proposal.status == "failed" ? L("重试") : L("批准")) {
                         if proposal.isDelete { withAnimation(Motion.snappy) { confirmingDelete = true } } else { Task { await model.approve(proposal) } }
                     }
                 }
             }
         case "approved":
-            Text("正在执行…").typography(.caption).foregroundStyle(.secondary)
+            Text(L("正在执行…")).typography(.caption).foregroundStyle(.secondary)
         case "executed":
-            Tag(text: "已完成" + (proposal.result?.receipt?["container"].map { "「\($0)」" } ?? ""), tint: Palette.success)
+            Tag(text: L("已完成") + (proposal.result?.receipt?["container"].map { L("「%@」", $0) } ?? ""), tint: Palette.success)
         case "rejected":
-            Tag(text: "已拒绝")
+            Tag(text: L("已拒绝"))
         default:
             Tag(text: proposal.status)
         }
     }
 
     private var subtitle: String {
-        var parts = [compact ? "App 外 · 要你批准" : "提案 · " + proposal.what]
+        var parts = [compact ? L("App 外 · 要你批准") : L("提案 · ") + proposal.what]
         if let due = AgendaDate.parse(proposal.payload.due ?? proposal.payload.start) { parts.append(AITodayColumn.dayTime(due)) }
-        parts.append(proposal.fromPi ? "来自 AI 对话" : proposal.payload.memory_id != nil ? "来自承诺" : proposal.client_name.replacingOccurrences(of: "Candid ", with: "来自 "))
+        parts.append(proposal.fromPi ? L("来自 AI 对话") : proposal.payload.memory_id != nil ? L("来自承诺") : proposal.client_name.replacingOccurrences(of: "Candid ", with: "来自 "))
         return parts.joined(separator: " · ")
     }
 }

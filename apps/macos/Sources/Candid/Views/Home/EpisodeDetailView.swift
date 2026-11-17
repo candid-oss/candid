@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import DesktopCore
 import SwiftUI
 
@@ -126,15 +127,15 @@ struct EpisodeDetailView: View {
                     .typography(.secondary).foregroundStyle(.secondary).monospacedDigit()
             }
             Spacer()
-            ChromeMenu(systemImage: "ellipsis", help: "更多操作") {
-                Button("导出这段活动", systemImage: "square.and.arrow.up") {
+            ChromeMenu(systemImage: "ellipsis", help: L("更多操作")) {
+                Button(L("导出这段活动"), systemImage: "square.and.arrow.up") {
                     if let id = selected?.eventID { session.selectedID = id; session.exportSelection() }
                 }
-                Button("删除这段活动…", systemImage: "trash", role: .destructive) {
+                Button(L("删除这段活动…"), systemImage: "trash", role: .destructive) {
                     if let id = selected?.eventID { onDelete(id) }
                 }
             }
-            ChromeButton(systemImage: "xmark", help: "收起（Esc）", action: onClose)
+            ChromeButton(systemImage: "xmark", help: L("收起（Esc）"), action: onClose)
         }
         .padding(.horizontal, 28).padding(.top, 20).padding(.bottom, 16)
     }
@@ -148,9 +149,9 @@ struct EpisodeDetailView: View {
                     screenshot(shot).id(shot.id).transition(.opacity)
                         .contentShape(Rectangle())
                         .onTapGesture { zoomed = shot }
-                        .help("单击放大")
+                        .help(L("单击放大"))
                         .overlay(alignment: .bottom) {
-                            Text("单击放大 · ↑↓ 切换").typography(.caption).foregroundStyle(.secondary)
+                            Text(L("单击放大 · ↑↓ 切换")).typography(.caption).foregroundStyle(.secondary)
                                 .padding(.horizontal, 8).padding(.vertical, 2)
                                 .background(Capsule().fill(.regularMaterial)).padding(10)
                                 .allowsHitTesting(false)
@@ -161,7 +162,7 @@ struct EpisodeDetailView: View {
             } else if loading {
                 ProgressView().controlSize(.small)
             } else {
-                Text("这段没有可显示的记录").foregroundStyle(.secondary)
+                Text(L("这段没有可显示的记录")).foregroundStyle(.secondary)
             }
         }
         .animation(.easeInOut(duration: 0.22), value: selected?.id)
@@ -201,7 +202,7 @@ struct EpisodeDetailView: View {
                 Spacer()
                 VStack(spacing: 12) {
                     DesktopApplicationIcon(bundleID: episode.bundleID, fallback: "app", size: 56)
-                    Text(moment.isProtected ? "受保护的内容，没有读取文字" : "这一刻只记录了窗口变化")
+                    Text(moment.isProtected ? L("受保护的内容，没有读取文字") : L("这一刻只记录了窗口变化"))
                         .typography(.headline).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -282,7 +283,7 @@ struct EpisodeDetailView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(span.start.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)))
                         .typography(.caption, digits: true).foregroundStyle(.tertiary)
-                    Text("切到 \(span.appName) · \(span.duration.spokenDuration)").typography(.secondary).foregroundStyle(.secondary).lineLimit(1)
+                    Text(L("切到 %@ · %@", span.appName, span.duration.spokenDuration)).typography(.secondary).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
@@ -293,7 +294,7 @@ struct EpisodeDetailView: View {
 
     private func rowTitle(_ moment: EpisodeMoment) -> String {
         if let title = moment.record?.windowTitle, !title.isEmpty { return title }
-        if moment.screenshot == nil { return moment.isProtected ? "受保护的内容" : "只有文字" }
+        if moment.screenshot == nil { return moment.isProtected ? L("受保护的内容") : L("只有文字") }
         return episode.title
     }
 
@@ -309,7 +310,7 @@ struct EpisodeDetailView: View {
             }
             .task(id: shot.id) { cache.requestImage(for: shot, maxPixel: 600) }
         } else {
-            Text(moment.text ?? (moment.isProtected ? "受保护" : "窗口变化"))
+            Text(moment.text ?? (moment.isProtected ? L("受保护") : L("窗口变化")))
                 .typography(.caption).foregroundStyle(.secondary).lineLimit(4)
                 .padding(7).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(Surface.fill.color)
@@ -323,19 +324,19 @@ struct EpisodeDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if let notes = episode.notes, !notes.isEmpty { Text(notes).typography(.body).textSelection(.enabled) }
-                section("这段在做什么", trailing: EmptyView()) {
+                section(L("这段在做什么"), trailing: EmptyView()) {
                     VStack(spacing: 0) {
-                        fact("应用", episode.appName)
-                        fact("窗口", selected.map(rowTitle) ?? episode.title)
-                        fact("时长", episode.duration.spokenDuration + (episode.interruptions.isEmpty ? "" : "，中途切走 \(episode.interruptions.count) 次"))
+                        fact(L("应用"), episode.appName)
+                        fact(L("窗口"), selected.map(rowTitle) ?? episode.title)
+                        fact(L("时长"), episode.duration.spokenDuration + (episode.interruptions.isEmpty ? "" : L("，中途切走 %@ 次", episode.interruptions.count)))
                     }
                 }
                 let alongside = prompts.filter { $0.kind != .work && $0.start >= episode.start && $0.start < episode.end }
                 if !alongside.isEmpty || !recordings.isEmpty {
-                    section("同一时间", trailing: EmptyView()) {
+                    section(L("同一时间"), trailing: EmptyView()) {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(alongside.prefix(4)) { mark in
-                                FactRow(systemImage: "sparkle", tint: AIGradient.colors[1], title: mark.preview ?? "AI 指令",
+                                FactRow(systemImage: "sparkle", tint: AIGradient.colors[1], title: mark.preview ?? L("AI 指令"),
                                         detail: Self.sourceText(mark)) { onOpen(.prompt(mark.id)) }
                             }
                             ForEach(recordings) { audio in
@@ -347,12 +348,12 @@ struct EpisodeDetailView: View {
                 }
                 if let moment = selected {
                     if let text = moment.text {
-                        section("这一刻的屏幕文字", trailing: copyButton(text)) {
+                        section(L("这一刻的屏幕文字"), trailing: copyButton(text)) {
                             Button { withAnimation(Motion.snappy) { textExpanded.toggle() } } label: {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text(text).typography(.body).lineSpacing(3).lineLimit(textExpanded ? nil : 2)
                                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                                    Text(textExpanded ? "收起" : "展开 · \(text.count) 字").typography(.caption).foregroundStyle(.secondary)
+                                    Text(textExpanded ? L("收起") : L("展开 · %@ 字", text.count)).typography(.caption).foregroundStyle(.secondary)
                                 }
                                 .padding(Space.s)
                                 .background(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous).fill(Surface.wash.color))
@@ -361,16 +362,16 @@ struct EpisodeDetailView: View {
                             .buttonStyle(.plain)
                         }
                     } else if moment.isProtected {
-                        Label("受保护的内容，没有读取文字", systemImage: "lock").typography(.secondary).foregroundStyle(.secondary)
+                        Label(L("受保护的内容，没有读取文字"), systemImage: "lock").typography(.secondary).foregroundStyle(.secondary)
                     }
                     if let selection = moment.selection {
-                        section("选中的文字", trailing: copyButton(selection)) {
+                        section(L("选中的文字"), trailing: copyButton(selection)) {
                             Text(selection).typography(.body).textSelection(.enabled)
                                 .padding(.leading, 10)
                                 .overlay(alignment: .leading) { Capsule().fill(Color.accentColor).frame(width: 2.5) }
                         }
                     }
-                    FoldRow(title: "技术细节") {
+                    FoldRow(title: L("技术细节")) {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(momentCaption(moment)).typography(.secondary).foregroundStyle(.secondary)
                             details(moment)
@@ -420,7 +421,7 @@ struct EpisodeDetailView: View {
             withAnimation(Motion.snappy) { copied = true }
             Task { try? await Task.sleep(for: .seconds(1.4)); withAnimation { copied = false } }
         } label: {
-            Label(copied ? "已复制" : "复制", systemImage: copied ? "checkmark" : "doc.on.doc").typography(.secondary)
+            Label(copied ? L("已复制") : L("复制"), systemImage: copied ? "checkmark" : "doc.on.doc").typography(.secondary)
                 .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.borderless)
@@ -429,12 +430,12 @@ struct EpisodeDetailView: View {
     private func details(_ moment: EpisodeMoment) -> some View {
         let record = moment.record
         let rows: [(String, String?)] = [
-            ("触发", DesktopRecordPresentation.triggerTitle(record?.trigger)),
-            ("窗口", record?.windowTitle.isEmpty == false ? record?.windowTitle : nil),
-            ("焦点", DesktopRecordPresentation.focusedRole(record?.context?.focusedRole)),
-            ("控件名称", record?.context?.focusedLabel),
-            ("文字状态", DesktopRecordPresentation.textStatus(record?.context?.textStatus)),
-            ("截图尺寸", moment.screenshot.flatMap { s in s.imageWidth.map { "\($0) × \(s.imageHeight ?? 0)" } }),
+            (L("触发"), DesktopRecordPresentation.triggerTitle(record?.trigger)),
+            (L("窗口"), record?.windowTitle.isEmpty == false ? record?.windowTitle : nil),
+            (L("焦点"), DesktopRecordPresentation.focusedRole(record?.context?.focusedRole)),
+            (L("控件名称"), record?.context?.focusedLabel),
+            (L("文字状态"), DesktopRecordPresentation.textStatus(record?.context?.textStatus)),
+            (L("截图尺寸"), moment.screenshot.flatMap { s in s.imageWidth.map { "\($0) × \(s.imageHeight ?? 0)" } }),
         ]
         return Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 7) {
             ForEach(rows.filter { $0.1 != nil }, id: \.0) { row in
@@ -450,7 +451,7 @@ struct EpisodeDetailView: View {
     private func momentCaption(_ moment: EpisodeMoment) -> String {
         var parts: [String] = []
         if let trigger = DesktopRecordPresentation.triggerTitle(moment.record?.trigger) { parts.append(trigger) }
-        parts.append(moment.screenshot == nil ? "文字" : (moment.text == nil ? "截图" : "截图与文字"))
+        parts.append(moment.screenshot == nil ? L("文字") : (moment.text == nil ? L("截图") : L("截图与文字")))
         if let index = moments.firstIndex(of: moment) { parts.append("第 \(index + 1) / \(moments.count) 个时刻") }
         return parts.joined(separator: " · ")
     }
@@ -535,8 +536,8 @@ struct ZoomPreview: View {
                 .onChanged { offset = CGSize(width: dragBase.width + $0.translation.width, height: dragBase.height + $0.translation.height) }
                 .onEnded { _ in dragBase = offset })
             .onTapGesture(count: 2) { withAnimation(Motion.snappy) { scale = scale > 1 ? 1 : 2; base = scale; if scale == 1 { offset = .zero; dragBase = .zero } } }
-            ChromeButton(systemImage: "xmark", help: "关闭（Esc）", action: close).padding(.top, 14).padding(.trailing, 16)
-            Text("双击或捏合放大 · 拖动平移 · ←→ 上一张/下一张 · Esc 关闭").typography(.caption).foregroundStyle(.white.opacity(0.8))
+            ChromeButton(systemImage: "xmark", help: L("关闭（Esc）"), action: close).padding(.top, 14).padding(.trailing, 16)
+            Text(L("双击或捏合放大 · 拖动平移 · ←→ 上一张/下一张 · Esc 关闭")).typography(.caption).foregroundStyle(.white.opacity(0.8))
                 .padding(12).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom).allowsHitTesting(false)
         }
         .task(id: shot.id) { cache.requestImage(for: shot, maxPixel: 2600) }

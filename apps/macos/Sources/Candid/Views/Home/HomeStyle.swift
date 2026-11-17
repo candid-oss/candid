@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 /// A stable identity color per application: the dominant saturated color of
@@ -146,10 +147,10 @@ extension TimeInterval {
     /// 「1 小时 8 分」 / 「42 分钟」 / 「不到 1 分钟」
     var spokenDuration: String {
         let minutes = Int((self / 60).rounded())
-        guard minutes > 0 else { return "不到 1 分钟" }
+        guard minutes > 0 else { return L("不到 1 分钟") }
         let hours = minutes / 60, rest = minutes % 60
-        if hours == 0 { return "\(rest) 分钟" }
-        return rest == 0 ? "\(hours) 小时" : "\(hours) 小时 \(rest) 分"
+        if hours == 0 { return L("%@ 分钟", rest) }
+        return rest == 0 ? L("%@ 小时", hours) : L("%@ 小时 %@ 分", hours, rest)
     }
 }
 

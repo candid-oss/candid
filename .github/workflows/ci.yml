@@ -15,7 +15,7 @@ concurrency:
 jobs:
   core:
     name: Rust core
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
 
   macos:
     name: macOS app
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +66,7 @@ jobs:
 
   voice:
     name: Voice service
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4

@@ -1,4 +1,5 @@
 import Darwin
+import CandidLocalization
 import Foundation
 
 /// HTTP/1.1 over the core's Unix domain socket (ADR-024 §3). The App is the core's internal client: no token, and
@@ -64,7 +65,7 @@ public struct LocalChannel: Sendable {
             guard (200..<300).contains(status) else {
                 let error = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["error"] as? [String: Any]
                 throw CoreError.service(status: status, code: error?["code"] as? String ?? "http_\(status)",
-                                        message: error?["message"] as? String ?? "时间线核心返回 \(status)")
+                                        message: error?["message"] as? String ?? L("时间线核心返回 %@", status))
             }
             return body
         }
@@ -91,7 +92,7 @@ public struct LocalChannel: Sendable {
         address.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)
         let capacity = MemoryLayout.size(ofValue: address.sun_path)
-        guard bytes.count < capacity else { close(fd); throw CoreError.unreachable("套接字路径过长") }
+        guard bytes.count < capacity else { close(fd); throw CoreError.unreachable(L("套接字路径过长")) }
         withUnsafeMutableBytes(of: &address.sun_path) { raw in
             raw.copyBytes(from: bytes)
             raw[bytes.count] = 0

@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 // Skills the attached Pi can run (agent-platform-v1 §4.1 hooks and skills). The text lives in agents/skills
 // (bundled as Contents/Resources/Pi/skills), shared with external agents; the AI page lists them and runs one by
@@ -25,18 +26,18 @@ struct AISkill: Identifiable, Equatable, Sendable {
 
     var triggerLabel: String {
         switch trigger {
-        case .manual: "手动"
-        case .timed(let at): "定时 · 每天 \(at)"
-        case .event(let what): "事件 · " + what
+        case .manual: L("手动")
+        case .timed(let at): L("定时 · 每天 %@", at)
+        case .event(let what): L("事件 · ") + what
         }
     }
 
     /// What Pi receives when the skill runs: its steps, the date, and what the user brought in.
     func prompt(today: Date, context: [AIContextItem], extra: String = "") -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "yyyy-MM-dd EEEE"
-        var text = "运行技能「\(title)」。今天是 \(f.string(from: today))（本地时区）。按下面的步骤做：\n\n" + body
-        if !context.isEmpty { text += "\n\n用户带进来的上下文：\n" + context.map(\.promptLine).joined(separator: "\n") }
-        if !extra.isEmpty { text += "\n\n用户补充：" + extra }
+        var text = L("运行技能「%@」。今天是 %@（本地时区）。按下面的步骤做：\n\n", title, f.string(from: today)) + body
+        if !context.isEmpty { text += L("\n\n用户带进来的上下文：\n") + context.map(\.promptLine).joined(separator: "\n") }
+        if !extra.isEmpty { text += L("\n\n用户补充：") + extra }
         return text
     }
 
@@ -56,7 +57,7 @@ struct AISkill: Identifiable, Equatable, Sendable {
         let trigger: Trigger
         switch meta["trigger"] {
         case "timed": trigger = .timed(meta["schedule"] ?? "21:00")
-        case "event": trigger = .event(meta["event"] ?? "事件发生时")
+        case "event": trigger = .event(meta["event"] ?? L("事件发生时"))
         default: trigger = .manual
         }
         return AISkill(id: id, title: title, summary: meta["summary"] ?? meta["description"] ?? "", trigger: trigger,

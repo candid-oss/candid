@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidClient
 
 /// App lifetime worker; skill jobs survive page changes. The core owns leases, permission checks and deduplication.
@@ -42,7 +43,7 @@ import CandidClient
             if let next { await execute(next) }
             let snapshot: AutomationSnapshot = try await automationPost(channel, ["action": "status", "notifications_only": true])
             for run in snapshot.runs where run.state == "done" && !run.notified && run.unavailable != true {
-                if await notifier.deliver(run, title: snapshot.catalog.first { $0.id == run.skill }?.title ?? "AI 处理") {
+                if await notifier.deliver(run, title: snapshot.catalog.first { $0.id == run.skill }?.title ?? L("AI 处理")) {
                     let _: AutomationAck = try await automationPost(channel, ["action": "notified", "id": run.id])
                 }
             }
@@ -50,16 +51,16 @@ import CandidClient
     }
     private func execute(_ run: AutomationRun) async {
         guard let skill = skills().first(where: { $0.id == run.skill }) else {
-            await finish(run, state: "failed", error: "找不到技能正文"); return
+            await finish(run, state: "failed", error: L("找不到技能正文")); return
         }
         active = run; result = ""; failure = nil
         do {
             var config = PiRunConfig()
             config.runID = run.id; config.automationID = run.id; config.attempt = run.attempt
             try await agent.start(config)
-            let context = run.references.map { "[[\($0.event_id)]]" }.joined(separator: "、")
-            let input = run.context + (context.isEmpty ? "" : "\n本次来源：" + context)
-            try agent.prompt(skill.prompt(today: Date(), context: [], extra: input + "\n最后只输出 JSON：{\"has_updates\":true或false,\"summary\":\"简短结果\"}；没有新内容时 has_updates=false，不编造。"))
+            let context = run.references.map { "[[\($0.event_id)]]" }.joined(separator: L("、"))
+            let input = run.context + (context.isEmpty ? "" : L("\n本次来源：") + context)
+            try agent.prompt(skill.prompt(today: Date(), context: [], extra: input + L("\n最后只输出 JSON：{\"has_updates\":true或false,\"summary\":\"简短结果\"}；没有新内容时 has_updates=false，不编造。")))
         } catch { active = nil; await agent.stop(); await finish(run, state: "failed", error: AIPageModel.explain(error)) }
     }
     private func receive(_ event: PiEvent) {

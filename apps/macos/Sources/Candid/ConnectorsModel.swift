@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import Foundation
 import Observation
 import CandidClient
@@ -87,29 +88,29 @@ import CandidClient
 
     var mailStatus: (state: StatusDot.State, text: String) {
         let live = mailSources
-        if live.isEmpty { return (.off, loaded || isDemo ? "未连接" : "检查中…") }
+        if live.isEmpty { return (.off, loaded || isDemo ? L("未连接") : L("检查中…")) }
         if live.contains(where: { $0.needs != nil }) { return (.attention, "需要处理") }
-        return (.on, live.count == 1 ? "已连接" : "\(live.count) 个来源")
+        return (.on, live.count == 1 ? L("已连接") : L("%@ 个来源", live.count))
     }
 
     var browserStatus: (state: StatusDot.State, text: String) {
         let live = sources.filter { $0.kind == "browser.history" && $0.connected }
-        if live.isEmpty { return (.off, loaded || isDemo ? "未连接" : "检查中…") }
+        if live.isEmpty { return (.off, loaded || isDemo ? L("未连接") : L("检查中…")) }
         if live.contains(where: { $0.needs != nil }) { return (.attention, "需要处理") }
-        return (.on, "已连接，未导入")
+        return (.on, L("已连接，未导入"))
     }
 
     static func state(_ source: Source?) -> (state: StatusDot.State, text: String) {
-        guard let source, source.status != "revoked" else { return (.off, "未连接") }
+        guard let source, source.status != "revoked" else { return (.off, L("未连接")) }
         switch source.needs {
-        case "full_disk_access": return (.attention, "需要完全磁盘访问")
-        case "credentials": return (.attention, "需要密码")
-        case "unsupported_format": return (.attention, "格式暂不支持")
+        case "full_disk_access": return (.attention, L("需要完全磁盘访问"))
+        case "credentials": return (.attention, L("需要密码"))
+        case "unsupported_format": return (.attention, L("格式暂不支持"))
         default: break
         }
-        if source.status == "paused" { return (.off, "已暂停") }
+        if source.status == "paused" { return (.off, L("已暂停")) }
         if let error = source.last_error { return (.attention, message(error)) }
-        return (.on, source.kind == "browser.history" ? "可读取" : "已连接")
+        return (.on, source.kind == "browser.history" ? L("可读取") : L("已连接"))
     }
 
     // MARK: Commands
@@ -148,7 +149,7 @@ import CandidClient
             var config: [String: CoreJSON] = ["import_confirmed": .bool(false)]
             if let mailRoot { config["mail_root"] = .string(mailRoot) }
             _ = try await self.call(["action": "authorize", "kind": "mail.apple", "config": .object(config)])
-            self.notice = "已连接「邮件」App。先选范围、看预览，确认后才开始导入。"
+            self.notice = L("已连接「邮件」App。先选范围、看预览，确认后才开始导入。")
         }
         await loadScope()
     }
@@ -168,7 +169,7 @@ import CandidClient
                 try? self.secrets.deleteSecret(for: ref)
                 throw error
             }
-            self.notice = "已添加 \(address)。首次同步时登录邮箱。"
+            self.notice = L("已添加 %@。首次同步时登录邮箱。", address)
         }
     }
 
@@ -274,7 +275,7 @@ import CandidClient
     // MARK: Plumbing
 
     func run(_ key: String, _ work: @escaping () async throws -> Void) async {
-        guard !isDemo else { notice = "合成样例不连接真实数据。"; return }
+        guard !isDemo else { notice = L("合成样例不连接真实数据。"); return }
         busy = key; error = nil; notice = nil
         defer { busy = nil }
         var failure: String?
@@ -286,38 +287,38 @@ import CandidClient
     func call(_ body: [String: CoreJSON]) async throws -> Data {
         let data = try JSONEncoder().encode(body)
         if let transport { return try await transport(data) }
-        guard let channel = TimelineService.shared.channel else { throw CoreError.unreachable("时间线库尚未打开") }
+        guard let channel = TimelineService.shared.channel else { throw CoreError.unreachable(L("时间线库尚未打开")) }
         return try await channel.send("POST", "/local/connectors", body: data, timeout: 90).checked()
     }
 
     static func describe(_ error: Error) -> String {
         if case CoreError.service(_, let code, _) = error { return message(code) }
-        if error is KeychainError { return "无法写入钥匙串" }
+        if error is KeychainError { return L("无法写入钥匙串") }
         return error.localizedDescription
     }
 
     static func message(_ code: String) -> String {
         [
-            "full_disk_access_required": "需要在系统设置里给 Candid 开「完全磁盘访问」",
-            "waiting_authorization": "需要邮箱密码",
-            "imap_auth_failed": "邮箱登录失败，检查地址和应用专用密码",
-            "imap_unreachable": "连不上邮件服务器",
-            "imap_tls_failed": "和邮件服务器的加密连接失败",
-            "already_authorized": "这个来源已经连接",
-            "account_ref_required": "请填写邮箱地址",
-            "imap_settings_required": "请填写服务器地址和端口",
-            "insecure_transport_refused": "只允许加密连接",
-            "history_not_found": "没有找到这个浏览器的历史记录",
-            "unsupported_browser": "暂不支持这个浏览器",
-            "unknown_mail_version": "这个版本的「邮件」App 暂不支持",
-            "unknown_mail_schema": "这个版本的「邮件」App 暂不支持",
-            "unknown_history_schema": "这个浏览器版本暂不支持",
-            "source_revoked": "这个来源已断开",
-            "source_deleted": "来源已删除，正文无法读取",
-            "live_read_unavailable": "这个来源暂不支持现读正文",
-            "mail_data_not_found": "没有找到「邮件」App 的数据",
-            "unknown_event": "这封邮件已不在时间线里",
-        ][code] ?? "操作没有完成（\(code)）"
+            "full_disk_access_required": L("需要在系统设置里给 Candid 开「完全磁盘访问」"),
+            "waiting_authorization": L("需要邮箱密码"),
+            "imap_auth_failed": L("邮箱登录失败，检查地址和应用专用密码"),
+            "imap_unreachable": L("连不上邮件服务器"),
+            "imap_tls_failed": L("和邮件服务器的加密连接失败"),
+            "already_authorized": L("这个来源已经连接"),
+            "account_ref_required": L("请填写邮箱地址"),
+            "imap_settings_required": L("请填写服务器地址和端口"),
+            "insecure_transport_refused": L("只允许加密连接"),
+            "history_not_found": L("没有找到这个浏览器的历史记录"),
+            "unsupported_browser": L("暂不支持这个浏览器"),
+            "unknown_mail_version": L("这个版本的「邮件」App 暂不支持"),
+            "unknown_mail_schema": L("这个版本的「邮件」App 暂不支持"),
+            "unknown_history_schema": L("这个浏览器版本暂不支持"),
+            "source_revoked": L("这个来源已断开"),
+            "source_deleted": L("来源已删除，正文无法读取"),
+            "live_read_unavailable": L("这个来源暂不支持现读正文"),
+            "mail_data_not_found": L("没有找到「邮件」App 的数据"),
+            "unknown_event": L("这封邮件已不在时间线里"),
+        ][code] ?? L("操作没有完成（%@）", code)
     }
 
     // MARK: Demo
@@ -326,19 +327,19 @@ import CandidClient
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let mailConfig: CoreJSON = .object(["builtin_rules": .bool(true), "ai_judge": .object(["enabled": .bool(false)])])
         sources = [
-            Source(source_id: "demo-mail", kind: "mail.apple", display_name: "邮件 App", config: mailConfig, status: "active", last_sync_ms: now - 600_000, events: 1284),
+            Source(source_id: "demo-mail", kind: "mail.apple", display_name: L("邮件 App"), config: mailConfig, status: "active", last_sync_ms: now - 600_000, events: 1284),
             Source(source_id: "demo-imap", kind: "mail.imap", display_name: "IMAP", account_ref: "me@example.test", secret_ref: "mail.imap:me@example.test@imap.example.test",
                    has_secret: false, config: mailConfig, status: "active", last_error: "waiting_authorization", needs: "credentials", events: 0),
-            Source(source_id: "demo-safari", kind: "browser.history", display_name: "safari 历史", config: .object(["browser": .string("safari")]), status: "active", events: 0),
+            Source(source_id: "demo-safari", kind: "browser.history", display_name: L("safari 历史"), config: .object(["browser": .string("safari")]), status: "active", events: 0),
         ]
         browserPreviews["demo-safari"] = BrowserPreview(visits: 1840, distinct_urls: 612, domains: 94, first_ms: now - 90 * 86_400_000, last_ms: now - 120_000, skipped_urls: 37)
         mailRules = [MailRule(conditions: [MailCondition(field: .domain, value: "example-corp.com"), MailCondition(field: .to, value: "me@example.test")], level: .normal),
-                     MailRule(conditions: [MailCondition(field: .subject_contains, value: "报价")], level: .important)]
+                     MailRule(conditions: [MailCondition(field: .subject_contains, value: L("报价"))], level: .important)]
         scopeOptions = MailScopeOptions(accounts: [.init(id: "DEMO-ACCOUNT", scheme: "imap", mailboxes: [
             .init(name: "INBOX", role: "inbox", never: false, count: 2_100), .init(name: "Sent Messages", role: "sent", never: false, count: 640),
             .init(name: "Archive", role: "archive", never: false, count: 500), .init(name: "Junk", role: "junk", never: true, count: 90)])])
         mailPreviews["demo-mail"] = MailPreview(would_insert: 3_240, threads: 1_100, stats: .init(scanned: 3_240, levels: ["metadata": 2_730, "normal": 510, "important_candidate": 80], more: false))
-        recentMail = [MailMessage(event_id: "demo-1", title: "Re: 下周例会改到周三", start_ms: now - 3_600_000, thread_key: "t1", level: "metadata", level_basis: "default", important_candidate: false, direction: "in", from_name: "李娜")]
+        recentMail = [MailMessage(event_id: "demo-1", title: L("Re: 下周例会改到周三"), start_ms: now - 3_600_000, thread_key: "t1", level: "metadata", level_basis: "default", important_candidate: false, direction: "in", from_name: L("李娜"))]
         scopeLoaded = true
         loaded = true
     }

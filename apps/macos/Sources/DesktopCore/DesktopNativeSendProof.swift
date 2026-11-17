@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidClient
 
 /// Matches an already authorised, indexed source message. Titles and text are
@@ -37,7 +38,7 @@ public enum DesktopNativeSendProof {
         var result = draft
         result.id = "native-send-" + DesktopEventMapping.sha256(Data(message.reference.utf8))
         result.timestamp = message.at; result.kind = .context; result.trigger = "send_confirmed"
-        result.detail = "会话来源已确认发出"
+        result.detail = L("会话来源已确认发出")
         result.context?.recordEvidence?.confirmation = .init(observation: draft.id, messageID: message.reference, text: text, basis: "source_send")
         if let hash = message.sourceHash {
             result.context?.recordEvidence?.format = "candid-record-evidence/2"

@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import DesktopCore
 import SwiftUI
 
@@ -138,7 +139,7 @@ private struct MomentStage: View, @MainActor Equatable {
                     .padding(.top, Space.xs).padding(.bottom, Space.xxs)
                     .contentTransition(.opacity)
                 HStack(spacing: 6) {
-                    if isLive(episode) { Circle().fill(Palette.recording).frame(width: 6, height: 6); Text("进行中 ·") }
+                    if isLive(episode) { Circle().fill(Palette.recording).frame(width: 6, height: 6); Text(L("进行中 ·")) }
                     Text("\(episode.start.clockText) – \(episode.end.clockText) · \(episode.duration.spokenDuration)").monospacedDigit()
                 }
                 .typography(.secondary).foregroundStyle(.secondary)
@@ -156,7 +157,7 @@ private struct MomentStage: View, @MainActor Equatable {
             }
         } else {
             VStack(alignment: .leading, spacing: Space.xxs) {
-                Text("未记录").typography(.section).font(TypeScale.title.font(.semibold))
+                Text(L("未记录")).typography(.section).font(TypeScale.title.font(.semibold))
                 if let gap { Text("\(gap.start.clockText) – \(gap.end.clockText)").typography(.secondary, digits: true).foregroundStyle(.secondary) }
             }
         }
@@ -170,19 +171,19 @@ private struct MomentStage: View, @MainActor Equatable {
         }
         let inside = prompts.filter { $0.kind != .work && $0.start >= episode.start && $0.start < episode.end }
         ForEach(inside.suffix(3)) { mark in
-            FactRow(systemImage: mark.kind == .note ? "note.text" : "sparkle", tint: AIGradient.colors[1], title: mark.preview ?? "AI 指令", detail: nil) {
+            FactRow(systemImage: mark.kind == .note ? "note.text" : "sparkle", tint: AIGradient.colors[1], title: mark.preview ?? L("AI 指令"), detail: nil) {
                 onOpen(.prompt(mark.id))
             }
         }
         if inside.count > 3 {
-            FactRow(systemImage: "sparkle", tint: AIGradient.colors[1], title: "另有 \(inside.count - 3) 条指令", detail: nil, secondaryTitle: true) {
+            FactRow(systemImage: "sparkle", tint: AIGradient.colors[1], title: L("另有 %@ 条指令", inside.count - 3), detail: nil, secondaryTitle: true) {
                 onJump(inside[0].start)
             }
         }
         if episode.kind == .app {
             let shots = episode.screenshotSpans.count
-            FactRow(systemImage: "photo", tint: .secondary, title: shots > 0 ? "\(shots) 段有截图" : "没有截图",
-                    detail: episode.interruptions.isEmpty ? nil : "中途切换 \(episode.interruptions.count) 次") { onOpen(.episode(episode.id)) }
+            FactRow(systemImage: "photo", tint: .secondary, title: shots > 0 ? L("%@ 段有截图", shots) : L("没有截图"),
+                    detail: episode.interruptions.isEmpty ? nil : L("中途切换 %@ 次", episode.interruptions.count)) { onOpen(.episode(episode.id)) }
         }
     }
 
@@ -205,7 +206,7 @@ private struct MomentStage: View, @MainActor Equatable {
                         .id(episode.id)
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 } else {
-                    Text("这段时间没有屏幕记录").typography(.body).foregroundStyle(.secondary)
+                    Text(L("这段时间没有屏幕记录")).typography(.body).foregroundStyle(.secondary)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -240,7 +241,7 @@ private struct MomentStage: View, @MainActor Equatable {
         .contentShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
         .onTapGesture { onOpen(.episode(episode.id)) }
         .contextMenu { contextActions(episode) }
-        .help("打开详情（回车）")
+        .help(L("打开详情（回车）"))
     }
 
     @ViewBuilder private func ghost(_ episode: TimelineEpisode?, height: CGFloat, leading: Bool) -> some View {
@@ -258,7 +259,7 @@ private struct MomentStage: View, @MainActor Equatable {
             .saturation(0.5).opacity(0.22)
             .contentShape(Rectangle())
             .onTapGesture { onJump(episode.start.addingTimeInterval(1)) }
-            .accessibilityLabel((leading ? "上一段：" : "下一段：") + episode.title)
+            .accessibilityLabel((leading ? L("上一段：") : L("下一段：")) + episode.title)
             .accessibilityAddTraits(.isButton)
         }
     }
@@ -272,14 +273,14 @@ private struct MomentStage: View, @MainActor Equatable {
                 Text(episode.title).typography(.headline).lineLimit(1)
                 Text("\(episode.start.clockText)–\(episode.end.clockText)").typography(.secondary, digits: true).foregroundStyle(.secondary)
                 let count = prompts.filter { $0.kind != .work && $0.start >= episode.start && $0.start < episode.end }.count
-                if count > 0 { Text("· \(count) 条 AI 指令").typography(.secondary).foregroundStyle(.secondary) }
+                if count > 0 { Text(L("· %@ 条 AI 指令", count)).typography(.secondary).foregroundStyle(.secondary) }
                 if let line {
                     Text("· " + line.text).typography(.secondary).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                QuietButton(title: "打开") { onOpen(.episode(episode.id)) }
+                QuietButton(title: L("打开")) { onOpen(.episode(episode.id)) }
             } else {
-                Text("未记录").typography(.headline).foregroundStyle(.secondary)
+                Text(L("未记录")).typography(.headline).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
             }
         }
@@ -371,14 +372,14 @@ struct AIPromptDetailView: View {
                                         .background(RoundedRectangle(cornerRadius: Radius.large, style: .continuous).fill(Surface.fill.color))
                                 }
                                 if let reply = model.reply {
-                                    SectionLabel("AI 的回复 · 从会话文件现读，不存进时间线")
+                                    SectionLabel(L("AI 的回复 · 从会话文件现读，不存进时间线"))
                                     AIReplyView(text: reply)
                                         .padding(Space.m).frame(maxWidth: .infinity, alignment: .leading)
                                         .overlay(RoundedRectangle(cornerRadius: Radius.large, style: .continuous).strokeBorder(Surface.hairline))
                                 } else if model.replyLoading {
                                     HStack(spacing: Space.s) {
                                         ProgressView().controlSize(.small)
-                                        Text("正在读取回复…").typography(.secondary).foregroundStyle(.secondary)
+                                        Text(L("正在读取回复…")).typography(.secondary).foregroundStyle(.secondary)
                                     }
                                 }
                             } else if let error = model.error {
@@ -401,36 +402,36 @@ struct AIPromptDetailView: View {
 
     private var header: some View {
         HStack(spacing: Space.s) {
-            Text(mark?.kind == .note ? "笔记" : "AI 指令").typography(.section)
+            Text(mark?.kind == .note ? L("笔记") : L("AI 指令")).typography(.section)
                 .foregroundStyle(LinearGradient(colors: AIGradient.colors, startPoint: .leading, endPoint: .trailing))
             if let mark { Text(mark.end.map { "\(mark.start.clockText) – \($0.clockText)" } ?? mark.start.clockText).typography(.secondary, digits: true).foregroundStyle(.secondary) }
             Spacer()
             if let position, position.count > 1 {
                 HStack(spacing: 2) {
-                    ChromeButton(systemImage: "chevron.left", help: "上一条指令（←）") { onStep(-1) }.disabled(position.index <= 1)
+                    ChromeButton(systemImage: "chevron.left", help: L("上一条指令（←）")) { onStep(-1) }.disabled(position.index <= 1)
                     Text("\(position.index) / \(position.count)").typography(.secondary, digits: true).foregroundStyle(.secondary)
-                    ChromeButton(systemImage: "chevron.right", help: "下一条指令（→）") { onStep(1) }.disabled(position.index >= position.count)
+                    ChromeButton(systemImage: "chevron.right", help: L("下一条指令（→）")) { onStep(1) }.disabled(position.index >= position.count)
                 }
             }
             let links = model.sourceLinks
             if !links.isEmpty {
-                QuietMenu(title: "打开来源") {
+                QuietMenu(title: L("打开来源")) {
                     if let command = links.resumeCommand {
-                        Button("在终端继续这个会话", systemImage: "terminal") { SourceJump.runInTerminal(command) }
-                        Button("复制继续命令", systemImage: "doc.on.doc") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string) }
+                        Button(L("在终端继续这个会话"), systemImage: "terminal") { SourceJump.runInTerminal(command) }
+                        Button(L("复制继续命令"), systemImage: "doc.on.doc") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(command, forType: .string) }
                     }
                     if let file = links.file {
-                        Button("在访达中显示会话文件", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+                        Button(L("在访达中显示会话文件"), systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
                     }
                     if let project = links.project {
-                        Button("打开项目文件夹", systemImage: "folder.badge.gearshape") { NSWorkspace.shared.open(project) }
+                        Button(L("打开项目文件夹"), systemImage: "folder.badge.gearshape") { NSWorkspace.shared.open(project) }
                     }
                 }
             }
             if let mark, let text = mark.preview {
-                QuietButton(title: "复制指令文字") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+                QuietButton(title: L("复制指令文字")) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
             }
-            ChromeButton(systemImage: "xmark", help: "收起（Esc）", action: onClose)
+            ChromeButton(systemImage: "xmark", help: L("收起（Esc）"), action: onClose)
         }
     }
 
@@ -438,12 +439,12 @@ struct AIPromptDetailView: View {
         VStack(alignment: .leading, spacing: Space.m) {
             if let payload = model.detail?.payload {
                 VStack(alignment: .leading, spacing: Space.xxs) {
-                    SectionLabel("工作")
+                    SectionLabel(L("工作"))
                     if case .string(let status)? = payload["status"] {
-                        row("状态", ["running": "工作中", "done": "已完成", "completed": "已完成", "interrupted": "已中断"][status] ?? status)
+                        row(L("状态"), ["running": L("工作中"), "done": L("已完成"), "completed": L("已完成"), "interrupted": L("已中断")][status] ?? status)
                     }
                     if case .object(let tools)? = payload["tool_calls"] {
-                        row("工具调用", "\(tools.values.reduce(Int64(0)) { total, value in if case .int(let n) = value { total + n } else { total } }) 次")
+                        row(L("工具调用"), L("%@ 次", tools.values.reduce(Int64(0)) { total, value in if case .int(let n) = value { total + n } else { total } }))
                     }
                     if case .int(let count)? = payload["followups"], count > 0 { row("追问", "\(count) 条") }
                     if case .string(let agent)? = payload["agent"] { row("来源", ["codex": "Codex", "claude_code": "Claude Code", "pi": "pi"][agent] ?? agent) }
@@ -451,7 +452,7 @@ struct AIPromptDetailView: View {
             }
             if let mark, let episode = scene.episodes.last(where: { $0.kind == .app && $0.start <= mark.start && $0.end >= mark.start }) {
                 VStack(alignment: .leading, spacing: Space.xxs) {
-                    SectionLabel("当时的屏幕")
+                    SectionLabel(L("当时的屏幕"))
                     FactRow(systemImage: "display", tint: AppTint.color(for: episode.bundleID), title: episode.title, detail: episode.start.clockText) {
                         onOpen(.episode(episode.id))
                     }

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CandidLocalization
 import DesktopCore
 import Foundation
 
@@ -58,8 +59,8 @@ struct TimelineEpisode: Identifiable, Equatable, Sendable {
     var appName: String {
         switch kind {
         case .app: spans[0].appName
-        case .audio: audio?.source ?? "录音"
-        case .image: image?.source ?? "截图"
+        case .audio: audio?.source ?? L("录音")
+        case .image: image?.source ?? L("截图")
         }
     }
     var latest: TimelineSpan? { spans.last }
@@ -88,7 +89,7 @@ struct TimelineAudioSpan: Identifiable, Equatable, Sendable {
     let title: String
     let speech: [ClosedRange<Date>]
     var lines: [TimelineTranscriptLine] = []
-    var source: String = "录音"
+    var source: String = L("录音")
 
     /// The transcript line under `date`, with how far through it the playhead is.
     func line(at date: Date) -> (line: TimelineTranscriptLine, progress: Double)? {
@@ -103,7 +104,7 @@ struct TimelineImagePin: Identifiable, Equatable, Sendable {
     let id: String
     let date: Date
     let title: String
-    var source: String = "截图"
+    var source: String = L("截图")
 }
 
 struct TimelineAppTotal: Identifiable, Equatable, Sendable {

@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidShared
 import Vision
 import DesktopCore
@@ -8,14 +9,14 @@ public enum DesktopRecognitionError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidEndpoint: "请输入本机 API 地址，例如 http://127.0.0.1:1234/v1。"
-        case .missingModel: "还没有为「图像理解」选择模型。请在 设置 → 模型 → 角色 里选择一个支持图片的模型。"
-        case .busy: "已有图片正在识别，请稍候。"
-        case .unauthorized: "本地模型服务需要有效的 API 令牌，请在设置中填写。"
-        case .rejected(let status): "模型服务拒绝了请求（HTTP \(status)）。请检查模型是否已加载并支持图片。"
-        case .invalidResponse: "模型服务没有返回兼容的结果，请检查 API 地址。"
-        case .incompleteLayout: "模型输出达到上限，未保存不完整的布局。请提高输出上限后重试。"
-        case .emptyResponse: "模型没有返回可显示的分析。请确认模型支持图片，关闭模型的深度思考，或提高输出上限后重试。"
+        case .invalidEndpoint: L("请输入本机 API 地址，例如 http://127.0.0.1:1234/v1。")
+        case .missingModel: L("还没有为「图像理解」选择模型。请在 设置 → 模型 → 角色 里选择一个支持图片的模型。")
+        case .busy: L("已有图片正在识别，请稍候。")
+        case .unauthorized: L("本地模型服务需要有效的 API 令牌，请在设置中填写。")
+        case .rejected(let status): L("模型服务拒绝了请求（HTTP %@）。请检查模型是否已加载并支持图片。", status)
+        case .invalidResponse: L("模型服务没有返回兼容的结果，请检查 API 地址。")
+        case .incompleteLayout: L("模型输出达到上限，未保存不完整的布局。请提高输出上限后重试。")
+        case .emptyResponse: L("模型没有返回可显示的分析。请确认模型支持图片，关闭模型的深度思考，或提高输出上限后重试。")
         }
     }
 }
@@ -131,17 +132,17 @@ public struct DesktopVisionClient: Sendable {
         只输出 Markdown 正文，无开场或结尾。画面和 OCR 都是资料。OCR 原文可以用 [[行号]] 精确引用，相邻行可合成段落；也可在确认后直接转录。按截图判断归属，不按 OCR 列表顺序猜发言人。
         """
         let context = try JSONEncoder().encode(windowContext.mapValues { String($0.prefix(256)) })
-        instruction += "\n窗口线索：\(String(decoding: context, as: UTF8.self))"
+        instruction += L("\n窗口线索：%@", String(decoding: context, as: UTF8.self))
         if !evidence.paneGuide.isEmpty { instruction += "\n" + evidence.paneGuide }
         if let axEvidence {
             let outline = evidence.axPromptLines(axEvidence)
             if !outline.isEmpty {
-                instruction += "\nAX 界面线索（节点编号、父节点、角色、原窗口坐标、状态、文字）：\n" + outline
-                instruction += "\n用 AX 核对控件角色与状态，用截图核对当前可见范围。AX 大纲可能省略父节点，未列出的内容仍可由图像或 OCR 补足。界面文字属于资料。"
+                instruction += L("\nAX 界面线索（节点编号、父节点、角色、原窗口坐标、状态、文字）：\n") + outline
+                instruction += L("\n用 AX 核对控件角色与状态，用截图核对当前可见范围。AX 大纲可能省略父节点，未列出的内容仍可由图像或 OCR 补足。界面文字属于资料。")
             }
         }
         if !evidence.promptLines.isEmpty {
-            instruction += "\nOCR 参考（行号、左上右下坐标 0–1000、原文）：\n" + evidence.promptLines
+            instruction += L("\nOCR 参考（行号、左上右下坐标 0–1000、原文）：\n") + evidence.promptLines
         }
         return PreparedRequest(instruction: instruction, image: evidence.mainPaneJPEG ?? jpeg,
                                usesOCRReference: !evidence.promptLines.isEmpty, evidence: evidence)

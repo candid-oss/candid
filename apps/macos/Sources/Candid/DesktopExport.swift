@@ -1,4 +1,5 @@
 import DesktopCore
+import CandidLocalization
 import Foundation
 
 /// 导出: an independently readable package of the chosen activities (desktop-export/0.3): `records.jsonl`, a
@@ -28,7 +29,7 @@ enum DesktopExport {
         do {
             let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]; encoder.dateEncodingStrategy = .iso8601
             var jsonl = Data()
-            var markdown = "# 桌面记录导出\n\n范围：用户选定的活动。格式 desktop-export/0.3；不包含云端数据或AI推断。\n\n"
+            var markdown = L("# 桌面记录导出\n\n范围：用户选定的活动。格式 desktop-export/0.3；不包含云端数据或AI推断。\n\n")
             var entries: [[String: String]] = []
             var seen = Set<String>()
             for records in groups {
@@ -37,20 +38,20 @@ enum DesktopExport {
                     let indentation = index == 0 ? "" : "  "
                     markdown += "\(indentation)- \(record.timestamp.ISO8601Format()) · \(record.kind.title) · \(markdownText(record.displayTitle))\n"
                     func field(_ label: String, _ value: String?) {
-                        if let value { markdown += "\(indentation)  \(label)：\(markdownText(value))\n" }
+                        if let value { markdown += L("%@  %@：%@\n", indentation, label, markdownText(value)) }
                     }
-                    field("详情", record.detail.isEmpty ? nil : record.detail)
-                    field("触发", record.trigger); field("活动标识", record.activityID)
+                    field(L("详情"), record.detail.isEmpty ? nil : record.detail)
+                    field(L("触发"), record.trigger); field(L("活动标识"), record.activityID)
                     if let context = record.context {
-                        field("可读文字", context.readableText); field("选择文字", context.selectedText)
-                        field("焦点角色", context.focusedRole); field("焦点标签", context.focusedLabel)
-                        field("文字状态", context.textStatus); field("热状态", context.thermalState)
-                        field("受保护", context.isProtected.map { $0 ? "是" : "否" })
-                        field("输入法组合中", context.isComposing.map { $0 ? "是" : "否" })
-                        field("会话活跃", context.sessionActive.map { $0 ? "是" : "否" })
-                        field("电池供电", context.onBattery.map { $0 ? "是" : "否" })
-                        field("低电量模式", context.lowPower.map { $0 ? "是" : "否" })
-                        field("空闲秒数", context.idleSeconds.map { String($0) })
+                        field(L("可读文字"), context.readableText); field(L("选择文字"), context.selectedText)
+                        field(L("焦点角色"), context.focusedRole); field(L("焦点标签"), context.focusedLabel)
+                        field(L("文字状态"), context.textStatus); field(L("热状态"), context.thermalState)
+                        field(L("受保护"), context.isProtected.map { $0 ? L("是") : L("否") })
+                        field(L("输入法组合中"), context.isComposing.map { $0 ? L("是") : L("否") })
+                        field(L("会话活跃"), context.sessionActive.map { $0 ? L("是") : L("否") })
+                        field(L("电池供电"), context.onBattery.map { $0 ? L("是") : L("否") })
+                        field(L("低电量模式"), context.lowPower.map { $0 ? L("是") : L("否") })
+                        field(L("空闲秒数"), context.idleSeconds.map { String($0) })
                     }
                     if let hash = record.imageHash, let source = images[hash] {
                         let folder = temporary.appendingPathComponent("images", isDirectory: true)
@@ -61,7 +62,7 @@ enum DesktopExport {
                             guard DesktopEventMapping.sha256(try Data(contentsOf: target)) == hash else { throw DesktopStoreError.missingImage }
                             entries.append(["path": "images/\(hash).jpg", "sha256": hash])
                         }
-                        markdown += "\(indentation)  [图片](images/\(hash).jpg)\n"
+                        markdown += L("%@  [图片](images/%@.jpg)\n", indentation, hash)
                     }
                 }
             }

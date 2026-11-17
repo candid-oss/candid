@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import UserNotifications
 
 @MainActor protocol AutomationNotifying {
@@ -22,7 +23,7 @@ import UserNotifications
         let identifier = "candid-skill-" + run.id
         if await center.deliveredNotifications().contains(where: { $0.request.identifier == identifier }) { return true }
         let content = UNMutableNotificationContent()
-        content.title = title; content.body = "处理完成，点开查看"
+        content.title = title; content.body = L("处理完成，点开查看")
         content.userInfo = ["run_id": run.id]
         do { try await center.add(UNNotificationRequest(identifier: identifier, content: content, trigger: nil)); return true }
         catch { return false }

@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import SwiftUI
 
 /// Roles grouped by what they do. Each row picks a built-in engine or a model, may add fallbacks (only to the
@@ -19,7 +20,7 @@ struct ModelRolesView: View {
                     }
                 }
             }
-            Text("回退只会换到同样或更本地的来源：本机角色不会悄悄改用云端。")
+            Text(L("回退只会换到同样或更本地的来源：本机角色不会悄悄改用云端。"))
                 .typography(.secondary).foregroundStyle(.secondary)
         }
         .animation(Motion.spring, value: editingPrompt)
@@ -52,19 +53,19 @@ private struct RoleRow: View {
                 VStack(alignment: .leading, spacing: Space.xxs) {
                     HStack(spacing: Space.xs) {
                         Text(info.title).typography(.headline)
-                        if !info.inUse { Tag(text: "尚未使用") }
+                        if !info.inUse { Tag(text: L("尚未使用")) }
                     }
                     Text(info.detail).typography(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 picker
                 HStack(spacing: Space.xs) {
                     if info.hasPrompt {
-                        IconChipButton(title: "编辑" + info.title + "提示词", symbol: "text.quote") {
+                        IconChipButton(title: L("编辑") + info.title + L("提示词"), symbol: "text.quote") {
                             if promptOpen { editingPrompt = nil } else { draft = model.prompt(for: info.id); editingPrompt = info.id }
                         }
                     } else { Color.clear.frame(width: ControlHeight.button, height: ControlHeight.button) }
                     if primary != nil {
-                        IconChipButton(title: "设置" + info.title + "回退", symbol: "arrow.triangle.branch") { fallbackOpen.toggle() }
+                        IconChipButton(title: L("设置") + info.title + L("回退"), symbol: "arrow.triangle.branch") { fallbackOpen.toggle() }
                     } else { Color.clear.frame(width: ControlHeight.button, height: ControlHeight.button) }
                 }.frame(width: ControlHeight.button * 2 + Space.xs)
 
@@ -80,7 +81,7 @@ private struct RoleRow: View {
                 InlinePanel {
                     PromptEditor(defaultText: PromptCatalog.defaultPrompt(info.id), presets: PromptCatalog.presets(info.id),
                                  text: $draft,
-                                 actions: [.init(title: "保存", primary: true) { text in
+                                 actions: [.init(title: L("保存"), primary: true) { text in
                                      model.setPrompt(text, for: info.id); editingPrompt = nil
                                  }],
                                  onCancel: { editingPrompt = nil })
@@ -100,8 +101,8 @@ private struct RoleRow: View {
 
     private var current: String {
         if let ref = assignment?.model { return name(ref) }
-        if let engine { return engine.title + (assignment?.engine == nil ? "（默认）" : "") }
-        return "未选择"
+        if let engine { return engine.title + (assignment?.engine == nil ? L("（默认）") : "") }
+        return L("未选择")
     }
 
     private var picker: some View {
@@ -117,7 +118,7 @@ private struct RoleRow: View {
                     DestinationTag(destination: provider.destination)
                 } else {
                     VStack(alignment: .leading, spacing: Space.xxs) {
-                        Text(engine?.title ?? "未配置").typography(.body, .medium)
+                        Text(engine?.title ?? L("未配置")).typography(.body, .medium)
                         if let engine { Text(engine.detail).typography(.caption).foregroundStyle(.secondary).lineLimit(1) }
                     }
                     Spacer(minLength: 0)
@@ -127,14 +128,14 @@ private struct RoleRow: View {
             .padding(Space.s).frame(width: 270, alignment: .leading)
             .background(Surface.fill.color, in: RoundedRectangle(cornerRadius: Radius.medium))
             .contentShape(RoundedRectangle(cornerRadius: Radius.medium))
-        }.buttonStyle(.plain).accessibilityLabel("为" + info.title + "选择模型")
+        }.buttonStyle(.plain).accessibilityLabel(L("为") + info.title + L("选择模型"))
     }
 
     private func warning(for m: AIModel) -> String? {
-        if info.needsTools, m.supportsTools == false { return "这个模型没有声明工具调用，对话 Agent 会退化成“检索后单次回答”。" }
-        if info.needsImages, m.supportsImages == false { return "这个模型声明不接受图片，不适合此角色。" }
-        if m.probedMs == nil { return "尚未测试这个来源，能力未知。" }
-        if info.needsImages, m.supportsImages == nil { return "来源没有说明这个模型能否看图；能用就行，不能用时会报错。" }
+        if info.needsTools, m.supportsTools == false { return L("这个模型没有声明工具调用，对话 Agent 会退化成“检索后单次回答”。") }
+        if info.needsImages, m.supportsImages == false { return L("这个模型声明不接受图片，不适合此角色。") }
+        if m.probedMs == nil { return L("尚未测试这个来源，能力未知。") }
+        if info.needsImages, m.supportsImages == nil { return L("来源没有说明这个模型能否看图；能用就行，不能用时会报错。") }
         return nil
     }
 
@@ -142,18 +143,18 @@ private struct RoleRow: View {
         let candidates = model.config.fallbackCandidates(primary: primary.ref).filter { !(assignment?.fallback.contains($0.ref) ?? false) }
         return HStack(spacing: 6) {
             if let list = assignment?.fallback, !list.isEmpty {
-                Text("回退").typography(.secondary).foregroundStyle(.secondary)
+                Text(L("回退")).typography(.secondary).foregroundStyle(.secondary)
                 ForEach(list, id: \.self) { ref in
                     Button { model.removeFallback(role: info.id, ref) } label: {
                         HStack(spacing: 4) { Text(name(ref)); Image(systemName: "xmark").typography(.caption, .bold) }
                             .typography(.secondary, .medium).foregroundStyle(.secondary)
                             .padding(.horizontal, 9).frame(height: 22)
                             .background(Capsule().fill(Surface.hover.color))
-                    }.buttonStyle(.plain).help("移除这个回退")
+                    }.buttonStyle(.plain).help(L("移除这个回退"))
                 }
             }
             if !candidates.isEmpty {
-                QuietMenu(title: "＋ 回退") {
+                QuietMenu(title: L("＋ 回退")) {
                     ForEach(candidates) { c in Button(name(c.ref)) { model.addFallback(role: info.id, c.ref) } }
                 }
             }

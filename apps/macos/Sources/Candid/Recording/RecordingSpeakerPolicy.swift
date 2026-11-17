@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 struct RecordingSpeakerPolicy: Codable, Equatable {
     var version = 1
@@ -18,18 +19,18 @@ struct RecordingSpeakerSettings: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            Text("整条录音的说话人").typography(.headline)
-            SettingRow(title: "合并强度") {
-                MenuChoice(options: [("conservative", "保守"), ("balanced", "均衡"), ("merge_more", "更多合并")], selection: $policy.preset)
+            Text(L("整条录音的说话人")).typography(.headline)
+            SettingRow(title: L("合并强度")) {
+                MenuChoice(options: [("conservative", L("保守")), ("balanced", L("均衡")), ("merge_more", L("更多合并"))], selection: $policy.preset)
             }
-            SettingRow(title: "人数上限") {
-                MenuChoice(options: [(0, "自动")] + (1...12).map { ($0, "\($0) 人") }, selection: $policy.maxSpeakers)
+            SettingRow(title: L("人数上限")) {
+                MenuChoice(options: [(0, L("自动"))] + (1...12).map { ($0, L("%@ 人", $0)) }, selection: $policy.maxSpeakers)
             }
-            Text("自动按声音区分，再匹配人物。调整后保留原文和时间位置。").typography(.caption).foregroundStyle(.secondary)
+            Text(L("自动按声音区分，再匹配人物。调整后保留原文和时间位置。")).typography(.caption).foregroundStyle(.secondary)
             HStack {
-                QuietButton(title: "取消", action: close)
+                QuietButton(title: L("取消"), action: close)
                 Spacer()
-                PrimaryButton(title: "重新整理") { Task { await store.reconcileSpeakers(item, policy: policy); close() } }
+                PrimaryButton(title: L("重新整理")) { Task { await store.reconcileSpeakers(item, policy: policy); close() } }
                     .disabled(store.busy)
             }
         }.padding(Space.m).frame(width: 360)

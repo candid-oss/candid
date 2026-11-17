@@ -1,4 +1,5 @@
 import DesktopPlatform
+import CandidLocalization
 import SwiftUI
 import ConsoleCore
 
@@ -62,27 +63,27 @@ struct CandidApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) { }
-            CommandMenu("电脑采集") {
-                Button(desktop.isRecording ? "暂停电脑采集" : "开始电脑采集") { desktop.isRecording ? desktop.pauseRecording() : desktop.startRecording() }
-                Button("标记此刻", action: desktop.addMarker).keyboardShortcut("m", modifiers: [.command, .shift])
-                Button("截取允许的窗口", action: desktop.captureNow).disabled(!desktop.isRecording)
+            CommandMenu(L("电脑采集")) {
+                Button(desktop.isRecording ? L("暂停电脑采集") : L("开始电脑采集")) { desktop.isRecording ? desktop.pauseRecording() : desktop.startRecording() }
+                Button(L("标记此刻"), action: desktop.addMarker).keyboardShortcut("m", modifiers: [.command, .shift])
+                Button(L("截取允许的窗口"), action: desktop.captureNow).disabled(!desktop.isRecording)
             }
-            CommandMenu("快捷操作") {
+            CommandMenu(L("快捷操作")) {
                 ForEach(QuickAction.allCases) { action in
                     Button(action.title) { NotificationCenter.default.post(name: .candidQuickAction, object: action) }
                 }
                 Divider() // style-exempt: native command menu separator
-                Button("快捷键与悬浮控件设置") {
+                Button(L("快捷键与悬浮控件设置")) {
                     UserDefaults.standard.set("shortcuts", forKey: "desktop.settings.tab")
                     NotificationCenter.default.post(name: .candidQuickAction, object: "settings")
                 }
             }
-            CommandMenu("资料") {
-                Button("开始系统声音与麦克风录音") { Task { await media.startRecording(input: .systemAndMicrophone) } }
+            CommandMenu(L("资料")) {
+                Button(L("开始系统声音与麦克风录音")) { Task { await media.startRecording(input: .systemAndMicrophone) } }
                     .disabled(!media.canCapture || !RecordingInput.systemAvailable)
-                Toggle("通话时提醒录音", isOn: Binding(get: { media.callRecordingReminders }, set: { media.callRecordingReminders = $0 }))
+                Toggle(L("通话时提醒录音"), isOn: Binding(get: { media.callRecordingReminders }, set: { media.callRecordingReminders = $0 }))
                     .disabled(media.isDemo || !RecordingInput.systemAvailable)
-                Button("停止 Mac 录音") { Task { await media.stopRecording() } }
+                Button(L("停止 Mac 录音")) { Task { await media.stopRecording() } }
                     .disabled(!media.isRecording || media.recordingFinishing)
             }
         }
@@ -162,8 +163,8 @@ private struct DesktopRootView: View {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if media?.isRecording == true || media?.recordingFinishing == true || media?.busy == true {
             let alert = NSAlert()
-            alert.messageText = media?.isRecording == true ? "请先停止 Mac 录音" : "资料操作正在进行"
-            alert.informativeText = "操作完成后可以退出 Candid。"
+            alert.messageText = media?.isRecording == true ? L("请先停止 Mac 录音") : L("资料操作正在进行")
+            alert.informativeText = L("操作完成后可以退出 Candid。")
             alert.runModal()
             return .terminateCancel
         }
@@ -210,7 +211,7 @@ private struct DesktopRootView: View {
             let state = CandidMark.state(recordingScreen: session.isRecording, recordingAudio: media.isRecording, alerting: alerting)
             item.button?.image = CandidMark.menuBarImage(state)
             item.button?.title = media.recordingClock.map { " " + $0 } ?? ""
-            item.button?.setAccessibilityLabel(media.isRecording ? "Candid 正在录音" : session.isRecording ? "Candid 正在记录" : "Candid 已暂停")
+            item.button?.setAccessibilityLabel(media.isRecording ? L("Candid 正在录音") : session.isRecording ? L("Candid 正在记录") : L("Candid 已暂停"))
         } onChange: { [weak self] in
             Task { @MainActor in self?.updateLabel() }
         }

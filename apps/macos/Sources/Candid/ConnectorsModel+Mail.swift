@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidClient
 
 /// Mail scope, level rules and live bodies on top of the connector channel (agent-platform-v1 §2.0.2).
@@ -45,7 +46,7 @@ extension ConnectorsModel {
         if confirm { config.set(["import_confirmed"], .bool(true)) }
         await run("scope") {
             _ = try await self.call(["action": "update", "source_id": .string(source.id), "config": config])
-            self.notice = confirm ? "已开始导入。" : "范围已保存。"
+            self.notice = confirm ? L("已开始导入。") : L("范围已保存。")
         }
         if error == nil, !isDemo { await loadScope(); await loadRecent() }
     }
@@ -103,7 +104,7 @@ extension ConnectorsModel {
             let answer = try JSONDecoder().decode(Answer.self, from: await self.call(["action": "relevel"]))
             let changed = answer.sources.reduce(0) { $0 + ($1.stats?.changed ?? 0) }
             self.relevelPending = false
-            self.notice = changed == 0 ? "已有邮件的级别都符合新规则。" : "已按新规则重新定级：\(changed) 封改了级别。"
+            self.notice = changed == 0 ? L("已有邮件的级别都符合新规则。") : L("已按新规则重新定级：%@ 封改了级别。", changed)
         }
         if error == nil { await loadRecent() }
     }
@@ -119,7 +120,7 @@ extension ConnectorsModel {
 
     /// Opens one mail: its body is read from the Mail app now and never stored.
     func open(_ message: MailMessage) async {
-        if isDemo { notice = "合成样例不连接真实数据。"; return }
+        if isDemo { notice = L("合成样例不连接真实数据。"); return }
         do {
             openedMail = try JSONDecoder().decode(OpenedMail.self, from: await call(["action": "mail_body", "event_id": .string(message.id)]))
             error = nil
@@ -136,7 +137,7 @@ extension ConnectorsModel {
         guard let message = openedMail?.message else { return }
         await run("level") {
             _ = try await self.call(["action": "set_level", "event_id": .string(message.id), "level": .string(level.rawValue), "scope": .string(thread ? "thread" : "message")])
-            self.notice = thread ? "整个会话已设为「\(level.title)」。" : "已设为「\(level.title)」。"
+            self.notice = thread ? L("整个会话已设为「%@」。", level.title) : L("已设为「%@」。", level.title)
         }
         if error == nil { await loadRecent(); await open(message) }
     }

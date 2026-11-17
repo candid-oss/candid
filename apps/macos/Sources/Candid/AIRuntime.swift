@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import DesktopPlatform
 import Foundation
 
@@ -16,7 +17,7 @@ import Foundation
 
     /// Clearly synthetic: one local source with one vision model, used only by the self-test copy.
     static var syntheticSample: ProviderConfig {
-        let p = AIProvider(providerID: "sample-lm", name: "LM Studio（合成样例）", api: .openaiChat, baseURL: "http://localhost:1234/v1", destination: .onDevice)
+        let p = AIProvider(providerID: "sample-lm", name: L("LM Studio（合成样例）"), api: .openaiChat, baseURL: "http://localhost:1234/v1", destination: .onDevice)
         var vlm = AIModel(providerID: p.providerID, modelID: "sample/vision-4b", modalities: ["text", "image"], supportsTools: true, probedMs: 1)
         vlm.modalitiesDeclared = true
         let text = AIModel(providerID: p.providerID, modelID: "sample/text-8b", supportsTools: true, probedMs: 1)
@@ -94,7 +95,7 @@ import Foundation
             } else {
                 let host = URL(string: endpoint)?.host(percentEncoded: false) ?? ""
                 let local = ["localhost", "127.0.0.1", "::1"].contains(host)
-                provider = AIProvider(name: "视觉服务（来自识别设置）", api: .openaiChat, baseURL: endpoint,
+                provider = AIProvider(name: L("视觉服务（来自识别设置）"), api: .openaiChat, baseURL: endpoint,
                                       destination: local ? .onDevice : .selfHosted)
                 guard (try? config.upsert(provider)) != nil else { return }
             }
@@ -127,7 +128,7 @@ extension AIRuntime {
         }
         var config = config()
         if first && config.assignment("asr")?.model == nil {
-            let provider = AIProvider(providerID: "candid-local-voice", name: "本机语音服务", api: .other, baseURL: "http://127.0.0.1:8767/v1", destination: .onDevice)
+            let provider = AIProvider(providerID: "candid-local-voice", name: L("本机语音服务"), api: .other, baseURL: "http://127.0.0.1:8767/v1", destination: .onDevice)
             try config.upsert(provider)
             for (role, modelID) in [("asr", "qwen3-asr"), ("diarization", "moss-campp")] {
                 let model = AIModel(providerID: provider.providerID, modelID: modelID, modalities: ["audio"])
@@ -148,7 +149,7 @@ extension AIRuntime {
             return (keys, blocked)
         }.value
         if blocked {
-            NotificationCenter.default.post(name: .candidActionError, object: "模型密钥需要钥匙串授权：在 AI 页用一次模型，弹出提示时选「始终允许」")
+            NotificationCenter.default.post(name: .candidActionError, object: L("模型密钥需要钥匙串授权：在 AI 页用一次模型，弹出提示时选「始终允许」"))
         }
         _ = try await channel.send("POST", "/local/models/authorize", body: JSONSerialization.data(withJSONObject: ["secrets": keys])).checked()
         let calls = first ? await sink.calls(from: 0, to: nowMs() + 1) : []
@@ -162,7 +163,7 @@ extension AIRuntime {
 
     func coreComplete(_ request: ChatRequest, model: ModelRef, context: CallContext) async throws -> ChatResponse {
         try await syncCore()
-        guard let channel = TimelineService.shared.channel else { throw AIError.network("时间线库尚未打开") }
+        guard let channel = TimelineService.shared.channel else { throw AIError.network(L("时间线库尚未打开")) }
         let messages: [[String: Any]] = request.messages.map { message in
             var parts: [[String: Any]] = [["type": "text", "text": message.content]]
             for image in message.images ?? [] { parts.append(["type": "image_url", "image_url": ["url": "data:" + image.mimeType + ";base64," + image.data.base64EncodedString()]]) }

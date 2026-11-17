@@ -1,9 +1,10 @@
 import Foundation
+import CandidLocalization
 
 public enum DesktopRecognitionKind: String, CaseIterable, Codable, Sendable {
     case ocr, vision
 
-    public var title: String { self == .ocr ? "OCR 文字识别" : "VLM 图像分析" }
+    public var title: String { self == .ocr ? L("OCR 文字识别") : L("VLM 图像分析") }
 }
 
 public enum DesktopRecognitionMode: String, CaseIterable, Codable, Sendable {
@@ -11,9 +12,9 @@ public enum DesktopRecognitionMode: String, CaseIterable, Codable, Sendable {
 
     public var title: String {
         switch self {
-        case .manual: "仅手动"
-        case .immediate: "新截图自动处理"
-        case .batch: "定时批处理"
+        case .manual: L("仅手动")
+        case .immediate: L("新截图自动处理")
+        case .batch: L("定时批处理")
         }
     }
 }
@@ -68,15 +69,15 @@ public struct DesktopRecognitionPowerGate: Sendable {
     public mutating func blockReason(policy: DesktopRecognitionPolicy, power: DesktopRecognitionPower, uptime: TimeInterval) -> String? {
         if power.onExternalPower == true { pluggedSince = pluggedSince ?? uptime }
         else { reset() }
-        if power.thermalBlocked { return "等待 Mac 降温" }
-        if policy.pauseInLowPower && power.lowPower { return "低电量模式已开启" }
-        if policy.requireExternalPower && power.onExternalPower != true { return "等待接入外部电源" }
+        if power.thermalBlocked { return L("等待 Mac 降温") }
+        if policy.pauseInLowPower && power.lowPower { return L("低电量模式已开启") }
+        if policy.requireExternalPower && power.onExternalPower != true { return L("等待接入外部电源") }
         if policy.minimumBatteryPercent > 0 && power.hasInternalBattery != false {
-            guard let percent = power.batteryPercent else { return "无法读取当前电量" }
-            if percent < policy.minimumBatteryPercent { return "等待电量达到 \(policy.minimumBatteryPercent)%" }
+            guard let percent = power.batteryPercent else { return L("无法读取当前电量") }
+            if percent < policy.minimumBatteryPercent { return L("等待电量达到 %@%%", policy.minimumBatteryPercent) }
         }
         if let remaining = remainingPluggedWait(policy: policy, uptime: uptime) {
-            return "还需持续插电约 \(Int(ceil(remaining / 60))) 分钟"
+            return L("还需持续插电约 %@ 分钟", Int(ceil(remaining / 60)))
         }
         return nil
     }
@@ -134,12 +135,12 @@ public struct DesktopWindowLayout: Codable, Equatable, Sendable {
 
     public var markdown: String {
         var sections: [String] = []
-        if let focusLabel { sections.append("**窗口焦点** " + Self.escape(focusLabel)) }
+        if let focusLabel { sections.append(L("**窗口焦点** ") + Self.escape(focusLabel)) }
         for region in regions {
             var blocks = ["## " + Self.escape(region.name)]
             if !region.visibleState.isEmpty { blocks.append(Self.escape(region.visibleState)) }
             if let rows = region.tableRows, let columns = rows.map(\.count).max(), columns > 0 {
-                let header = (1...columns).map { "列 \($0)" }
+                let header = (1...columns).map { L("列 %@", $0) }
                 let separator = Array(repeating: "---", count: columns)
                 let table = ([header, separator] + rows).map { row in
                     let cells = row.map(Self.escape) + Array(repeating: "", count: columns - row.count)
@@ -150,12 +151,12 @@ public struct DesktopWindowLayout: Codable, Equatable, Sendable {
                 blocks.append(region.text.map { "- " + Self.escape($0) }.joined(separator: "\n"))
             }
             if !region.visualSupplement.isEmpty {
-                blocks.append("**画面补充** " + Self.escape(region.visualSupplement))
+                blocks.append(L("**画面补充** ") + Self.escape(region.visualSupplement))
             }
             sections.append(blocks.joined(separator: "\n\n"))
         }
         if !unclassifiedText.isEmpty {
-            sections.append("## 未归类文字\n\n" + unclassifiedText.map { "- " + Self.escape($0) }.joined(separator: "\n"))
+            sections.append(L("## 未归类文字\n\n") + unclassifiedText.map { "- " + Self.escape($0) }.joined(separator: "\n"))
         }
         return sections.joined(separator: "\n\n")
     }

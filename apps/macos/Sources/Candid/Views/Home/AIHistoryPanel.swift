@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// 「历史对话」 (agent-platform-v1 §4.2): conversations kept on this Mac, grouped 今天 / 昨天 / 更早, searchable. Each row
 /// shows the title (the first question until renamed), when, the last answer in one line and how many records it
@@ -13,14 +14,14 @@ struct AIHistoryPanel: View {
         InlinePanel {
             VStack(alignment: .leading, spacing: Space.s) {
                 HStack(spacing: Space.xs) {
-                    Text("历史对话").typography(.headline)
-                    Text("只存在这台 Mac 上").typography(.caption).foregroundStyle(.tertiary)
+                    Text(L("历史对话")).typography(.headline)
+                    Text(L("只存在这台 Mac 上")).typography(.caption).foregroundStyle(.tertiary)
                     Spacer()
-                    ChipButton(title: "收起", systemImage: "chevron.up", action: close)
+                    ChipButton(title: L("收起"), systemImage: "chevron.up", action: close)
                 }
-                SearchField(prompt: "搜索标题和内容", text: $query)
+                SearchField(prompt: L("搜索标题和内容"), text: $query)
                 if groups.groups.isEmpty {
-                    Text(model.history.isEmpty ? "还没有保存的对话。问一个问题后会出现在这里。" : "没有找到「\(query)」")
+                    Text(model.history.isEmpty ? L("还没有保存的对话。问一个问题后会出现在这里。") : L("没有找到「%@」", query))
                         .typography(.secondary).foregroundStyle(.secondary).padding(.vertical, Space.xs)
                 }
                 VStack(alignment: .leading, spacing: Space.s) {
@@ -32,7 +33,7 @@ struct AIHistoryPanel: View {
                                 AIHistoryRow(model: model, conversation: item, current: item.id == model.conversation.id, close: close)
                             }
                             if query.isEmpty && group.items.count > 6 {
-                                Text("还有 \(group.items.count - 6) 条，用上面的搜索找").typography(.caption).foregroundStyle(.tertiary).padding(.leading, Space.xs)
+                                Text(L("还有 %@ 条，用上面的搜索找", group.items.count - 6)).typography(.caption).foregroundStyle(.tertiary).padding(.leading, Space.xs)
                             }
                         }
                     }
@@ -54,7 +55,7 @@ struct AIHistoryRow: View {
     @FocusState private var nameFocused: Bool
 
     static let time: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
-    static let day: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 HH:mm"; return f }()
+    static let day: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = L("M月d日 HH:mm"); return f }()
 
     private var when: String {
         Calendar.current.isDate(conversation.updated, inSameDayAs: model.currentTime) || Calendar.current.isDate(conversation.updated, inSameDayAs: model.currentTime.addingTimeInterval(-86_400))
@@ -67,40 +68,40 @@ struct AIHistoryRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 if renaming {
                     HStack(spacing: Space.xxs) {
-                        TextField("对话名称", text: $name).textFieldStyle(.plain).typography(.body, .semibold)
+                        TextField(L("对话名称"), text: $name).textFieldStyle(.plain).typography(.body, .semibold)
                             .focused($nameFocused)
                             .onSubmit(save)
                             .padding(.horizontal, Space.xs).frame(height: ControlHeight.button)
                             .background(RoundedRectangle(cornerRadius: Radius.small, style: .continuous).fill(Surface.fill.color))
-                        ChipButton(title: "取消") { renaming = false }
-                        ChipButton(title: "保存", emphasized: true, action: save)
+                        ChipButton(title: L("取消")) { renaming = false }
+                        ChipButton(title: L("保存"), emphasized: true, action: save)
                     }
                 } else {
                     HStack(spacing: Space.xs) {
                         Text(conversation.title).typography(.body, .semibold).lineLimit(1)
-                        if current { Tag(text: "当前", tint: Palette.accent) }
+                        if current { Tag(text: L("当前"), tint: Palette.accent) }
                         Spacer(minLength: Space.xs)
                         Text(when).typography(.caption, digits: true).foregroundStyle(.tertiary)
                     }
                 }
-                Text(conversation.preview.isEmpty ? "（没有回答）" : conversation.preview).typography(.secondary).foregroundStyle(.secondary).lineLimit(1)
+                Text(conversation.preview.isEmpty ? L("（没有回答）") : conversation.preview).typography(.secondary).foregroundStyle(.secondary).lineLimit(1)
                 HStack(spacing: Space.xxs) {
                     let questions = conversation.messages.filter { $0.role == .user }.count
-                    Tag(text: "\(questions) 问")
-                    if conversation.recordCount > 0 { Tag(text: "引用 \(conversation.recordCount) 条记录") }
+                    Tag(text: L("%@ 问", questions))
+                    if conversation.recordCount > 0 { Tag(text: L("引用 %@ 条记录", conversation.recordCount)) }
                     let cards = conversation.messages.flatMap(\.actions).count
-                    if cards > 0 { Tag(text: "\(cards) 项写入或提案") }
+                    if cards > 0 { Tag(text: L("%@ 项写入或提案", cards)) }
                     Spacer(minLength: 0)
                     if confirmingDelete {
-                        Text("删除后不能恢复").typography(.caption).foregroundStyle(.secondary)
-                        ChipButton(title: "不删") { confirmingDelete = false }
-                        ChipButton(title: "确认删除", systemImage: "trash", role: .destructive) {
+                        Text(L("删除后不能恢复")).typography(.caption).foregroundStyle(.secondary)
+                        ChipButton(title: L("不删")) { confirmingDelete = false }
+                        ChipButton(title: L("确认删除"), systemImage: "trash", role: .destructive) {
                             confirmingDelete = false
                             Task { await model.deleteConversation(conversation.id) }
                         }
                     } else if hovering && !renaming {
-                        ChipButton(title: "打开", systemImage: "arrow.right", emphasized: true, action: open)
-                        ChromeMenu(systemImage: "ellipsis", help: "更多") { menu }
+                        ChipButton(title: L("打开"), systemImage: "arrow.right", emphasized: true, action: open)
+                        ChromeMenu(systemImage: "ellipsis", help: L("更多")) { menu }
                     }
                 }
             }
@@ -112,15 +113,15 @@ struct AIHistoryRow: View {
         .onHover { hovering = $0 }
         .contextMenu { menu }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(conversation.title)，\(when)")
-        .accessibilityAction(named: "打开", open)
+        .accessibilityLabel(L("%@，%@", conversation.title, when))
+        .accessibilityAction(named: L("打开"), open)
     }
 
     @ViewBuilder private var menu: some View {
-        Button("打开", action: open)
-        Button("重命名…") { name = conversation.title; renaming = true; nameFocused = true }
+        Button(L("打开"), action: open)
+        Button(L("重命名…")) { name = conversation.title; renaming = true; nameFocused = true }
         Divider() // style-exempt: separator inside a system context menu
-        Button("删除…", role: .destructive) { confirmingDelete = true }
+        Button(L("删除…"), role: .destructive) { confirmingDelete = true }
     }
 
     private func open() {

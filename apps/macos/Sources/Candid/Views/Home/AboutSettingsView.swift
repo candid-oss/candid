@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 /// Settings → 关于: version, license, the privacy promise and the third-party notices shipped in the bundle.
@@ -14,24 +15,24 @@ struct AboutSettingsView: View {
     }
 
     var body: some View {
-        SettingsPage(title: "关于") {
+        SettingsPage(title: L("关于")) {
             SettingsGroup(title: "Candid") {
-                SettingRow(title: "版本", detail: version) { EmptyView() }
+                SettingRow(title: L("版本"), detail: version) { EmptyView() }
                 HairlineDivider()
-                SettingRow(title: "许可证", detail: "Apache License 2.0，开源") {
-                    QuietButton(title: "查看") { open("LICENSE") }
+                SettingRow(title: L("许可证"), detail: L("Apache License 2.0，开源")) {
+                    QuietButton(title: L("查看")) { open("LICENSE") }
                 }
                 HairlineDivider()
-                SettingRow(title: "源代码", detail: "github.com/candid-oss/candid") {
-                    QuietButton(title: "打开", emphasized: true) { NSWorkspace.shared.open(Self.repository) }
+                SettingRow(title: L("源代码"), detail: "github.com/candid-oss/candid") {
+                    QuietButton(title: L("打开"), emphasized: true) { NSWorkspace.shared.open(Self.repository) }
                 }
             }
-            SettingsGroup(title: "隐私") {
-                Text("没有遥测、统计或账号。资料只保存在这台 Mac 上；只有你为某个功能配置了远程模型时，那部分内容才会发给该服务。每次启动默认暂停采集，菜单栏圆点始终显示是否在记录。")
+            SettingsGroup(title: L("隐私")) {
+                Text(L("没有遥测、统计或账号。资料只保存在这台 Mac 上；只有你为某个功能配置了远程模型时，那部分内容才会发给该服务。每次启动默认暂停采集，菜单栏圆点始终显示是否在记录。"))
                     .typography(.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, Space.row)
             }
-            SettingsGroup(title: "第三方软件") {
+            SettingsGroup(title: L("第三方软件")) {
                 if let notices {
                     ScrollView {
                         Text(notices).font(.system(.caption, design: .monospaced)) // style-exempt: license text, not UI
@@ -39,8 +40,8 @@ struct AboutSettingsView: View {
                     }
                     .frame(height: 320)
                 } else {
-                    SettingRow(title: "开源组件许可", detail: "Rust 核心使用的开源组件及其许可证全文") {
-                        QuietButton(title: "显示") { notices = Self.text("THIRD_PARTY_LICENSES.txt") ?? "这个构建里没有附带许可清单。" }
+                    SettingRow(title: L("开源组件许可"), detail: L("Rust 核心使用的开源组件及其许可证全文")) {
+                        QuietButton(title: L("显示")) { notices = Self.text("THIRD_PARTY_LICENSES.txt") ?? L("这个构建里没有附带许可清单。") }
                     }
                 }
             }

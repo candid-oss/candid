@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 
 /// Selects a rectangle in display-local, top-left-origin points.
 @MainActor
@@ -111,7 +112,7 @@ private final class RegionSelectionView: NSView {
             border.lineWidth = 1
             border.stroke()
         } else {
-            let label = NSAttributedString(string: "拖动选择截图区域，按 Esc 取消", attributes: [
+            let label = NSAttributedString(string: L("拖动选择截图区域，按 Esc 取消"), attributes: [
                 .font: NSFont.systemFont(ofSize: 15, weight: .medium),
                 .foregroundColor: NSColor.white
             ])

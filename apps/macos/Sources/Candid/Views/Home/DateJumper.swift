@@ -1,4 +1,5 @@
 import Observation
+import CandidLocalization
 import SwiftUI
 
 /// How much was recorded on one day, from the core's per-day counts (`app_day_counts`). Counts only.
@@ -24,10 +25,10 @@ struct DayAmount: Equatable, Sendable {
 
     var summary: String {
         var parts: [String] = []
-        if screenMinutes > 0 { parts.append("屏幕约 " + TimeInterval(screenMinutes * 60).spokenDuration) }
-        if media > 0 { parts.append("\(media) 条录音或图片") }
-        if ai > 0 { parts.append("\(ai) 条 AI 指令") }
-        return parts.isEmpty ? "没有记录" : parts.joined(separator: "，")
+        if screenMinutes > 0 { parts.append(L("屏幕约 ") + TimeInterval(screenMinutes * 60).spokenDuration) }
+        if media > 0 { parts.append(L("%@ 条录音或图片", media)) }
+        if ai > 0 { parts.append(L("%@ 条 AI 指令", ai)) }
+        return parts.isEmpty ? L("没有记录") : parts.joined(separator: L("，"))
     }
 }
 
@@ -87,7 +88,7 @@ struct DateJumperGrid: Equatable {
     }
 
     static func title(_ month: Date, calendar: Calendar = .current) -> String {
-        "\(calendar.component(.year, from: month))年\(calendar.component(.month, from: month))月"
+        L("%@年%@月", calendar.component(.year, from: month), calendar.component(.month, from: month))
     }
 
     /// Keyboard movement: ←→ one day, ↑↓ one week; never past today.
@@ -162,8 +163,8 @@ struct DateJumperView: View {
                 Text(DateJumperGrid.title(month, calendar: calendar)).typography(.headline, digits: true)
                     .contentTransition(.numericText())
                 Spacer(minLength: Space.xs)
-                ChromeButton(systemImage: "chevron.left", help: "上个月") { show(month: -1) }
-                ChromeButton(systemImage: "chevron.right", help: "下个月") { show(month: 1) }
+                ChromeButton(systemImage: "chevron.left", help: L("上个月")) { show(month: -1) }
+                ChromeButton(systemImage: "chevron.right", help: L("下个月")) { show(month: 1) }
                     .disabled(isCurrentMonth).opacity(isCurrentMonth ? 0.35 : 1)
             }
             VStack(spacing: Space.xxs) {
@@ -183,9 +184,9 @@ struct DateJumperView: View {
             HStack(spacing: Space.xs) {
                 legend
                 Spacer(minLength: Space.xs)
-                if model.failed { Text("记录量暂时读不到").typography(.caption).foregroundStyle(.secondary) }
+                if model.failed { Text(L("记录量暂时读不到")).typography(.caption).foregroundStyle(.secondary) }
                 if !calendar.isDateInToday(selected) {
-                    QuietButton(title: "今天") { onPick(today) }
+                    QuietButton(title: L("今天")) { onPick(today) }
                 }
             }
         }
@@ -237,23 +238,23 @@ struct DateJumperView: View {
         .buttonStyle(.plain)
         .disabled(cell.isFuture)
         .onHover { inside in hovered = inside ? cell.date : (hovered == cell.date ? nil : hovered) }
-        .help(cell.isFuture ? "" : "\(calendar.component(.month, from: cell.date))月\(cell.day)日 · \(cell.amount.summary)")
-        .accessibilityLabel("\(calendar.component(.month, from: cell.date))月\(cell.day)日")
-        .accessibilityValue(cell.amount.summary + (cell.isToday ? "，今天" : "") + (cell.isSelected ? "，正在查看" : ""))
+        .help(cell.isFuture ? "" : L("%@月%@日 · %@", calendar.component(.month, from: cell.date), cell.day, cell.amount.summary))
+        .accessibilityLabel(L("%@月%@日", calendar.component(.month, from: cell.date), cell.day))
+        .accessibilityValue(cell.amount.summary + (cell.isToday ? L("，今天") : "") + (cell.isSelected ? L("，正在查看") : ""))
     }
 
     /// 少 ▢▢▢▢ 多: what the tints mean.
     private var legend: some View {
         HStack(spacing: 3) {
-            Text("少").typography(.caption).foregroundStyle(.tertiary)
+            Text(L("少")).typography(.caption).foregroundStyle(.tertiary)
             ForEach(1..<Self.tints.count, id: \.self) { level in
                 RoundedRectangle(cornerRadius: Radius.small / 3, style: .continuous)
                     .fill(Palette.accent.opacity(Self.tints[level])).frame(width: 10, height: 10)
             }
-            Text("多").typography(.caption).foregroundStyle(.tertiary)
+            Text(L("多")).typography(.caption).foregroundStyle(.tertiary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("颜色越深记录越多")
+        .accessibilityLabel(L("颜色越深记录越多"))
     }
 
     private func show(month delta: Int) {

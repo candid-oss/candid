@@ -1,9 +1,10 @@
 import Foundation
+import CandidLocalization
 
 public enum DesktopRecordKind: String, Codable, Sendable, CaseIterable {
     case application, window, context, screenshot, marker, system, gap
     public var title: String {
-        switch self { case .application: "应用活动"; case .window: "窗口变化"; case .context: "文字与状态"; case .screenshot: "屏幕证据"; case .marker: "手动标记"; case .system: "系统事件"; case .gap: "记录间隔" }
+        switch self { case .application: L("应用活动"); case .window: L("窗口变化"); case .context: L("文字与状态"); case .screenshot: L("屏幕证据"); case .marker: L("手动标记"); case .system: L("系统事件"); case .gap: L("记录间隔") }
     }
     public var symbol: String {
         switch self { case .application: "app"; case .window: "macwindow"; case .context: "text.alignleft"; case .screenshot: "photo"; case .marker: "bookmark"; case .system: "desktopcomputer"; case .gap: "pause.circle" }

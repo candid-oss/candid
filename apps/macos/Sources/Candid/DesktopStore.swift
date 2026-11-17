@@ -1,4 +1,5 @@
 import DesktopCore
+import CandidLocalization
 import Foundation
 import Observation
 import CandidClient
@@ -15,7 +16,7 @@ import CandidClient
 /// cutover is done. Reads use the core's `app_*` tools and return the timeline types the views draw; originals are
 /// opened by path, never sent as bytes.
 @MainActor @Observable final class DesktopStore {
-    static let sourceName = "Mac 桌面"
+    static let sourceName = L("Mac 桌面")
 
     /// Entries waiting for the core.
     private(set) var pending = 0
@@ -148,7 +149,7 @@ import CandidClient
     }
 
     private func deliver(_ entries: [DesktopOutbox.Entry]) async throws -> ([UInt64], String?) {
-        guard let core, let channel = core.channel else { throw DesktopStoreError.unavailable("核心进程尚未就绪") }
+        guard let core, let channel = core.channel else { throw DesktopStoreError.unavailable(L("核心进程尚未就绪")) }
         guard core.captureDirect else { throw CoreError.service(status: 409, code: "cutover_pending", message: "") }
         let source = try await desktopSource(channel)
         return try await DesktopDelivery.deliver(entries, channel: channel, sourceID: source)
@@ -164,7 +165,7 @@ import CandidClient
     // MARK: Reads
 
     private func channel() throws -> LocalChannel {
-        guard let channel = core?.channel else { throw DesktopStoreError.unavailable("核心进程尚未就绪") }
+        guard let channel = core?.channel else { throw DesktopStoreError.unavailable(L("核心进程尚未就绪")) }
         return channel
     }
 

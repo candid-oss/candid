@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// Settings inside the immersive window: a quiet section list on the left,
 /// one section on the right. No box around either; the page floats on the
@@ -11,23 +12,23 @@ struct SettingsHomeView: View {
 
     private var sections: [(id: String, title: String, symbol: String)] {
         var items: [(String, String, String)] = [
-            ("capture", "记录", "record.circle"), ("scope", "应用", "square.grid.2x2"),
-            ("appearance", "外观", "paintpalette"), ("storage", "数据", "internaldrive"),
-            ("recognition", "识别", "text.viewfinder"), ("shortcuts", "快捷操作", "keyboard"),
-            ("models", "模型", "sparkles"), ("ai-functions", "AI 功能", "wand.and.stars"),
-            ("components", "组件", "shippingbox"),
-            ("people", "人物", "person.2"), ("access", "外部访问", "key.horizontal")
+            ("capture", L("记录"), "record.circle"), ("scope", L("应用"), "square.grid.2x2"),
+            ("appearance", L("外观"), "paintpalette"), ("storage", L("数据"), "internaldrive"),
+            ("recognition", L("识别"), "text.viewfinder"), ("shortcuts", L("快捷操作"), "keyboard"),
+            ("models", L("模型"), "sparkles"), ("ai-functions", L("AI 功能"), "wand.and.stars"),
+            ("components", L("组件"), "shippingbox"),
+            ("people", L("人物"), "person.2"), ("access", L("外部访问"), "key.horizontal")
         ]
-        if deviceSettings != nil { items.append(("console", "设备", "waveform")) }
-        items.append(("diagnostics", "诊断", "stethoscope"))
-        items.append(("about", "关于", "info.circle"))
+        if deviceSettings != nil { items.append(("console", L("设备"), "waveform")) }
+        items.append(("diagnostics", L("诊断"), "stethoscope"))
+        items.append(("about", L("关于"), "info.circle"))
         return items.map { (id: $0.0, title: $0.1, symbol: $0.2) }
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("设置").typography(.title).padding(.horizontal, 12).padding(.bottom, 18)
+                Text(L("设置")).typography(.title).padding(.horizontal, 12).padding(.bottom, 18)
                 ForEach(sections, id: \.id) { item in
                     let on = item.id == current
                     Button { withAnimation(Motion.bouncy) { selection = item.id } } label: {
@@ -61,7 +62,7 @@ struct SettingsHomeView: View {
                 else if current == "ai-functions" { AIFunctionSettingsView() }
                 else if current == "components" { ComponentsSettingsView() }
                 else if current == "about" { AboutSettingsView() }
-                else if current == "people" { SettingsPage(title: "人物") { VoiceLibraryView() } }
+                else if current == "people" { SettingsPage(title: L("人物")) { VoiceLibraryView() } }
                 else { DesktopSettingsView(session: session, deviceSettings: deviceSettings, section: current) }
             }
                 .id(current)
@@ -85,6 +86,7 @@ struct SettingsHomeView: View {
 /// Look of the whole window. Changes apply live to the background behind it.
 struct AppearanceSettings: View {
     @AppStorage("console.appearance") private var appearance = "system"
+    @AppStorage(Localization.languageKey) private var language = "system"
     @AppStorage(VisualStyle.key) private var styleRaw = ""
     @AppStorage(BackgroundStyleKey.mode) private var mode = "app"
     @AppStorage(BackgroundStyleKey.color) private var hex = "#5B6CFF"
@@ -100,12 +102,15 @@ struct AppearanceSettings: View {
     }
 
     var body: some View {
-        SettingsPage(title: "外观") {
-            SettingRow(title: "明暗") {
-                CapsuleChoice(options: [("system", "跟随系统"), ("light", "浅色"), ("dark", "深色")], selection: $appearance)
+        SettingsPage(title: L("外观")) {
+            SettingRow(title: L("明暗")) {
+                CapsuleChoice(options: [("system", L("跟随系统")), ("light", L("浅色")), ("dark", L("深色"))], selection: $appearance)
+            }
+            SettingRow(title: L("语言"), detail: language == Localization.language.rawValue || (language == "system") ? nil : L("重启 Candid 后生效。")) {
+                CapsuleChoice(options: [("system", L("跟随系统")), ("zh", "\u{4E2D}\u{6587}"), ("en", "English")], selection: $language) // language names stay in their own language
             }
             VStack(alignment: .leading, spacing: Space.s) {
-                Text("风格").typography(.headline)
+                Text(L("风格")).typography(.headline)
                 HStack(spacing: Space.s) {
                     ForEach(VisualStyle.allCases) { item in
                         StyleTile(style: item, selected: item == style) { withAnimation(Motion.snappy) { styleBinding.wrappedValue = item } }
@@ -115,12 +120,12 @@ struct AppearanceSettings: View {
             VStack(alignment: .leading, spacing: 0) {
                 switch style {
                 case .ambient: ambientOptions
-                case .frosted: tintRow; HairlineDivider(); sliderRow("浓度", value: $frostTint, range: 0...1)
+                case .frosted: tintRow; HairlineDivider(); sliderRow(L("浓度"), value: $frostTint, range: 0...1)
                 case .flat: tintRow
                 }
             }
             .id(style).transition(Motion.enter)
-            QuietButton(title: "恢复默认") {
+            QuietButton(title: L("恢复默认")) {
                 styleRaw = VisualStyle.ambient.rawValue; mode = "app"; hex = "#5B6CFF"; intensity = 1.0; glass = 0.55
                 flow = false; styleTint = ""; frostTint = 0.35
             }
@@ -131,27 +136,27 @@ struct AppearanceSettings: View {
     }
 
     @ViewBuilder private var ambientOptions: some View {
-        SettingRow(title: "颜色") {
+        SettingRow(title: L("颜色")) {
             HStack(spacing: Space.xs) {
                 if mode == "solid" { ColorDot(hex: $hex) }
-                CapsuleChoice(options: [("app", "跟随应用"), ("aurora", "极光"), ("solid", "单色")], selection: $mode)
+                CapsuleChoice(options: [("app", L("跟随应用")), ("aurora", L("极光")), ("solid", L("单色"))], selection: $mode)
             }
         }
         HairlineDivider()
-        sliderRow("浓度", value: $intensity, range: 0.3...1.8)
+        sliderRow(L("浓度"), value: $intensity, range: 0.3...1.8)
         HairlineDivider()
-        sliderRow("毛玻璃", value: $glass, range: 0...1)
+        sliderRow(L("毛玻璃"), value: $glass, range: 0...1)
         HairlineDivider()
-        SettingRow(title: "缓慢流动", detail: "背景持续重绘，会多耗一些电。") {
+        SettingRow(title: L("缓慢流动"), detail: L("背景持续重绘，会多耗一些电。")) {
             Toggle("", isOn: $flow).toggleStyle(.switch).labelsHidden().controlSize(.small)
         }
     }
 
     private var tintRow: some View {
-        SettingRow(title: "底色") {
+        SettingRow(title: L("底色")) {
             HStack(spacing: Space.xs) {
                 if !styleTint.isEmpty { ColorDot(hex: $styleTint) }
-                CapsuleChoice(options: [(false, "中性"), (true, "自选")],
+                CapsuleChoice(options: [(false, L("中性")), (true, L("自选"))],
                               selection: Binding(get: { !styleTint.isEmpty }, set: { styleTint = $0 ? hex : "" }))
             }
         }

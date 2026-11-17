@@ -9,6 +9,7 @@ if [[ "$(/usr/bin/xcode-select -p)" == "/Library/Developer/CommandLineTools" && 
   FLAGS=(-Xswiftc -load-plugin-library -Xswiftc "$TESTING_PLUGIN")
 fi
 "$ROOT_DIR/script/check_style.sh"
+python3 "$ROOT_DIR/script/localize_sources.py" --check
 python3 "$ROOT_DIR/script/test_recording_recovery.py"
 # The Rust core (core): CandidClient tests start it as the App does.
 CORE_DIR="$(cd "$ROOT_DIR/../../core" && pwd)"

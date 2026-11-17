@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import DesktopCore
 import SwiftUI
 
@@ -139,8 +140,8 @@ struct TimelineHomeView: View {
         .task(id: playing) { await playback() }
         .task(id: timelineVisible) { if timelineVisible { await tickClock() } }
         .task(id: media?.records.count ?? -1) { if let media, media.records.isEmpty { await media.refresh() } }
-        .confirmCapsule("删除这段活动？", isPresented: $confirmingDelete, message: "删除这段活动中的全部记录和截图。已导出的副本不受影响。", action: deleteActivity)
-        .confirmCapsule("删除这条资料？", isPresented: Binding(get: { deletingMedia != nil }, set: { if !$0 { deletingMedia = nil } }), message: "这会删除资料库里的记录和对应的识别结果。", action: deleteMedia)
+        .confirmCapsule(L("删除这段活动？"), isPresented: $confirmingDelete, message: L("删除这段活动中的全部记录和截图。已导出的副本不受影响。"), action: deleteActivity)
+        .confirmCapsule(L("删除这条资料？"), isPresented: Binding(get: { deletingMedia != nil }, set: { if !$0 { deletingMedia = nil } }), message: L("这会删除资料库里的记录和对应的识别结果。"), action: deleteMedia)
     }
 
     private var zoomOverlay: WindowOverlay? {
@@ -266,11 +267,11 @@ struct TimelineHomeView: View {
     }
 
     private var factLine: String {
-        if scene.isEmpty { return session.searchText.isEmpty ? "还没有记录" : "没有匹配「\(session.searchText)」的记录" }
-        var parts = ["记录 \(scene.recordedSeconds.spokenDuration)", "\(Set(scene.activities.map(\.bundleID)).count) 个应用"]
-        if !scene.audio.isEmpty { parts.append("\(scene.audio.count) 段录音") }
-        if !scene.images.isEmpty { parts.append("\(scene.images.count) 张截图") }
-        if !session.searchText.isEmpty { parts.insert("搜索「\(session.searchText)」", at: 0) }
+        if scene.isEmpty { return session.searchText.isEmpty ? L("还没有记录") : L("没有匹配「%@」的记录", session.searchText) }
+        var parts = [L("记录 %@", scene.recordedSeconds.spokenDuration), L("%@ 个应用", Set(scene.activities.map(\.bundleID)).count)]
+        if !scene.audio.isEmpty { parts.append(L("%@ 段录音", scene.audio.count)) }
+        if !scene.images.isEmpty { parts.append(L("%@ 张截图", scene.images.count)) }
+        if !session.searchText.isEmpty { parts.insert(L("搜索「%@」", session.searchText), at: 0) }
         return parts.joined(separator: " · ")
     }
 
@@ -307,10 +308,10 @@ struct TimelineHomeView: View {
             Image(systemName: "circle.dotted").typography(.display, .ultraLight).foregroundStyle(.tertiary)
                 .symbolEffect(.pulse, options: .repeating, isActive: session.isRecording)
             if !session.searchText.isEmpty {
-                QuietButton(title: "清除搜索") { session.searchText = "" }
+                QuietButton(title: L("清除搜索")) { session.searchText = "" }
             } else if isToday && !session.isRecording && !session.isDemo {
                 Button { session.startRecording() } label: {
-                    Text("开始记录").typography(.headline).padding(.horizontal, 20).frame(height: 34)
+                    Text(L("开始记录")).typography(.headline).padding(.horizontal, 20).frame(height: 34)
                         .background(Capsule().fill(Color.accentColor)).foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
@@ -349,7 +350,7 @@ struct TimelineHomeView: View {
                             .typography(.secondary).foregroundStyle(.secondary).monospacedDigit()
                     }
                     Spacer()
-                    ChromeButton(systemImage: "xmark", help: "收起（Esc）", action: close)
+                    ChromeButton(systemImage: "xmark", help: L("收起（Esc）"), action: close)
                 }
                 .padding(.horizontal, 26).padding(.top, 20).padding(.bottom, 4)
                 if let media, let record = mediaRecord(episode) {
@@ -358,7 +359,7 @@ struct TimelineHomeView: View {
                         .id(record.id)
                         .task(id: record.id) { media.selectedID = record.id; await media.loadDetails() }
                 } else {
-                    Text("这条资料暂时读不到，资料库可能未连接。").foregroundStyle(.secondary).padding(26)
+                    Text(L("这条资料暂时读不到，资料库可能未连接。")).foregroundStyle(.secondary).padding(26)
                 }
             }
             .transition(.opacity.animation(.easeOut(duration: 0.25).delay(0.12)))
@@ -506,14 +507,14 @@ struct TimelineHomeView: View {
 
     private func promptActions(_ mark: TimelinePromptMark) -> AnyView {
         AnyView(Group {
-            Button("打开详情") { openTarget(.prompt(mark.id)) }
-            Button("从这里播放") { jump(to: mark.start); playing = true }
+            Button(L("打开详情")) { openTarget(.prompt(mark.id)) }
+            Button(L("从这里播放")) { jump(to: mark.start); playing = true }
             Divider() // style-exempt: native context menu separator
-            Button("复制指令文字") {
+            Button(L("复制指令文字")) {
                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(mark.preview ?? "", forType: .string)
             }.disabled((mark.preview ?? "").isEmpty)
-            Button("复制引用") {
-                let reference = "AI 指令 · \(mark.start.ISO8601Format())\nevent_id: \(mark.id)"
+            Button(L("复制引用")) {
+                let reference = L("AI 指令 · %@\nevent_id: %@", mark.start.ISO8601Format(), mark.id)
                 NSPasteboard.general.clearContents(); NSPasteboard.general.setString(reference, forType: .string)
             }
         })
@@ -649,10 +650,10 @@ private struct DayHeader: View {
                         jumping.toggle()
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text("\(Calendar.current.component(.month, from: date))月\(Calendar.current.component(.day, from: date))日")
+                            Text(L("%@月%@日", Calendar.current.component(.month, from: date), Calendar.current.component(.day, from: date)))
                                 .typography(.display)
                                 .contentTransition(.numericText())
-                            Text(isToday ? "今天" : date.formatted(.dateTime.weekday(.wide)))
+                            Text(isToday ? L("今天") : date.formatted(.dateTime.weekday(.wide)))
                                 .typography(.section, .medium).foregroundStyle(.secondary)
                             Image(systemName: "chevron.down").typography(.caption, .bold).foregroundStyle(.tertiary)
                                 .rotationEffect(.degrees(jumping ? 180 : 0))
@@ -668,8 +669,8 @@ private struct DayHeader: View {
                     .onHover { hovering = $0 }
                     .animation(Motion.snappy, value: hovering)
                     .animation(Motion.snappy, value: jumping)
-                    .help("选择日期（⌘D）")
-                    .accessibilityLabel("选择日期")
+                    .help(L("选择日期（⌘D）"))
+                    .accessibilityLabel(L("选择日期"))
                     .accessibilityValue(date.formatted(date: .complete, time: .omitted))
                     .keyboardShortcut("d", modifiers: .command)
                     .popover(isPresented: $jumping, arrowEdge: .bottom) {
@@ -680,15 +681,15 @@ private struct DayHeader: View {
                         }
                     }
                     HStack(spacing: 0) {
-                        ChromeButton(systemImage: "chevron.left", help: "前一天") { onShift(-1) }
-                        ChromeButton(systemImage: "chevron.right", help: "后一天") { onShift(1) }.disabled(isToday)
+                        ChromeButton(systemImage: "chevron.left", help: L("前一天")) { onShift(-1) }
+                        ChromeButton(systemImage: "chevron.right", help: L("后一天")) { onShift(1) }.disabled(isToday)
                     }
                 }
                 Text(factLine).typography(.body).foregroundStyle(.secondary)
                     .contentTransition(.opacity)
             }
             Spacer()
-            PillSwitcher(items: [(TimelineMode.episodes, "片段"), (.rhythm, "节律")], selection: $mode, scale: .secondary)
+            PillSwitcher(items: [(TimelineMode.episodes, L("片段")), (.rhythm, L("节律"))], selection: $mode, scale: .secondary)
                 .opacity(showsModes ? 1 : 0)
         }
         .animation(Motion.spring, value: date)

@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidClient
 
 // Value types for the mail scope and level rules (agent-platform-v1 §2.0.2). They read and write the core's mail
@@ -7,7 +8,7 @@ import CandidClient
 enum MailLevel: String, CaseIterable, Hashable, Sendable {
     case ignore, metadata, normal, important
     var title: String {
-        switch self { case .ignore: "忽略"; case .metadata: "只存元数据"; case .normal: "普通"; case .important: "重点" }
+        switch self { case .ignore: L("忽略"); case .metadata: L("只存元数据"); case .normal: L("普通"); case .important: L("重点") }
     }
     /// Levels a rule or a hand edit may set (a single mail is never "ignored" by hand).
     static let forRules: [MailLevel] = [.metadata, .normal, .important, .ignore]
@@ -17,12 +18,12 @@ enum MailField: String, CaseIterable, Hashable, Sendable {
     case from, domain, to, subject_contains, list, mailbox
     var title: String {
         switch self {
-        case .from: "发件人是"
-        case .domain: "发件人域名是"
-        case .to: "收件人包含"
-        case .subject_contains: "主题包含"
-        case .list: "群发邮件头"
-        case .mailbox: "文件夹是"
+        case .from: L("发件人是")
+        case .domain: L("发件人域名是")
+        case .to: L("收件人包含")
+        case .subject_contains: L("主题包含")
+        case .list: L("群发邮件头")
+        case .mailbox: L("文件夹是")
         }
     }
     var placeholder: String {
@@ -30,9 +31,9 @@ enum MailField: String, CaseIterable, Hashable, Sendable {
         case .from: "name@example.com"
         case .domain: "example.com"
         case .to: "me@example.com"
-        case .subject_contains: "报价"
+        case .subject_contains: L("报价")
         case .list: ""
-        case .mailbox: "role:inbox 或 文件夹名"
+        case .mailbox: L("role:inbox 或 文件夹名")
         }
     }
 }
@@ -54,8 +55,8 @@ struct MailRule: Identifiable, Equatable, Sendable {
 
     var summary: String {
         conditions.map { c in
-            c.field == .list ? (c.value == "no" ? "没有群发邮件头" : "带群发邮件头") : "\(c.field.title) \(c.value)"
-        }.joined(separator: " 且 ")
+            c.field == .list ? (c.value == "no" ? L("没有群发邮件头") : L("带群发邮件头")) : "\(c.field.title) \(c.value)"
+        }.joined(separator: L(" 且 "))
     }
 
     init(conditions: [MailCondition], level: MailLevel) { self.conditions = conditions; self.level = level }
@@ -91,7 +92,7 @@ struct MailScope: Equatable, Sendable {
     /// 0 means everything Mail holds.
     var backfillDays = 90
 
-    static let backfillChoices: [(Int, String)] = [(30, "30 天"), (90, "90 天"), (365, "1 年"), (0, "全部")]
+    static let backfillChoices: [(Int, String)] = [(30, L("30 天")), (90, L("90 天")), (365, L("1 年")), (0, L("全部"))]
 
     init() {}
 
@@ -124,9 +125,9 @@ struct MailScopeOptions: Decodable, Equatable {
         var title: String {
             if let address, !address.isEmpty { return address }
             if let description, !description.isEmpty { return description }
-            return scheme == "local" ? "本机邮箱（在我的 Mac 上）" : "未识别地址的账户"
+            return scheme == "local" ? L("本机邮箱（在我的 Mac 上）") : L("未识别地址的账户")
         }
-        var kind: String { ["ews": "Exchange", "imap": "IMAP", "pop": "POP", "local": "本机", "imaps": "IMAP"][scheme] ?? scheme.uppercased() }
+        var kind: String { ["ews": "Exchange", "imap": "IMAP", "pop": "POP", "local": L("本机"), "imaps": "IMAP"][scheme] ?? scheme.uppercased() }
         var count: Int { mailboxes.filter { !$0.never }.reduce(0) { $0 + $1.count } }
     }
     var accounts: [Account]
@@ -139,7 +140,7 @@ struct MailScopeOptions: Decodable, Equatable {
         var byPattern: [String: Folder] = [:]
         for account in accounts {
             for box in account.mailboxes where !box.never {
-                let known = ["inbox": "收件箱", "sent": "已发送", "archive": "归档"]
+                let known = ["inbox": L("收件箱"), "sent": L("已发送"), "archive": L("归档")]
                 let pattern = known[box.role] != nil ? "role:\(box.role)" : box.name
                 let title = known[box.role] ?? box.name
                 if byPattern[pattern] == nil { order.append(pattern); byPattern[pattern] = Folder(pattern: pattern, title: title, count: 0) }

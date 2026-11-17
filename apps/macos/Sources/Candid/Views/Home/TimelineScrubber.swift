@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 /// Something on the timeline a click can open.
@@ -171,8 +172,8 @@ struct TimelineScrubber: View {
                     grow = Double(min(max(0, CGFloat(base) - value.translation.height), TimelineLaneLayout.maximumGrow))
                 }
                 .onEnded { _ in gripBase = nil; withAnimation(Motion.bouncy) { grow = Double(TimelineLaneLayout.snapped(CGFloat(grow))) } })
-            .help("拖动调整时间线高度")
-            .accessibilityLabel("时间线高度")
+            .help(L("拖动调整时间线高度"))
+            .accessibilityLabel(L("时间线高度"))
             .animation(Motion.snappy, value: gripBase == nil)
     }
 
@@ -187,15 +188,15 @@ struct TimelineScrubber: View {
                         .contentShape(Circle())
                         .contentTransition(.symbolEffect(.replace))
                 }
-                .buttonStyle(.plain).help(playing ? "暂停（空格）" : "按时间播放这一天（空格）")
+                .buttonStyle(.plain).help(playing ? L("暂停（空格）") : L("按时间播放这一天（空格）"))
                 QuietMenu(title: "\(Int(speed))×") {
                     ForEach([60.0, 240, 900], id: \.self) { value in
                         Button("\(Int(value))×") { speed = value }
                     }
                 }
-                .help("播放速度")
+                .help(L("播放速度"))
                 if isToday && !followingNow {
-                    QuietButton(title: "回到现在", action: onReturnToNow)
+                    QuietButton(title: L("回到现在"), action: onReturnToNow)
                         .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
                 }
             }
@@ -204,7 +205,7 @@ struct TimelineScrubber: View {
             HStack(spacing: 0) {
                 QuietButton(title: "−") { zoom(1 / 1.8) }
                 QuietButton(title: spanLabel) { browsing = true; withAnimation(Motion.spring) { viewport = .fitting(scene.bounds, width: width) } }
-                QuietButton(title: "＋") { zoom(1.8) }
+                QuietButton(title: L("＋")) { zoom(1.8) }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -215,9 +216,9 @@ struct TimelineScrubber: View {
     private var spanLabel: String {
         let visible = Double(width) * viewport.secondsPerPoint
         let day = scene.bounds.upperBound.timeIntervalSince(scene.bounds.lowerBound)
-        if width <= 0 || visible >= day - 60 { return "整天" }
-        if visible >= 3600 { return String(format: "%.1f 小时", visible / 3600).replacingOccurrences(of: ".0 ", with: " ") }
-        return "\(Int(visible / 60)) 分钟"
+        if width <= 0 || visible >= day - 60 { return L("整天") }
+        if visible >= 3600 { return String(format: L("%.1f 小时"), visible / 3600).replacingOccurrences(of: ".0 ", with: " ") }
+        return L("%@ 分钟", Int(visible / 60))
     }
 
     // MARK: Lane titles
@@ -246,16 +247,16 @@ struct TimelineScrubber: View {
     }
 
     @ViewBuilder private var laneMenu: some View {
-        Section("显示的轨道") {
+        Section(L("显示的轨道")) {
             ForEach(TimelineLane.allCases) { lane in
                 Toggle(lane.title, isOn: Binding(get: { !collapsed.contains(lane) }, set: { setVisible(lane, $0) }))
                     .disabled(lane == .screen)
             }
         }
-        Section("高度") {
-            Button("紧凑") { withAnimation(Motion.bouncy) { grow = 0 } }
-            Button("标准") { withAnimation(Motion.bouncy) { grow = Double(TimelineLaneLayout.detents[1]) } }
-            Button("展开") { withAnimation(Motion.bouncy) { grow = Double(TimelineLaneLayout.detents[2]) } }
+        Section(L("高度")) {
+            Button(L("紧凑")) { withAnimation(Motion.bouncy) { grow = 0 } }
+            Button(L("标准")) { withAnimation(Motion.bouncy) { grow = Double(TimelineLaneLayout.detents[1]) } }
+            Button(L("展开")) { withAnimation(Motion.bouncy) { grow = Double(TimelineLaneLayout.detents[2]) } }
         }
     }
 
@@ -339,20 +340,20 @@ struct TimelineScrubber: View {
             .onEnded { _ in pinchBase = 1; interacting = false })
         .contextMenu { emptyMenu }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("时间轴")
+        .accessibilityLabel(L("时间轴"))
     }
 
     @ViewBuilder private var emptyMenu: some View {
         let date = hover.map { clamp(viewport.date(atX: $0.x)) } ?? cursor.latestPlayhead
-        Button("从 \(date.clockText) 播放") { onScrub(); playhead = date; playing = true }
-        Button("放大到这一小时") {
+        Button(L("从 %@ 播放", date.clockText)) { onScrub(); playhead = date; playing = true }
+        Button(L("放大到这一小时")) {
             var next = TimelineViewport(start: date.addingTimeInterval(-1800), secondsPerPoint: 3600 / Double(max(1, width)))
             next.clamp(width: width, bounds: scene.bounds)
             browsing = true
             withAnimation(Motion.spring) { viewport = next }
         }
-        Button("显示整天") { browsing = true; withAnimation(Motion.spring) { viewport = .fitting(scene.bounds, width: width) } }
-        if isToday && !followingNow { Button("回到现在", action: onReturnToNow) }
+        Button(L("显示整天")) { browsing = true; withAnimation(Motion.spring) { viewport = .fitting(scene.bounds, width: width) } }
+        if isToday && !followingNow { Button(L("回到现在"), action: onReturnToNow) }
         Divider() // style-exempt: native context menu separator
         laneMenu
     }
@@ -521,7 +522,7 @@ struct TimelineScrubber: View {
             }
             ForEach(TimelineLaneLayout.screenLabels(items, icons: icons, width: width), id: \.item) { label in
                 let item = items[label.item], episode = scene.episodes[item.episodes[0]]
-                Text(item.isCluster ? "\(item.episodes.count) 次切换 · \(Set(item.episodes.map { scene.episodes[$0].bundleID }).count) 个应用" : episode.title)
+                Text(item.isCluster ? L("%@ 次切换 · %@ 个应用", item.episodes.count, Set(item.episodes.map { scene.episodes[$0].bundleID }).count) : episode.title)
                     .typography(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
                     .frame(width: label.width, alignment: .leading).clipped()
                     .offset(x: label.x, y: barY - 17)
@@ -556,13 +557,13 @@ struct TimelineScrubber: View {
     @ViewBuilder private func screenMenu(_ item: TimelineLaneLayout.ScreenItem) -> some View {
         if item.isCluster {
             let first = scene.episodes[item.episodes[0]], last = scene.episodes[item.episodes[item.episodes.count - 1]]
-            Text("\(item.episodes.count) 次切换 · \(first.start.clockText)–\(last.end.clockText)")
-            Button("放大到这一段") { zoomTo(first.start, last.end) }
-            Button("从这里播放") { onScrub(); playhead = first.start.addingTimeInterval(1); playing = true }
+            Text(L("%@ 次切换 · %@–%@", item.episodes.count, first.start.clockText, last.end.clockText))
+            Button(L("放大到这一段")) { zoomTo(first.start, last.end) }
+            Button(L("从这里播放")) { onScrub(); playhead = first.start.addingTimeInterval(1); playing = true }
         } else {
             let episode = scene.episodes[item.episodes[0]]
-            Button("打开详情") { onOpen(.episode(episode.id)) }
-            Button("从这里播放") { onScrub(); playhead = episode.start.addingTimeInterval(1); playing = true }
+            Button(L("打开详情")) { onOpen(.episode(episode.id)) }
+            Button(L("从这里播放")) { onScrub(); playhead = episode.start.addingTimeInterval(1); playing = true }
             Divider() // style-exempt: native context menu separator
             contextActions(episode)
         }
@@ -615,7 +616,7 @@ struct TimelineScrubber: View {
     }
 
     @ViewBuilder private func shotMenu(_ spanID: String) -> some View {
-        Button("打开详情") { onOpen(.shot(spanID)) }
+        Button(L("打开详情")) { onOpen(.shot(spanID)) }
         if let episode = scene.episodes.first(where: { $0.spans.contains { $0.id == spanID } || $0.interruptions.contains { $0.id == spanID } }) {
             Divider() // style-exempt: native context menu separator
             contextActions(episode)
@@ -670,8 +671,8 @@ struct TimelineScrubber: View {
                 .contentShape(Rectangle())
                 .offset(x: x0, y: top + 4)
                 .contextMenu {
-                    Button("打开详情") { onOpen(.episode(episode.id)) }
-                    Button("从这里播放") { onScrub(); playhead = audio.start; playing = true }
+                    Button(L("打开详情")) { onOpen(.episode(episode.id)) }
+                    Button(L("从这里播放")) { onScrub(); playhead = audio.start; playing = true }
                     Divider() // style-exempt: native context menu separator
                     contextActions(episode)
                 }
@@ -926,7 +927,7 @@ struct EpisodePeek: View {
 
     private var subtitle: String {
         var text = "\(episode.appName) · \(episode.start.clockText) – \(episode.end.clockText) · \(episode.duration.spokenDuration)"
-        if !episode.interruptions.isEmpty { text += " · 中途切换 \(episode.interruptions.count) 次" }
+        if !episode.interruptions.isEmpty { text += L(" · 中途切换 %@ 次", episode.interruptions.count) }
         return text
     }
 }
@@ -937,7 +938,7 @@ struct ClusterPeek: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let first = episodes.first, let last = episodes.last {
-                Text("\(episodes.count) 次切换").typography(.headline)
+                Text(L("%@ 次切换", episodes.count)).typography(.headline)
                 Text("\(first.start.clockText) – \(last.end.clockText)").typography(.secondary, digits: true).foregroundStyle(.secondary)
             }
             ForEach(episodes.prefix(8)) { episode in
@@ -948,8 +949,8 @@ struct ClusterPeek: View {
                     Text(episode.duration.spokenDuration).typography(.caption, digits: true).foregroundStyle(.tertiary)
                 }
             }
-            if episodes.count > 8 { Text("另有 \(episodes.count - 8) 段").typography(.caption).foregroundStyle(.tertiary) }
-            Text("单击放大到这一段").typography(.caption).foregroundStyle(.tertiary)
+            if episodes.count > 8 { Text(L("另有 %@ 段", episodes.count - 8)).typography(.caption).foregroundStyle(.tertiary) }
+            Text(L("单击放大到这一段")).typography(.caption).foregroundStyle(.tertiary)
         }
         .padding(12)
         .peekSurface()
@@ -989,14 +990,14 @@ struct PromptPeek: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(mark.source?.agent ?? (mark.kind == .note ? "笔记" : "AI 指令")).typography(.caption, .semibold)
+                Text(mark.source?.agent ?? (mark.kind == .note ? L("笔记") : L("AI 指令"))).typography(.caption, .semibold)
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .background(Capsule().fill(Surface.fill.color))
                 if let project = mark.source?.project { Text(project).typography(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
             // The session name gets its own line and may wrap, so a long title is never cut to a few characters.
             if let session = mark.session {
-                Text("「\(session)」").typography(.caption).foregroundStyle(.secondary).lineLimit(2)
+                Text(L("「%@」", session)).typography(.caption).foregroundStyle(.secondary).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let text = mark.preview, !text.isEmpty {
@@ -1014,9 +1015,9 @@ struct PromptPeek: View {
         if mark.hasWork {
             let end = mark.workEnd ?? Date()
             let minutes = Int((end.timeIntervalSince(mark.start) / 60).rounded())
-            parts.append(minutes < 1 ? "工作不到 1 分钟" : "工作 \(minutes) 分钟")
+            parts.append(minutes < 1 ? L("工作不到 1 分钟") : L("工作 %@ 分钟", minutes))
         }
-        if let ordinal = mark.ordinal, ordinal > 1 { parts.append("今天本会话第 \(ordinal) 条") }
+        if let ordinal = mark.ordinal, ordinal > 1 { parts.append(L("今天本会话第 %@ 条", ordinal)) }
         return parts.joined(separator: " · ")
     }
 }
@@ -1074,7 +1075,7 @@ private struct PlayheadClock: View {
             .typography(.section, digits: true)
             .contentTransition(animated ? .numericText(value: cursor.playhead.timeIntervalSince1970) : .identity)
             .animation(animated ? Motion.snappy : nil, value: text)
-            .accessibilityLabel("当前位置 " + text)
+            .accessibilityLabel(L("当前位置 ") + text)
     }
 }
 
@@ -1159,7 +1160,7 @@ private struct PlayheadMarker: View {
             .offset(x: x - 4.5)
             .allowsHitTesting(false)
             .accessibilityElement()
-            .accessibilityLabel("播放头")
+            .accessibilityLabel(L("播放头"))
             .accessibilityValue(playhead.clockText)
             .accessibilityAdjustableAction { direction in onAdjust(direction == .increment ? 300 : -300) }
             if width > 0, x < 0 || x > width {
@@ -1177,7 +1178,7 @@ private struct PlayheadMarker: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .help("回到播放头所在的位置")
+                .help(L("回到播放头所在的位置"))
                 .frame(width: width, alignment: leading ? .leading : .trailing)
                 .padding(.horizontal, 4)
                 .offset(y: max(0, lanesHeight / 2 - 10))

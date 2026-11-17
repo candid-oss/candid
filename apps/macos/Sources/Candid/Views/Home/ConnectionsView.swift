@@ -1,4 +1,5 @@
 import ConsoleCore
+import CandidLocalization
 import SwiftUI
 import TimelineConnectors
 
@@ -29,36 +30,36 @@ struct ConnectionsView: View {
 
     private var sources: [Source] {
         var list: [Source] = [
-            Source(id: "mac", group: .capture, title: "这台 Mac", symbol: "desktopcomputer", tint: .blue,
+            Source(id: "mac", group: .capture, title: L("这台 Mac"), symbol: "desktopcomputer", tint: .blue,
                    state: session.isDemo ? .off : session.isRecording ? .on : .off,
-                   status: session.isDemo ? "合成样例" : session.isRecording ? "记录中" : "已暂停"),
-            Source(id: "device", group: .capture, title: "设备服务", symbol: "waveform", tint: .purple,
+                   status: session.isDemo ? L("合成样例") : session.isRecording ? L("记录中") : L("已暂停")),
+            Source(id: "device", group: .capture, title: L("设备服务"), symbol: "waveform", tint: .purple,
                    state: deviceStore?.connection == .online && !session.isDemo ? .on : .off,
-                   status: session.isDemo ? "合成样例不连接" : deviceStore.map { $0.connection == .online ? "已连接" : $0.connection.rawValue } ?? "未配置"),
+                   status: session.isDemo ? L("合成样例不连接") : deviceStore.map { $0.connection == .online ? L("已连接") : $0.connection.rawValue } ?? L("未配置")),
         ]
         for row in agents.rows {
             let status = AgentConnectionsModel.statusText(row)
             list.append(Source(id: "agent:" + row.id, group: .agents, title: row.description.displayName, symbol: "terminal",
                                tint: row.id == "claude_code" ? .orange : .gray, state: status.on ? .on : .off, status: status.text))
         }
-        list.append(Source(id: "windows", group: .agents, title: "窗口与会话", symbol: "link", tint: .indigo,
+        list.append(Source(id: "windows", group: .agents, title: L("窗口与会话"), symbol: "link", tint: .indigo,
                            state: session.inputWindows.isEmpty ? .off : .attention,
-                           status: session.inputWindows.isEmpty ? "没有待关联窗口" : "\(session.inputWindows.count) 个窗口可关联"))
+                           status: session.inputWindows.isEmpty ? L("没有待关联窗口") : L("%@ 个窗口可关联", session.inputWindows.count)))
         list += [
-            Source(id: "mail", group: .apps, title: "邮件", symbol: "envelope", tint: .blue,
+            Source(id: "mail", group: .apps, title: L("邮件"), symbol: "envelope", tint: .blue,
                    state: connectorModel.mailStatus.state, status: connectorModel.mailStatus.text),
-            Source(id: "browser", group: .apps, title: "浏览器历史", symbol: "globe", tint: .teal,
+            Source(id: "browser", group: .apps, title: L("浏览器历史"), symbol: "globe", tint: .teal,
                    state: connectorModel.browserStatus.state, status: connectorModel.browserStatus.text),
-            Source(id: "library", group: .storage, title: "本机资料库", symbol: "internaldrive", tint: .gray,
-                   state: media.connectionError == nil ? .on : .off, status: media.connectionError == nil ? "可用" : "未连接"),
-            Source(id: "access", group: .storage, title: "外部访问（MCP）", symbol: "puzzlepiece.extension", tint: .green,
+            Source(id: "library", group: .storage, title: L("本机资料库"), symbol: "internaldrive", tint: .gray,
+                   state: media.connectionError == nil ? .on : .off, status: media.connectionError == nil ? L("可用") : L("未连接")),
+            Source(id: "access", group: .storage, title: L("外部访问（MCP）"), symbol: "puzzlepiece.extension", tint: .green,
                    state: TimelineService.shared.endpoint == nil ? .off : .on,
-                   status: TimelineService.shared.endpoint == nil ? "核心尚未就绪" : "本机只读服务"),
-            Source(id: "calendar", group: .planned, title: "日历与提醒事项", symbol: "calendar", tint: .red, state: .planned, status: "规划中"),
-            Source(id: "pendant", group: .planned, title: "挂件", symbol: "circle.hexagongrid", tint: .gray, state: .planned, status: "规划中"),
-            Source(id: "phone", group: .planned, title: "手机", symbol: "iphone", tint: .gray, state: .planned, status: "规划中"),
-            Source(id: "hub", group: .planned, title: "家庭 Hub / NAS", symbol: "server.rack", tint: .gray, state: .planned, status: "规划中"),
-            Source(id: "notion", group: .planned, title: "Notion", symbol: "doc.text", tint: .gray, state: .planned, status: "规划中"),
+                   status: TimelineService.shared.endpoint == nil ? L("核心尚未就绪") : L("本机只读服务")),
+            Source(id: "calendar", group: .planned, title: L("日历与提醒事项"), symbol: "calendar", tint: .red, state: .planned, status: L("规划中")),
+            Source(id: "pendant", group: .planned, title: L("挂件"), symbol: "circle.hexagongrid", tint: .gray, state: .planned, status: L("规划中")),
+            Source(id: "phone", group: .planned, title: L("手机"), symbol: "iphone", tint: .gray, state: .planned, status: L("规划中")),
+            Source(id: "hub", group: .planned, title: L("家庭 Hub / NAS"), symbol: "server.rack", tint: .gray, state: .planned, status: L("规划中")),
+            Source(id: "notion", group: .planned, title: "Notion", symbol: "doc.text", tint: .gray, state: .planned, status: L("规划中")),
         ]
         return list
     }
@@ -101,7 +102,7 @@ struct ConnectionsView: View {
     private var list: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                Text("连接").typography(.display).padding(.leading, 12).padding(.bottom, Space.m)
+                Text(L("连接")).typography(.display).padding(.leading, 12).padding(.bottom, Space.m)
                 ForEach(Source.Group.allCases, id: \.self) { group in
                     let items = sources.filter { $0.group == group }
                     if !items.isEmpty {
@@ -147,24 +148,24 @@ struct ConnectionsView: View {
             case "mac": macDetail
             case "device": deviceDetail
             case "windows":
-                lead("把屏幕上的输入窗口和获准的会话文件对上，同一条指令只显示一次。网页里的对话没有会话文件时，核对完整输入后手动确认。")
+                lead(L("把屏幕上的输入窗口和获准的会话文件对上，同一条指令只显示一次。网页里的对话没有会话文件时，核对完整输入后手动确认。"))
                 WindowSourceConnections(session: session)
             case "mail":
-                lead("只读本机「邮件」App 的数据，覆盖其中登录的全部账户；也可以直接用 IMAP 登录某个邮箱。正文入库前先过筛选规则，附件只记名称和大小。")
+                lead(L("只读本机「邮件」App 的数据，覆盖其中登录的全部账户；也可以直接用 IMAP 登录某个邮箱。正文入库前先过筛选规则，附件只记名称和大小。"))
                 MailConnectorPane(model: connectorModel)
             case "browser":
-                lead("Safari 和 Chrome 的访问记录：网址、标题、时间和次数。这一版只连接和统计，不写入时间线。")
+                lead(L("Safari 和 Chrome 的访问记录：网址、标题、时间和次数。这一版只连接和统计，不写入时间线。"))
                 BrowserConnectorPane(model: connectorModel)
             case "library": libraryDetail
             case "access":
-                lead("外部 AI 经 MCP 或命令行读取你选定范围的时间线，每次读取都有记录，可随时撤销。")
+                lead(L("外部 AI 经 MCP 或命令行读取你选定范围的时间线，每次读取都有记录，可随时撤销。"))
                 TimelineAccessView()
             default:
                 if source.id.hasPrefix("agent:"), let row = agents.rows.first(where: { "agent:" + $0.id == source.id }) {
                     AgentDetailPane(row: row, model: agents)
                     if let error = agents.saveError { InlineMessage(kind: .error, text: error) }
                 } else {
-                    planned("还没有接入，不会读取任何数据。")
+                    planned(L("还没有接入，不会读取任何数据。"))
                 }
             }
         }
@@ -172,30 +173,30 @@ struct ConnectionsView: View {
 
     private var macDetail: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            lead("屏幕活动、窗口文字和截图，只在你允许的应用里记录。暂停后不再采集。")
+            lead(L("屏幕活动、窗口文字和截图，只在你允许的应用里记录。暂停后不再采集。"))
             HStack(spacing: Space.s) {
-                stat("\(session.allowedBundleIDs.count)", "允许截图的应用")
-                stat("\(session.excludedBundleIDs.count)", "排除的应用")
-                stat(session.isRecording ? "记录中" : "已暂停", "电脑记录")
+                stat("\(session.allowedBundleIDs.count)", L("允许截图的应用"))
+                stat("\(session.excludedBundleIDs.count)", L("排除的应用"))
+                stat(session.isRecording ? L("记录中") : L("已暂停"), L("电脑记录"))
             }
-            SettingsGroup(title: "系统授权") {
-                permissionRow("屏幕录制", detail: "窗口截图和框选需要", granted: session.screenPermission, request: session.requestScreenPermission)
+            SettingsGroup(title: L("系统授权")) {
+                permissionRow(L("屏幕录制"), detail: L("窗口截图和框选需要"), granted: session.screenPermission, request: session.requestScreenPermission)
                 HairlineDivider()
-                permissionRow("辅助功能", detail: "读取窗口标题、焦点和可读文字", granted: session.accessibilityPermission, request: session.requestAccessibilityPermission)
+                permissionRow(L("辅助功能"), detail: L("读取窗口标题、焦点和可读文字"), granted: session.accessibilityPermission, request: session.requestAccessibilityPermission)
             }
-            SettingsGroup(title: "记录") {
-                SettingRow(title: "电脑记录") {
-                    Toggle("电脑记录", isOn: Binding(get: { session.isRecording }, set: { $0 ? session.startRecording() : session.pauseRecording() }))
+            SettingsGroup(title: L("记录")) {
+                SettingRow(title: L("电脑记录")) {
+                    Toggle(L("电脑记录"), isOn: Binding(get: { session.isRecording }, set: { $0 ? session.startRecording() : session.pauseRecording() }))
                         .toggleStyle(.switch).labelsHidden().controlSize(.small)
                 }
                 .disabled(session.isDemo)
                 HairlineDivider()
-                SettingRow(title: "允许与排除的应用") {
-                    QuietButton(title: "管理应用", emphasized: true) { openSettings("scope") }
+                SettingRow(title: L("允许与排除的应用")) {
+                    QuietButton(title: L("管理应用"), emphasized: true) { openSettings("scope") }
                 }
                 HairlineDivider()
-                SettingRow(title: "截图、文字和采集频率") {
-                    QuietButton(title: "记录设置", emphasized: true) { openSettings("capture") }
+                SettingRow(title: L("截图、文字和采集频率")) {
+                    QuietButton(title: L("记录设置"), emphasized: true) { openSettings("capture") }
                 }
             }
         }
@@ -203,18 +204,18 @@ struct ConnectionsView: View {
 
     private var deviceDetail: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            lead("调试台和 USB 录音、拍照。设备服务在另一台电脑或另一个端口时，在设置里填写地址。")
-            SettingsGroup(title: "连接") {
-                SettingRow(title: "状态") {
+            lead(L("调试台和 USB 录音、拍照。设备服务在另一台电脑或另一个端口时，在设置里填写地址。"))
+            SettingsGroup(title: L("连接")) {
+                SettingRow(title: L("状态")) {
                     StatusDot(state: current.state, text: current.status)
                 }
                 HairlineDivider()
-                SettingRow(title: "调试台", detail: "录音、拍照、回听和本地转写") {
-                    SecondaryButton(title: "打开") { open(.device) }.disabled(deviceStore == nil)
+                SettingRow(title: L("调试台"), detail: L("录音、拍照、回听和本地转写")) {
+                    SecondaryButton(title: L("打开")) { open(.device) }.disabled(deviceStore == nil)
                 }
                 HairlineDivider()
-                SettingRow(title: "服务地址") {
-                    QuietButton(title: "修改", emphasized: true) { openSettings("console") }
+                SettingRow(title: L("服务地址")) {
+                    QuietButton(title: L("修改"), emphasized: true) { openSettings("console") }
                 }
             }
         }
@@ -222,15 +223,15 @@ struct ConnectionsView: View {
 
     private var libraryDetail: some View {
         VStack(alignment: .leading, spacing: Space.l) {
-            lead("录音、截图、转写和时间线都存在这台 Mac 上。")
+            lead(L("录音、截图、转写和时间线都存在这台 Mac 上。"))
             HStack(spacing: Space.s) {
-                stat("\(media.records.count)", media.isDemo ? "资料 · 合成样例" : "资料")
-                stat(media.connectionError == nil ? "可用" : "未连接", "资料库")
+                stat("\(media.records.count)", media.isDemo ? L("资料 · 合成样例") : L("资料"))
+                stat(media.connectionError == nil ? L("可用") : L("未连接"), L("资料库"))
             }
-            SettingsGroup(title: "管理") {
-                SettingRow(title: "浏览资料") { SecondaryButton(title: "打开资料") { open(.library) } }
+            SettingsGroup(title: L("管理")) {
+                SettingRow(title: L("浏览资料")) { SecondaryButton(title: L("打开资料")) { open(.library) } }
                 HairlineDivider()
-                SettingRow(title: "位置、导出与留存") { QuietButton(title: "数据设置", emphasized: true) { openSettings("storage") } }
+                SettingRow(title: L("位置、导出与留存")) { QuietButton(title: L("数据设置"), emphasized: true) { openSettings("storage") } }
             }
         }
     }
@@ -242,7 +243,7 @@ struct ConnectionsView: View {
     }
 
     private func planned(_ text: String) -> some View {
-        HStack(spacing: Space.xs) { Tag(text: "规划中"); Text(text).typography(.secondary).foregroundStyle(.secondary) }
+        HStack(spacing: Space.xs) { Tag(text: L("规划中")); Text(text).typography(.secondary).foregroundStyle(.secondary) }
     }
 
     private func stat(_ value: String, _ label: String) -> some View {
@@ -258,8 +259,8 @@ struct ConnectionsView: View {
     private func permissionRow(_ title: String, detail: String, granted: Bool, request: @escaping () -> Void) -> some View {
         SettingRow(title: title, detail: detail) {
             HStack(spacing: Space.s) {
-                StatusDot(state: granted ? .on : .attention, text: granted ? "已允许" : "未允许")
-                if !granted { PrimaryButton(title: "授权", action: request).disabled(session.isDemo) }
+                StatusDot(state: granted ? .on : .attention, text: granted ? L("已允许") : L("未允许"))
+                if !granted { PrimaryButton(title: L("授权"), action: request).disabled(session.isDemo) }
             }
         }
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 import CandidClient
 import TimelineConnectors
 
@@ -50,15 +51,15 @@ import TimelineConnectors
     private let reader: ReplyReader
     init(query: Query? = nil, reader: ReplyReader? = nil) {
         self.reader = reader ?? { agent, ref, cursor in
-            guard let channel = await MainActor.run(body: { TimelineService.shared.channel }) else { throw CoreError.unreachable("尚未就绪") }
+            guard let channel = await MainActor.run(body: { TimelineService.shared.channel }) else { throw CoreError.unreachable(L("尚未就绪")) }
             let client = AgentCoreClient(transport: { path, body in
                 try await channel.send(body == nil ? "GET" : "POST", path, body: body, timeout: 15).checked()
             })
-            guard let connector = AgentConnectors.connector(agent: agent, client: client) else { throw CoreError.unreachable("来源不可读取") }
+            guard let connector = AgentConnectors.connector(agent: agent, client: client) else { throw CoreError.unreachable(L("来源不可读取")) }
             return try await connector.read(ref: ref, cursor: cursor, limit: 200)
         }
         self.query = query ?? { name, data in
-            guard let channel = await MainActor.run(body: { TimelineService.shared.channel }) else { throw CoreError.unreachable("尚未就绪") }
+            guard let channel = await MainActor.run(body: { TimelineService.shared.channel }) else { throw CoreError.unreachable(L("尚未就绪")) }
             return try await channel.tool(name, arguments: data)
         }
     }
@@ -135,7 +136,7 @@ import TimelineConnectors
             }
         } catch {
             guard ticket == generation else { return }
-            entries = []; detail = nil; reply = nil; selected = nil; self.error = "AI 时间线暂不可用，点击重试"
+            entries = []; detail = nil; reply = nil; selected = nil; self.error = L("AI 时间线暂不可用，点击重试")
         }
     }
     func open(_ id: String, preserveReply: Bool = false) async {
@@ -153,7 +154,7 @@ import TimelineConnectors
                     let wanted = refs.compactMap { raw -> String? in
                         guard case .object(let m) = raw, case .string(let ref)? = m["ref"] else { return nil }; return ref
                     }
-                    guard wanted.count <= 20 else { throw CoreError.unreachable("追问较多，请从来源查看完整会话") }
+                    guard wanted.count <= 20 else { throw CoreError.unreachable(L("追问较多，请从来源查看完整会话")) }
                     let expected = Dictionary(uniqueKeysWithValues: refs.compactMap { raw -> (String, String)? in
                         guard case .object(let m) = raw, case .string(let ref)? = m["ref"], case .string(let hash)? = m["source_hash"] else { return nil }
                         return (ref, hash)
@@ -169,19 +170,19 @@ import TimelineConnectors
                             cursor = page.nextCursor; pages += 1
                         } while fetched[ref] == nil && cursor != nil && pages < 20
                     }
-                    guard wanted.allSatisfy({ fetched[$0]?.text != nil }) else { throw CoreError.unreachable("原话来源暂不可读取") }
+                    guard wanted.allSatisfy({ fetched[$0]?.text != nil }) else { throw CoreError.unreachable(L("原话来源暂不可读取")) }
                     value.paragraphs = wanted.compactMap { fetched[$0]?.text.map { Paragraph(text: $0) } }
                     // Recheck the persisted event after any source read.
                     _ = try await query("get_event", JSONEncoder().encode(["event_id": CoreJSON.string(id), "include": .array([.string("text")])]))
                     sourceNote = nil
                 } catch {
                     guard ticket == selectionGeneration, selected == id else { return }
-                    sourceNote = value.paragraphs.isEmpty ? nil : "会话文件暂时读不到，显示的是保存时的原话"
+                    sourceNote = value.paragraphs.isEmpty ? nil : L("会话文件暂时读不到，显示的是保存时的原话")
                     if value.paragraphs.isEmpty { throw error }
                 }
             }
             guard ticket == selectionGeneration, selected == id else { return }; detail = value; error = nil
-        } catch { if ticket == selectionGeneration, selected == id { detail = nil; reply = nil; self.error = "内容已不可读取" } }
+        } catch { if ticket == selectionGeneration, selected == id { detail = nil; reply = nil; self.error = L("内容已不可读取") } }
     }
     var canReadReply: Bool {
         guard let detail, case .string(let agent)? = detail.payload["agent"], ["codex", "claude_code", "pi"].contains(agent),
@@ -214,8 +215,8 @@ import TimelineConnectors
             await open(id, preserveReply: true)
             guard ticket == selectionGeneration, selected == id, self.detail != nil else { return }
             reply = messages.filter { $0.role == "assistant" && !$0.reasoning && Date(timeIntervalSince1970: Double($0.tsMs) / 1000) >= start && Date(timeIntervalSince1970: Double($0.tsMs) / 1000) < end }.compactMap(\.text).joinedReply
-            if reply?.isEmpty == true { reply = "这条指令之后没有文字回复" }
-        } catch { if ticket == selectionGeneration, selected == id { reply = nil; sourceNote = "回复暂时读不到：会话文件不可读或已变化。可以从「打开来源」回到原会话。" } }
+            if reply?.isEmpty == true { reply = L("这条指令之后没有文字回复") }
+        } catch { if ticket == selectionGeneration, selected == id { reply = nil; sourceNote = L("回复暂时读不到：会话文件不可读或已变化。可以从「打开来源」回到原会话。") } }
     }
 }
 
@@ -225,24 +226,24 @@ extension AIInteractionTimeline {
     static func demo(now: Date) -> AIInteractionTimeline {
         struct Mark { let id: String; let kind: String; let minutesAgo: Double; let length: Double?; let text: String; let agent: String }
         let marks: [Mark] = [
-            Mark(id: "demo-p1", kind: "ai.prompt", minutesAgo: 300, length: 7, text: "解释一下 WAL 模式下读写冲突", agent: "claude_code"),
-            Mark(id: "demo-p2", kind: "ai.prompt", minutesAgo: 262, length: 14, text: "给时间轴加双指缩放，缩放中心跟随指针", agent: "claude_code"),
-            Mark(id: "demo-p3", kind: "ai.prompt", minutesAgo: 246, length: 5, text: "跑 swift test，把失败的用例列出来", agent: "claude_code"),
-            Mark(id: "demo-n1", kind: "note", minutesAgo: 190, length: nil, text: "截图密的时候合并显示", agent: "codex"),
-            Mark(id: "demo-p4", kind: "ai.prompt", minutesAgo: 75, length: 12, text: "把 AI 行改成指令和工作两排", agent: "codex"),
-            Mark(id: "demo-p5", kind: "ai.prompt", minutesAgo: 60, length: 14, text: "修复连接页卡片顶部对不齐", agent: "codex"),
-            Mark(id: "demo-p6", kind: "ai.prompt", minutesAgo: 44, length: 2, text: "顺便把资料页空状态缩小", agent: "codex"),
-            Mark(id: "demo-p7", kind: "ai.prompt", minutesAgo: 18, length: nil, text: "生成多轨时间线的静态样张，沿用 DesignSystem", agent: "codex"),
+            Mark(id: "demo-p1", kind: "ai.prompt", minutesAgo: 300, length: 7, text: L("解释一下 WAL 模式下读写冲突"), agent: "claude_code"),
+            Mark(id: "demo-p2", kind: "ai.prompt", minutesAgo: 262, length: 14, text: L("给时间轴加双指缩放，缩放中心跟随指针"), agent: "claude_code"),
+            Mark(id: "demo-p3", kind: "ai.prompt", minutesAgo: 246, length: 5, text: L("跑 swift test，把失败的用例列出来"), agent: "claude_code"),
+            Mark(id: "demo-n1", kind: "note", minutesAgo: 190, length: nil, text: L("截图密的时候合并显示"), agent: "codex"),
+            Mark(id: "demo-p4", kind: "ai.prompt", minutesAgo: 75, length: 12, text: L("把 AI 行改成指令和工作两排"), agent: "codex"),
+            Mark(id: "demo-p5", kind: "ai.prompt", minutesAgo: 60, length: 14, text: L("修复连接页卡片顶部对不齐"), agent: "codex"),
+            Mark(id: "demo-p6", kind: "ai.prompt", minutesAgo: 44, length: 2, text: L("顺便把资料页空状态缩小"), agent: "codex"),
+            Mark(id: "demo-p7", kind: "ai.prompt", minutesAgo: 18, length: nil, text: L("生成多轨时间线的静态样张，沿用 DesignSystem"), agent: "codex"),
         ]
         func iso(_ date: Date) -> String { date.ISO8601Format() }
         var entries: [[String: Any]] = []
         for mark in marks {
             let start = now.addingTimeInterval(-mark.minutesAgo * 60)
-            entries.append(["event": ["event_id": mark.id, "kind": mark.kind, "start": iso(start), "thread_id": "demo-" + mark.agent], "preview": mark.text + "（合成样例）"])
+            entries.append(["event": ["event_id": mark.id, "kind": mark.kind, "start": iso(start), "thread_id": "demo-" + mark.agent], "preview": mark.text + L("（合成样例）")])
             if mark.kind == "ai.prompt" {
                 var work: [String: Any] = ["event_id": mark.id + ":work", "kind": "ai.work", "start": iso(start)]
                 if let length = mark.length { work["end"] = iso(start.addingTimeInterval(length * 60)) }
-                entries.append(["event": work, "preview": "工作"])
+                entries.append(["event": work, "preview": L("工作")])
             }
         }
         let page = (try? JSONSerialization.data(withJSONObject: ["entries": entries])) ?? Data()
@@ -250,15 +251,15 @@ extension AIInteractionTimeline {
             let event: [String: Any] = ["event_id": mark.id, "kind": mark.kind, "start": iso(now.addingTimeInterval(-mark.minutesAgo * 60))]
             let payload: [String: Any] = ["agent": mark.agent, "project": "/SYNTHETIC/candid", "status": mark.length == nil ? "running" : "done",
                                           "tool_calls": ["shell": 3 + mark.text.count % 5, "edit": 1 + mark.text.count % 3]]
-            let body: [String: Any] = ["event": event, "payload": payload, "paragraphs": [["text": mark.text + "（合成样例）"]],
-                                       "thread": ["thread_id": "demo-" + mark.agent, "kind": "agent_session", "title": "多轨时间线（合成）"]]
+            let body: [String: Any] = ["event": event, "payload": payload, "paragraphs": [["text": mark.text + L("（合成样例）")]],
+                                       "thread": ["thread_id": "demo-" + mark.agent, "kind": "agent_session", "title": L("多轨时间线（合成）")]]
             return (mark.id, (try? JSONSerialization.data(withJSONObject: body)) ?? Data())
         })
         let model = AIInteractionTimeline(query: { name, arguments in
             if name == "get_event", let object = try? JSONSerialization.jsonObject(with: arguments) as? [String: Any],
                let id = object["event_id"] as? String, let data = details[id] { return data }
             return page
-        }, reader: { _, _, _ in throw CoreError.unreachable("合成样例没有会话文件") })
+        }, reader: { _, _, _ in throw CoreError.unreachable(L("合成样例没有会话文件")) })
         model.isDemo = true
         return model
     }

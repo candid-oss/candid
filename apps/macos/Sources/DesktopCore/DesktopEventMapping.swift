@@ -1,4 +1,5 @@
 import CryptoKit
+import CandidLocalization
 import Foundation
 import CandidClient
 
@@ -11,15 +12,15 @@ public enum DesktopStoreError: Error, LocalizedError, Sendable, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidRecord: "记录内容或参数无效。"
-        case .invalidHash: "图片校验标识无效。"
-        case .missingImage: "图片缺失或校验不通过。"
-        case .imageTooLarge: "图片超过 2 MiB 限制。"
-        case .quotaExceeded: "本地空间上限已到，已停止新增图片。"
-        case .deletedRecord: "记录已删除，已阻止迟到结果重新写入。"
-        case .destinationExists: "导出目标已存在，请选择新的目录。"
-        case .outboxFull(let count): "待写入时间线库的记录已达上限（\(count) 条），采集已停止。时间线核心恢复后会自动补写。"
-        case .unavailable(let detail): "时间线库暂不可用：\(detail)"
+        case .invalidRecord: L("记录内容或参数无效。")
+        case .invalidHash: L("图片校验标识无效。")
+        case .missingImage: L("图片缺失或校验不通过。")
+        case .imageTooLarge: L("图片超过 2 MiB 限制。")
+        case .quotaExceeded: L("本地空间上限已到，已停止新增图片。")
+        case .deletedRecord: L("记录已删除，已阻止迟到结果重新写入。")
+        case .destinationExists: L("导出目标已存在，请选择新的目录。")
+        case .outboxFull(let count): L("待写入时间线库的记录已达上限（%@ 条），采集已停止。时间线核心恢复后会自动补写。", count)
+        case .unavailable(let detail): L("时间线库暂不可用：%@", detail)
         }
     }
 }

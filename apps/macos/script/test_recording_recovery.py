@@ -22,9 +22,16 @@ def main():
     with tempfile.TemporaryDirectory(prefix="app008-kill-synthetic-") as temporary:
         work = Path(temporary)
         probe = work / "probe"
+        # The writer files are compiled into one probe module, so their `import CandidLocalization` is dropped and the
+        # localization source is compiled alongside them.
+        sources = []
+        for name in ("RecordingInput.swift", "RecordingJournal.swift", "SegmentedRecordingWriter.swift"):
+            copy = work / name
+            copy.write_text("".join(line for line in (SOURCE / name).read_text().splitlines(keepends=True)
+                                    if line.strip() != "import CandidLocalization"))
+            sources.append(str(copy))
         subprocess.run([
-            "xcrun", "swiftc", str(SOURCE / "RecordingInput.swift"), str(SOURCE / "RecordingJournal.swift"),
-            str(SOURCE / "SegmentedRecordingWriter.swift"),
+            "xcrun", "swiftc", *sources, str(MAC / "Sources/CandidLocalization/Localization.swift"),
             str(MAC / "script/recording_recovery_probe.swift"), "-o", str(probe),
         ], check=True)
         experiments = 0

@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import AVFoundation
 import CoreGraphics
 import ScreenCaptureKit
@@ -10,17 +11,17 @@ enum MediaCaptureError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .microphonePermission: "请在系统设置的麦克风权限中允许 Candid。"
-        case .screenPermission: "请在系统设置的屏幕录制权限中允许 Candid，再重试。"
-        case .recordingBusy: "已有录音正在开始或进行。"
-        case .recordingUnavailable: "无法开始录音，请检查麦克风是否可用。"
-        case .systemAudioUnavailable: "系统混音需要 macOS 15 或更新版本，可改用麦克风录音。"
-        case .audioFormat: "无法转换当前音频输入格式，录音已停止。"
-        case .noRecording: "当前没有录音。"
-        case .emptyRecording: "没有录到可播放的声音，请重新录制。"
-        case .screenUnavailable: "屏幕已不可用或布局已变化，请重新框选。"
-        case .selectionBusy: "已有截图框选正在进行。"
-        case .screenshotEncoding: "无法保存这张截图。"
+        case .microphonePermission: L("请在系统设置的麦克风权限中允许 Candid。")
+        case .screenPermission: L("请在系统设置的屏幕录制权限中允许 Candid，再重试。")
+        case .recordingBusy: L("已有录音正在开始或进行。")
+        case .recordingUnavailable: L("无法开始录音，请检查麦克风是否可用。")
+        case .systemAudioUnavailable: L("系统混音需要 macOS 15 或更新版本，可改用麦克风录音。")
+        case .audioFormat: L("无法转换当前音频输入格式，录音已停止。")
+        case .noRecording: L("当前没有录音。")
+        case .emptyRecording: L("没有录到可播放的声音，请重新录制。")
+        case .screenUnavailable: L("屏幕已不可用或布局已变化，请重新框选。")
+        case .selectionBusy: L("已有截图框选正在进行。")
+        case .screenshotEncoding: L("无法保存这张截图。")
         }
     }
 }

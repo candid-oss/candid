@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 extension MediaWorkspaceStore {
     var pendingRecordingRows: [RecordingSegment] {
@@ -14,7 +15,7 @@ extension MediaWorkspaceStore {
         let parts = recordingInventory.segments.filter { $0.recordingID == id || $0.id == id }
         guard let first = parts.first else { return nil }
         let end = parts.map { $0.sampleStart + $0.sampleCount }.max() ?? 0
-        return "\(String(format: "%.1f", Double(end) / Double(first.sampleRate))) 秒"
+        return L("%@ 秒", String(format: "%.1f", Double(end) / Double(first.sampleRate)))
             + (parts.contains(where: \.recovered) ? " · 中断后恢复" : " · 已保存")
     }
 
@@ -77,7 +78,7 @@ extension MediaWorkspaceStore {
                 catch MediaWorkspaceError.rejected(409, _) { continue }
             }
         } catch {
-            recordingWarning = (recordingInventory.pending.isEmpty ? "资料库暂时无法连接，请重试。" : "已保存录音留在本机，等待入库。") + error.localizedDescription
+            recordingWarning = (recordingInventory.pending.isEmpty ? L("资料库暂时无法连接，请重试。") : L("已保存录音留在本机，等待入库。")) + error.localizedDescription
         }
     }
 }

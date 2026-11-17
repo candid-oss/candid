@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import Observation
 
 /// Search the core's complete media records, including transcript and notes.
@@ -36,7 +37,7 @@ import Observation
         } catch {
             guard request == generation else { return }
             items = []; loadedQuery = query
-            NotificationCenter.default.post(name: .candidActionError, object: "资料搜索暂不可用，可重试")
+            NotificationCenter.default.post(name: .candidActionError, object: L("资料搜索暂不可用，可重试"))
         }
     }
 }

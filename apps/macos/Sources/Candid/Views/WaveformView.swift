@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 import ConsoleCore
 
 struct WaveformView: View {
@@ -26,9 +27,9 @@ struct WaveformView: View {
         }
         .background(Surface.wash.color, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
         .overlay(alignment: .topLeading) {
-            Text(frames.isEmpty ? "等待设备实际采样" : fresh ? "真实峰谷 · 最近 15 秒 · 显示增益 8×" : "最后收到的波形 · 当前无新鲜采样")
+            Text(frames.isEmpty ? L("等待设备实际采样") : fresh ? L("真实峰谷 · 最近 15 秒 · 显示增益 8×") : L("最后收到的波形 · 当前无新鲜采样"))
                 .typography(.caption, .regular).foregroundStyle(.secondary).padding(Space.xs)
         }
-        .accessibilityLabel(frames.isEmpty ? "暂无波形" : fresh ? "实时设备采样波形" : "已过期的设备波形")
+        .accessibilityLabel(frames.isEmpty ? L("暂无波形") : fresh ? L("实时设备采样波形") : L("已过期的设备波形"))
     }
 }

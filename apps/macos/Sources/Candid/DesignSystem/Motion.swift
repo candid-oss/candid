@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// One motion vocabulary for the whole app. Springs are interruptible, so a new gesture always wins over an
 /// animation still in flight. Nothing moves linearly except values that track a live signal (levels, playback).
@@ -15,8 +16,8 @@ enum Motion {
     static let ambient = Animation.easeInOut(duration: 1.4)
 
     static let all: [(String, Animation, String)] = [
-        ("spring", spring, "页面与布局"), ("snappy", snappy, "悬停、选中、标签"), ("bouncy", bouncy, "切换与落位"),
-        ("magnify", magnify, "跟随指针"), ("ambient", ambient, "背景换色")
+        ("spring", spring, L("页面与布局")), ("snappy", snappy, L("悬停、选中、标签")), ("bouncy", bouncy, L("切换与落位")),
+        ("magnify", magnify, L("跟随指针")), ("ambient", ambient, L("背景换色"))
     ]
 
     /// Content entering a page: fades in while rising 6 points.

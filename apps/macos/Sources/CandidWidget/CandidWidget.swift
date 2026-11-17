@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import CandidShared
 import SwiftUI
 import WidgetKit
@@ -22,9 +23,9 @@ struct DayProvider: TimelineProvider {
     static let sample = WidgetSnapshot(day: Date(), isDemo: true, isRecording: true, isMicRecording: false, recordedSeconds: 4 * 3600 + 60,
                                        appCount: 7, recordingCount: 2,
                                        topApps: [.init(name: "Xcode", bundleID: "com.apple.dt.Xcode", seconds: 8600),
-                                                 .init(name: "备忘录", bundleID: "com.apple.Notes", seconds: 3060),
+                                                 .init(name: L("备忘录"), bundleID: "com.apple.Notes", seconds: 3060),
                                                  .init(name: "Safari", bundleID: "com.apple.Safari", seconds: 2900)],
-                                       current: .init(title: "合成样例", appName: "Xcode", bundleID: "com.apple.dt.Xcode", since: Date()),
+                                       current: .init(title: L("合成样例"), appName: "Xcode", bundleID: "com.apple.dt.Xcode", since: Date()),
                                        hours: (0..<24).map { (9...17).contains($0) ? Double(20 + ($0 * 7) % 40) : 0 })
 }
 
@@ -40,8 +41,8 @@ struct DayWidgetView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     logo
                     Spacer()
-                    Text("打开 Candid").font(.system(size: 13, weight: .semibold))
-                    Text("今天还没有记录").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L("打开 Candid")).font(.system(size: 13, weight: .semibold))
+                    Text(L("今天还没有记录")).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -67,7 +68,7 @@ struct DayWidgetView: View {
     private func status(_ s: WidgetSnapshot) -> some View {
         HStack(spacing: 5) {
             Circle().fill(s.isMicRecording || s.isRecording ? Color(red: 1, green: 0.42, blue: 0.38) : Color.white.opacity(0.4)).frame(width: 6, height: 6)
-            Text(s.isDemo ? "合成样例" : s.isMicRecording ? "录音中" : s.isRecording ? "记录中" : "已暂停").font(.system(size: 11, weight: .semibold))
+            Text(s.isDemo ? L("合成样例") : s.isMicRecording ? L("录音中") : s.isRecording ? L("记录中") : L("已暂停")).font(.system(size: 11, weight: .semibold))
         }
     }
 
@@ -76,7 +77,7 @@ struct DayWidgetView: View {
             HStack { logo; Spacer(); status(s) }
             Spacer(minLength: 2)
             Text(duration(s.recordedSeconds)).font(.system(size: 26, weight: .semibold, design: .rounded)).minimumScaleFactor(0.7).lineLimit(1)
-            Text(s.current.map { "\($0.appName) · \($0.title)" } ?? "\(s.appCount) 个应用").font(.system(size: 11)).opacity(0.75).lineLimit(1)
+            Text(s.current.map { "\($0.appName) · \($0.title)" } ?? L("%@ 个应用", s.appCount)).font(.system(size: 11)).opacity(0.75).lineLimit(1)
             hours(s).frame(height: 22).padding(.top, 4)
         }
     }
@@ -85,7 +86,7 @@ struct DayWidgetView: View {
         HStack(spacing: 16) {
             small(s)
             VStack(alignment: .leading, spacing: 7) {
-                Text("今天最多").font(.system(size: 11, weight: .semibold)).opacity(0.7)
+                Text(L("今天最多")).font(.system(size: 11, weight: .semibold)).opacity(0.7)
                 ForEach(s.topApps.prefix(3), id: \.bundleID) { app in
                     VStack(alignment: .leading, spacing: 3) {
                         HStack {
@@ -104,7 +105,7 @@ struct DayWidgetView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if s.recordingCount > 0 { Text("\(s.recordingCount) 段录音").font(.system(size: 11)).opacity(0.7) }
+                if s.recordingCount > 0 { Text(L("%@ 段录音", s.recordingCount)).font(.system(size: 11)).opacity(0.7) }
             }
         }
     }
@@ -124,7 +125,7 @@ struct DayWidgetView: View {
     private func duration(_ seconds: Double) -> String {
         let minutes = Int((seconds / 60).rounded())
         let h = minutes / 60, m = minutes % 60
-        return h == 0 ? "\(m) 分钟" : (m == 0 ? "\(h) 小时" : "\(h) 小时 \(m) 分")
+        return h == 0 ? L("%@ 分钟", m) : (m == 0 ? L("%@ 小时", h) : L("%@ 小时 %@ 分", h, m))
     }
 }
 
@@ -133,8 +134,8 @@ struct DayWidget: Widget {
         StaticConfiguration(kind: "CandidDay", provider: DayProvider()) { entry in
             DayWidgetView(entry: entry)
         }
-        .configurationDisplayName("今天")
-        .description("记录状态、今天的时长和用得最多的应用。")
+        .configurationDisplayName(L("今天"))
+        .description(L("记录状态、今天的时长和用得最多的应用。"))
         .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

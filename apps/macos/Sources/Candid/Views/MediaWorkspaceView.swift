@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 import UniformTypeIdentifiers
 import ImageIO
 
@@ -35,7 +36,7 @@ struct MediaWorkspaceView: View {
                 RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
                     .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                     .background(Color.accentColor.opacity(0.06), in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
-                    .overlay { Label("放开导入", systemImage: "square.and.arrow.down").typography(.section).foregroundStyle(.tint) }
+                    .overlay { Label(L("放开导入"), systemImage: "square.and.arrow.down").typography(.section).foregroundStyle(.tint) }
                     .padding(18).padding(.top, 44)
                     .transition(.opacity)
                     .allowsHitTesting(false)
@@ -71,9 +72,9 @@ struct MediaWorkspaceView: View {
             Task { await store.importFile(file) }
             return true
         } isTargeted: { dropTargeted = $0 && store.canCapture }
-        .confirmCapsule("丢弃待入库素材？", isPresented: $confirmDiscard, confirmTitle: "丢弃") { store.discardDraft() }
-        .confirmCapsule("删除「\(deleting?.displayTitle ?? "这条资料")」？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
-                        message: "这会删除资料库里的记录和对应的识别结果。") {
+        .confirmCapsule(L("丢弃待入库素材？"), isPresented: $confirmDiscard, confirmTitle: L("丢弃")) { store.discardDraft() }
+        .confirmCapsule(L("删除「%@」？", deleting?.displayTitle ?? L("这条资料")), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                        message: L("这会删除资料库里的记录和对应的识别结果。")) {
             if let deleting { Task { await store.delete(deleting) } }
             deleting = nil
         }
@@ -81,13 +82,13 @@ struct MediaWorkspaceView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("资料").typography(.display)
-            Text(store.isDemo ? "\(store.records.count) 条 · 合成样例" : "\(store.records.count + store.pendingRecordingCount) 条")
+            Text(L("资料")).typography(.display)
+            Text(store.isDemo ? L("%@ 条 · 合成样例", store.records.count) : L("%@ 条", store.records.count + store.pendingRecordingCount))
                 .typography(.headline).foregroundStyle(.secondary)
             Spacer()
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass").typography(.secondary, .medium).foregroundStyle(.secondary)
-                TextField("搜索文件名或转写", text: $store.query)
+                TextField(L("搜索文件名或转写"), text: $store.query)
                     .textFieldStyle(.plain).typography(.body)
                     .focused($searchFocused)
                     .accessibilityIdentifier("media-search")
@@ -96,24 +97,24 @@ struct MediaWorkspaceView: View {
                     }
                 if !store.query.isEmpty {
                     Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
-                        .buttonStyle(.plain).accessibilityLabel("清空搜索")
+                        .buttonStyle(.plain).accessibilityLabel(L("清空搜索"))
                 }
             }
             .padding(.horizontal, 12).frame(width: searchFocused || !store.query.isEmpty ? 260 : 200, height: 32)
             .background(Capsule().fill(searchFocused ? Surface.hover.color : Surface.fill.color))
             .animation(Motion.bouncy, value: searchFocused)
-            if store.busy { ProgressView().controlSize(.small).accessibilityLabel("正在处理") }
+            if store.busy { ProgressView().controlSize(.small).accessibilityLabel(L("正在处理")) }
             Button { importing = true } label: {
-                Label("导入", systemImage: "square.and.arrow.down").typography(.body, .semibold)
+                Label(L("导入"), systemImage: "square.and.arrow.down").typography(.body, .semibold)
                     .padding(.horizontal, 14).frame(height: 32)
                     .background(Capsule().fill(Color.accentColor)).foregroundStyle(.white)
             }
             .buttonStyle(.plain)
             .disabled(!store.canCapture).opacity(store.canCapture ? 1 : 0.45)
             .keyboardShortcut("o", modifiers: .command)
-            .help("导入录音或图片（⌘O），也可以直接拖进来")
+            .help(L("导入录音或图片（⌘O），也可以直接拖进来"))
             .accessibilityIdentifier("media-import")
-            ChromeButton(systemImage: "arrow.clockwise", help: "刷新资料") { Task { await store.syncRecordings(); await store.refresh() } }
+            ChromeButton(systemImage: "arrow.clockwise", help: L("刷新资料")) { Task { await store.syncRecordings(); await store.refresh() } }
         }
     }
 
@@ -121,11 +122,11 @@ struct MediaWorkspaceView: View {
         if let status = store.recordingNotice {
             notice(status, symbol: store.isRecording ? "mic.fill" : store.recordingFinishing ? "arrow.down.circle" : store.error == nil ? "checkmark.circle" : "exclamationmark.triangle",
                    tint: store.isRecording ? .red : store.recordingFinishing ? Palette.accent : store.error == nil ? Palette.success : Palette.warning, action: store.isRecording
-                   ? ("停止录音", { Task { await store.stopRecording() } }) : ("知道了", { store.recordingNotice = nil }))
+                   ? (L("停止录音"), { Task { await store.stopRecording() } }) : (L("知道了"), { store.recordingNotice = nil }))
         }
         if store.recoveredRecordingCount > 0 {
-            notice("已恢复 \(store.recoveredRecordingCount) 段已保存录音 · 启动时未自动开启麦克风", symbol: "arrow.clockwise.circle", tint: Palette.success,
-                   action: ("查看", {
+            notice(L("已恢复 %@ 段已保存录音 · 启动时未自动开启麦克风", store.recoveredRecordingCount), symbol: "arrow.clockwise.circle", tint: Palette.success,
+                   action: (L("查看"), {
                        if let recovered = store.recordingInventory.segments.last(where: \.recovered) {
                            if store.recordingInventory.pending.contains(where: { $0.id == recovered.id }) { store.selectedRecordingID = recovered.id }
                            else { store.selectedRecordingID = nil; store.selectedID = recovered.id }
@@ -133,14 +134,14 @@ struct MediaWorkspaceView: View {
                    }))
         }
         if store.pendingRecordingCount > 0 || store.recordingWarning != nil {
-            notice(store.recordingWarning ?? "\(store.pendingRecordingCount) 段已保存在本机，等待入库。", symbol: "externaldrive",
-                   action: (store.recordingSyncing ? "正在入库" : "重试入库", { Task { await store.syncRecordings(); await store.refresh() } }))
+            notice(store.recordingWarning ?? L("%@ 段已保存在本机，等待入库。", store.pendingRecordingCount), symbol: "externaldrive",
+                   action: (store.recordingSyncing ? L("正在入库") : L("重试入库"), { Task { await store.syncRecordings(); await store.refresh() } }))
         }
         if let error = store.error {
-            notice(error, symbol: "exclamationmark.triangle.fill", action: ("知道了", { store.error = nil }))
+            notice(error, symbol: "exclamationmark.triangle.fill", action: (L("知道了"), { store.error = nil }))
         }
         if let error = store.connectionError, !store.isDemo, store.pendingRecordingCount == 0 {
-            notice(error, symbol: "externaldrive.badge.exclamationmark", action: ("重新连接", { Task { await store.refresh() } }))
+            notice(error, symbol: "externaldrive.badge.exclamationmark", action: (L("重新连接"), { Task { await store.refresh() } }))
         }
     }
 
@@ -162,7 +163,7 @@ struct MediaWorkspaceView: View {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: store.records) { calendar.startOfDay(for: $0.displayedDate) }
         return grouped.keys.sorted(by: >).map { day in
-            let title = calendar.isDateInToday(day) ? "今天" : calendar.isDateInYesterday(day) ? "昨天"
+            let title = calendar.isDateInToday(day) ? L("今天") : calendar.isDateInYesterday(day) ? L("昨天")
                 : day.formatted(.dateTime.month(.defaultDigits).day().weekday(.abbreviated))
             return (title, grouped[day]!.sorted { $0.displayedDate > $1.displayedDate })
         }
@@ -172,7 +173,7 @@ struct MediaWorkspaceView: View {
         if store.records.isEmpty && store.draft == nil && store.pendingRecordingCount == 0 {
             VStack(spacing: 10) {
                 Image(systemName: store.query.isEmpty ? "tray" : "magnifyingglass").typography(.display, .light).foregroundStyle(.tertiary)
-                Text(store.query.isEmpty ? "拖入录音或图片，或用右上角录一段、截一块" : "没有匹配「\(store.query)」的资料")
+                Text(store.query.isEmpty ? L("拖入录音或图片，或用右上角录一段、截一块") : L("没有匹配「%@」的资料", store.query))
                     .typography(.body).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -180,15 +181,15 @@ struct MediaWorkspaceView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     if let draft = store.draft {
-                        sectionTitle("待保存")
+                        sectionTitle(L("待保存"))
                         row(selected: store.selectedID == nil, glyph: draft.kind == "audio" ? .audio : .image,
-                            title: draft.filename, detail: "确认后才会保存到资料库") { store.selectedID = nil }
+                            title: draft.filename, detail: L("确认后才会保存到资料库")) { store.selectedID = nil }
                     }
                     if store.pendingRecordingCount > 0 {
-                        sectionTitle("本机已保存 · 待入库")
+                        sectionTitle(L("本机已保存 · 待入库"))
                         ForEach(store.pendingRecordingRows) { segment in
                             row(selected: store.selectedRecordingID == segment.id, glyph: .audio,
-                                title: "Mac 录音 " + segment.occurredAt.formatted(date: .abbreviated, time: .shortened), detail: segment.recovered ? "中断后恢复 · 可回听" : "已保存 · 可回听") {
+                                title: L("Mac 录音 ") + segment.occurredAt.formatted(date: .abbreviated, time: .shortened), detail: segment.recovered ? L("中断后恢复 · 可回听") : L("已保存 · 可回听")) {
                                 store.selectedRecordingID = segment.id
                             }
                         }
@@ -257,13 +258,13 @@ struct MediaWorkspaceView: View {
                 .transition(.opacity)
         } else if store.records.isEmpty && store.query.isEmpty {
             VStack(spacing: Space.s) {
-                Text("还没有资料").typography(.headline)
-                Text("录音、框选截图和导入的文件会出现在这里。").typography(.secondary).foregroundStyle(.secondary)
-                PrimaryButton(title: "导入文件") { importing = true }.disabled(!store.canCapture)
+                Text(L("还没有资料")).typography(.headline)
+                Text(L("录音、框选截图和导入的文件会出现在这里。")).typography(.secondary).foregroundStyle(.secondary)
+                PrimaryButton(title: L("导入文件")) { importing = true }.disabled(!store.canCapture)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text(store.records.isEmpty ? "没有匹配的资料" : "选一条资料").typography(.body).foregroundStyle(.secondary)
+            Text(store.records.isEmpty ? L("没有匹配的资料") : L("选一条资料")).typography(.body).foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -278,9 +279,9 @@ private struct SavedRecordingView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            Text(segment.recovered ? "中断后恢复的录音" : "已保存的录音").typography(.section)
-            Text("Mac 录音 " + segment.occurredAt.formatted(date: .abbreviated, time: .shortened)).typography(.body).textSelection(.enabled)
-            Text(store.recordingLabel(for: segment.recordingID) ?? "本机已保存").typography(.secondary).foregroundStyle(.secondary)
+            Text(segment.recovered ? L("中断后恢复的录音") : L("已保存的录音")).typography(.section)
+            Text(L("Mac 录音 ") + segment.occurredAt.formatted(date: .abbreviated, time: .shortened)).typography(.body).textSelection(.enabled)
+            Text(store.recordingLabel(for: segment.recordingID) ?? L("本机已保存")).typography(.secondary).foregroundStyle(.secondary)
             MediaPlaybackControls(playback: playback) {
                 Task {
                     let parts = store.recordingInventory.pending.filter { $0.recordingID == segment.recordingID }
@@ -294,8 +295,8 @@ private struct SavedRecordingView: View {
                     }
                 }
             }
-            Text("待入库 · 已保存部分可回听").typography(.secondary).foregroundStyle(.secondary)
-            QuietButton(title: store.recordingSyncing ? "正在入库" : "重试入库", emphasized: true) {
+            Text(L("待入库 · 已保存部分可回听")).typography(.secondary).foregroundStyle(.secondary)
+            QuietButton(title: store.recordingSyncing ? L("正在入库") : L("重试入库"), emphasized: true) {
                 playback.stop()
                 Task { await store.syncRecordings(); await store.refresh() }
             }.disabled(store.recordingSyncing)
@@ -317,7 +318,7 @@ private struct MediaDraftView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(draft.needsReview ? "确认素材" : "待入库素材").typography(.section)
+                Text(draft.needsReview ? L("确认素材") : L("待入库素材")).typography(.section)
                 Text(verbatim: draft.filename).foregroundStyle(.secondary)
                 if draft.kind == "audio" {
                     MediaPlaybackControls(playback: playback) {
@@ -327,9 +328,9 @@ private struct MediaDraftView: View {
                     MediaImagePreview(url: url)
                 }
                 HStack(spacing: 6) {
-                    PrimaryButton(title: draft.needsReview ? "保存到时间线" : "重试入库") { playback.stop(); save() }
+                    PrimaryButton(title: draft.needsReview ? L("保存到时间线") : L("重试入库")) { playback.stop(); save() }
                         .accessibilityIdentifier("media-save-draft")
-                    QuietButton(title: "丢弃…", role: .destructive, action: discard)
+                    QuietButton(title: L("丢弃…"), role: .destructive, action: discard)
                 }.disabled(busy)
             }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
         }.onDisappear { playback.stop() }
@@ -364,13 +365,13 @@ struct MediaRecordView: View {
                             Text(verbatim: item.displayTitle).typography(.section).textSelection(.enabled).lineLimit(1)
                                 .accessibilityIdentifier("media-record-title")
                             Text(item.source.label + " · " + item.displayedDate.formatted(date: .abbreviated, time: .shortened)
-                                 + (item.occurredAt == nil ? " · 按导入时间排列" : ""))
+                                 + (item.occurredAt == nil ? L(" · 按导入时间排列") : ""))
                                 .typography(.secondary).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if let showInTimeline {
                             Button { playback.stop(); showInTimeline(item.displayedDate) } label: {
-                                Label("在时间线中查看", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                                Label(L("在时间线中查看"), systemImage: "point.topleft.down.to.point.bottomright.curvepath")
                                     .typography(.secondary, .semibold).padding(.horizontal, 12).frame(height: 28)
                                     .background(Capsule().fill(Surface.hover.color))
                             }
@@ -381,25 +382,25 @@ struct MediaRecordView: View {
                 }
                 if editing {
                     VStack(alignment: .leading, spacing: Space.s) {
-                        QuietField(title: "标题", text: $editedTitle)
-                        Text("备注").typography(.secondary).foregroundStyle(.secondary)
-                        TextField("备注", text: $editedNotes, axis: .vertical)
-                            .textFieldStyle(.plain).typography(.body).accessibilityLabel("资料备注")
+                        QuietField(title: L("标题"), text: $editedTitle)
+                        Text(L("备注")).typography(.secondary).foregroundStyle(.secondary)
+                        TextField(L("备注"), text: $editedNotes, axis: .vertical)
+                            .textFieldStyle(.plain).typography(.body).accessibilityLabel(L("资料备注"))
                             .padding(Space.s)
                             .background(RoundedRectangle(cornerRadius: Radius.small).fill(Surface.fill.color))
                         HStack {
-                            QuietButton(title: "保存") {
+                            QuietButton(title: L("保存")) {
                                 Task {
                                     await store.edit(item, title: editedTitle, notes: editedNotes)
                                     if store.error == nil { editing = false }
                                 }
                             }.disabled(store.busy || editedTitle.count > 255 || editedNotes.count > 20000)
-                            QuietButton(title: "取消") { editing = false }
+                            QuietButton(title: L("取消")) { editing = false }
                         }
                     }
                 } else {
                     if let notes = item.notes, !notes.isEmpty { Text(verbatim: notes).typography(.body).textSelection(.enabled) }
-                    QuietButton(title: "编辑标题与备注") {
+                    QuietButton(title: L("编辑标题与备注")) {
                         editedTitle = item.displayTitle; editedNotes = item.notes ?? ""; editing = true
                     }.disabled(store.isDemo || store.busy)
                 }
@@ -414,10 +415,10 @@ struct MediaRecordView: View {
                                              position: playback.position, peaks: waveform) { play(at: $0) }
                     }
                     if item.recordingState == "recovered" || item.recordingState == "fault" {
-                        Text("录音中断 · 已保存部分可回听").typography(.secondary).foregroundStyle(.secondary)
+                        Text(L("录音中断 · 已保存部分可回听")).typography(.secondary).foregroundStyle(.secondary)
                     }
                     ForEach(Array((item.gaps ?? []).enumerated()), id: \.offset) { _, gap in
-                        Text("缺少录音 \(mediaTime(gap.startSeconds))–\(mediaTime(gap.endSeconds))")
+                        Text(L("缺少录音 %@–%@", mediaTime(gap.startSeconds), mediaTime(gap.endSeconds)))
                             .typography(.secondary).foregroundStyle(.secondary)
                     }
                     HairlineDivider()
@@ -431,9 +432,9 @@ struct MediaRecordView: View {
                 } else {
                     if let imageURL { MediaImagePreview(url: imageURL) }
                     else if let previewError { Label(previewError, systemImage: "exclamationmark.triangle") }
-                    else { ProgressView().accessibilityLabel("正在加载图片") }
+                    else { ProgressView().accessibilityLabel(L("正在加载图片")) }
                 }
-                QuietButton(title: "删除这条资料…", role: .destructive) { playback.stop(); requestDelete() }
+                QuietButton(title: L("删除这条资料…"), role: .destructive) { playback.stop(); requestDelete() }
                     .disabled(store.busy)
                     .padding(.top, Space.xs).offset(x: -9)
             }
@@ -467,9 +468,9 @@ struct MediaRecordView: View {
             }
             if item.processingStatus == .ready, item.segments.isEmpty {
                 if store.hasSelectedDetails {
-                    Text("这段录音没有可用的转写。").typography(.secondary).foregroundStyle(.secondary)
+                    Text(L("这段录音没有可用的转写。")).typography(.secondary).foregroundStyle(.secondary)
                 } else {
-                    ProgressView().controlSize(.small).accessibilityLabel("正在加载转写")
+                    ProgressView().controlSize(.small).accessibilityLabel(L("正在加载转写"))
                 }
             }
             ForEach(Array(item.segments.enumerated()), id: \.offset) { _, segment in
@@ -479,7 +480,7 @@ struct MediaRecordView: View {
                         .buttonStyle(.plain).typography(.secondary, .semibold).monospaced()
                         .foregroundStyle(.tint)
                         .disabled(playback.loading)
-                        .accessibilityLabel("从 \(mediaTime(segment.startSeconds)) 回听")
+                        .accessibilityLabel(L("从 %@ 回听", mediaTime(segment.startSeconds)))
                         .frame(width: 44, alignment: .leading)
                     VStack(alignment: .leading, spacing: 3) {
                         if let speaker = segment.shownSpeaker {
@@ -521,12 +522,12 @@ private struct MediaPlaybackControls: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(playback.loading)
-                .accessibilityLabel(playback.isPlaying ? "暂停" : "播放")
+                .accessibilityLabel(playback.isPlaying ? L("暂停") : L("播放"))
                 .accessibilityIdentifier("media-play")
                 if playback.loading { ProgressView().controlSize(.mini) }
                 if playback.duration > 0 {
                     Slider(value: Binding(get: { playback.position }, set: playback.seek), in: 0...playback.duration)
-                        .accessibilityLabel("播放位置")
+                        .accessibilityLabel(L("播放位置"))
                     Text("\(mediaTime(playback.position)) / \(mediaTime(playback.duration))")
                         .typography(.caption, .regular).monospaced().foregroundStyle(.secondary)
                 }
@@ -547,9 +548,9 @@ private struct MediaImagePreview: View {
             if let image {
                 Image(decorative: image, scale: 1).resizable().scaledToFit()
                     .frame(maxWidth: .infinity, maxHeight: 480)
-                    .accessibilityLabel("已保存的图片")
+                    .accessibilityLabel(L("已保存的图片"))
             } else if failed {
-                Label("无法预览此图片", systemImage: "photo.badge.exclamationmark")
+                Label(L("无法预览此图片"), systemImage: "photo.badge.exclamationmark")
             } else {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 120)
             }

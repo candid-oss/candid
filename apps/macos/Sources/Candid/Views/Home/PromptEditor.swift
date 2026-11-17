@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// Inline prompt editor shared by 设置 → 模型 and per-screenshot recognition. It unfolds in place (no sheet),
 /// sits on a faint tint instead of a bordered box, and lights its edge softly while focused.
@@ -26,12 +27,12 @@ struct PromptEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: Space.xs) {
-                Text("提示词").typography(.secondary, .semibold).foregroundStyle(.secondary)
+                Text(L("提示词")).typography(.secondary, .semibold).foregroundStyle(.secondary)
                 StateTag(isDefault: isDefault)
                 Spacer(minLength: Space.xs)
                 if presets.count > 1 {
                     HStack(spacing: Space.xxs) {
-                        Text("起点").typography(.secondary).foregroundStyle(.tertiary)
+                        Text(L("起点")).typography(.secondary).foregroundStyle(.tertiary)
                         CapsuleChoice(options: presets.map { ($0.id, $0.title) },
                                       selection: Binding(get: { activePreset ?? "" },
                                                          set: { id in if let p = presets.first(where: { $0.id == id }) { text = p.text } }))
@@ -50,14 +51,14 @@ struct PromptEditor: View {
                 .background(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous).fill(focused ? Surface.fill.color : Surface.wash.color))
                 .selectionEdge(focused, radius: Radius.medium, glow: true)
                 .animation(Motion.snappy, value: focused)
-                .accessibilityLabel("提示词")
+                .accessibilityLabel(L("提示词"))
 
             HStack(spacing: 6) {
-                Text("\(text.count) 字").typography(.secondary, digits: true).foregroundStyle(.tertiary)
+                Text(L("%@ 字", text.count)).typography(.secondary, digits: true).foregroundStyle(.tertiary)
                 Spacer()
-                QuietButton(title: "恢复默认") { withAnimation(Motion.snappy) { text = defaultText } }
+                QuietButton(title: L("恢复默认")) { withAnimation(Motion.snappy) { text = defaultText } }
                     .disabled(isDefault).opacity(isDefault ? 0.4 : 1)
-                if let onCancel { QuietButton(title: "取消", action: onCancel) }
+                if let onCancel { QuietButton(title: L("取消"), action: onCancel) }
                 ForEach(actions.indices, id: \.self) { i in
                     let action = actions[i]
                     if action.primary {

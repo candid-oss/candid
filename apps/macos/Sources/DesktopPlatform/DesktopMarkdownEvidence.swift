@@ -1,4 +1,5 @@
 import DesktopCore
+import CandidLocalization
 import Foundation
 import CoreGraphics
 import ImageIO
@@ -25,10 +26,10 @@ struct DesktopMarkdownEvidence {
         mainPaneJPEG = crop
         cropLeft = crop == nil ? nil : edges[widest]
         if crop != nil {
-            paneGuide = "输入图片已沿分栏去掉左侧列表，只含完整的聊天主视图。OCR 坐标仍对应原始窗口。"
+            paneGuide = L("输入图片已沿分栏去掉左侧列表，只含完整的聊天主视图。OCR 坐标仍对应原始窗口。")
         } else {
             paneGuide = dividers.isEmpty ? "" :
-                "从截图检测到纵向分栏。最宽主视图约为 x=\(edges[widest])–\(edges[widest + 1])。以下 OCR 已按栏分组，请与原图核对，侧栏预览不要写进主视图。"
+                L("从截图检测到纵向分栏。最宽主视图约为 x=%@–%@。以下 OCR 已按栏分组，请与原图核对，侧栏预览不要写进主视图。", edges[widest], edges[widest + 1])
         }
         let main = dividers.isEmpty ? nil : boxes.map { boxes in
             Set(boxes.indices.filter { pane(boxes[$0]) == widest })
@@ -57,8 +58,8 @@ struct DesktopMarkdownEvidence {
             if !dividers.isEmpty, let boxes {
                 let position = pane(boxes[index])
                 if currentPane != position {
-                    let label = position == widest ? "主视图" : position < widest ? "左侧区" : "右侧区"
-                    encoded.append("【\(label) x=\(edges[position])–\(edges[position + 1])】")
+                    let label = position == widest ? L("主视图") : position < widest ? L("左侧区") : L("右侧区")
+                    encoded.append(L("【%@ x=%@–%@】", label, edges[position], edges[position + 1]))
                     currentPane = position
                 }
             }
@@ -87,11 +88,11 @@ struct DesktopMarkdownEvidence {
         var remaining = 6_000
         for index in candidates.sorted(by: { (priority($0), $0) < (priority($1), $1) }) {
             let node = outline.nodes[index]
-            let states = [node.selected == true ? "选中" : nil, node.focused == true ? "焦点" : nil,
-                          node.expanded.map { $0 ? "展开" : "折叠" }, node.enabled == false ? "不可用" : nil]
+            let states = [node.selected == true ? L("选中") : nil, node.focused == true ? L("焦点") : nil,
+                          node.expanded.map { $0 ? L("展开") : L("折叠") }, node.enabled == false ? L("不可用") : nil]
                 .compactMap { $0 }.joined(separator: " ")
-            let parent = node.parent.map { " 父节点AX\($0 + 1)" } ?? ""
-            let content = [node.label, node.text, node.detail, node.placeholder.map { "占位提示：" + $0 }].compactMap { $0 }
+            let parent = node.parent.map { L(" 父节点AX%@", $0 + 1) } ?? ""
+            let content = [node.label, node.text, node.detail, node.placeholder.map { L("占位提示：") + $0 }].compactMap { $0 }
                 .joined(separator: " | ").split(whereSeparator: \.isNewline).joined(separator: " ")
             let snippet = DesktopTextPolicy.prefix(content, maxBytes: 500)
             let line = "AX\(index + 1)\(parent) \(node.role) \(node.bounds ?? []) \(states) \(snippet)"
@@ -106,7 +107,7 @@ struct DesktopMarkdownEvidence {
                 let node = outline.nodes[current]
                 parent = node.parent
                 if lines[current] != nil { break }
-                let ancestor = node.parent.map { " 父节点AX\($0 + 1)" } ?? ""
+                let ancestor = node.parent.map { L(" 父节点AX%@", $0 + 1) } ?? ""
                 let line = "AX\(current + 1)\(ancestor) \(node.role)"
                 guard lines.count < 80, line.utf8.count + 1 <= remaining else { break }
                 lines[current] = line
@@ -116,7 +117,7 @@ struct DesktopMarkdownEvidence {
         }
         let trimmed = outline.partial || meaningfulCount < candidates.count
         let body = lines.keys.sorted().compactMap { lines[$0] }.joined(separator: "\n")
-        return body.isEmpty ? "" : (trimmed ? "（部分）\n" : "") + body
+        return body.isEmpty ? "" : (trimmed ? L("（部分）\n") : "") + body
     }
 
     func resolve(_ output: String) -> DesktopWindowMarkdown {

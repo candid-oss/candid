@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import CoreAudio
 import CoreGraphics
 import SwiftUI
@@ -73,7 +74,7 @@ enum CallAudioActivity {
             guard let bundle=$0.bundleIdentifier else{return false}
             return CallAudioProcess(bundleID:bundle,pid:$0.processIdentifier).family==process.family
         }.map(\.processIdentifier)+[process.pid])
-        let phrases=["视频聊天","语音通话","视频通话","语音聊天","视频会议","的会议","快速会议","Zoom Meeting","腾讯会议 - "]
+        let phrases=[L("视频聊天"),L("语音通话"),L("视频通话"),L("语音聊天"),L("视频会议"),L("的会议"),L("快速会议"),"Zoom Meeting",L("腾讯会议 - ")]
         return windows.first { window in
             guard (window[kCGWindowIsOnscreen as String] as? Bool) != false,
                   let pid=(window[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value,pids.contains(pid),
@@ -132,7 +133,7 @@ enum CallAudioActivity {
         offered = process
         let name = NSRunningApplication(processIdentifier: process.pid)?.localizedName ?? process.bundleID
         let panel = NSPanel(contentRect: .zero, styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = "Candid · 通话录音"
+        panel.title = L("Candid · 通话录音")
         panel.level = .floating; panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let view = CallRecordingPrompt(appName: name, media: media, start: { [weak self] in
@@ -157,25 +158,25 @@ struct CallRecordingPrompt: View {
     let dismiss: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            Label("\(appName) 正在使用麦克风", systemImage: "phone.badge.waveform").typography(.body, .semibold)
-            Text("开始后录制所有系统声音和麦克风。请先告知通话参与者。")
+            Label(L("%@ 正在使用麦克风", appName), systemImage: "phone.badge.waveform").typography(.body, .semibold)
+            Text(L("开始后录制所有系统声音和麦克风。请先告知通话参与者。"))
                 .typography(.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if media.autoStopCallRecording {
-                Text("通话结束后自动停止录音").typography(.caption).foregroundStyle(.secondary)
+                Text(L("通话结束后自动停止录音")).typography(.caption).foregroundStyle(.secondary)
             }
             if let error = media.error {
                 Text(error).typography(.secondary).foregroundStyle(Palette.warning).fixedSize(horizontal: false, vertical: true)
                 if error.contains("麦克风权限") || error.contains("屏幕录制权限") {
-                    QuietButton(title: "打开权限设置", emphasized: true) {
+                    QuietButton(title: L("打开权限设置"), emphasized: true) {
                         let pane = error.contains("麦克风权限") ? "Privacy_Microphone" : "Privacy_ScreenCapture"
                         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?" + pane) { NSWorkspace.shared.open(url) }
                     }
                 }
             }
             HStack {
-                QuietButton(title: "本次忽略", action: dismiss).disabled(media.busy).keyboardShortcut(.cancelAction)
+                QuietButton(title: L("本次忽略"), action: dismiss).disabled(media.busy).keyboardShortcut(.cancelAction)
                 Spacer()
-                PrimaryButton(title: media.busy ? "正在开启…" : "开始内录", action: start).disabled(!media.canCapture)
+                PrimaryButton(title: media.busy ? L("正在开启…") : L("开始内录"), action: start).disabled(!media.canCapture)
             }
         }
         .padding(Space.m).frame(width: 360).background(.regularMaterial)

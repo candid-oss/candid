@@ -1,10 +1,11 @@
 import Foundation
+import CandidLocalization
 import CandidClient
 
 /// Hands outbox entries to the core: consecutive record entries go as one ingest (up to 256 events) with their files
 /// linked into the core's staging directory; deletions go alone. Shared by the App and the offline diagnostics.
 public enum DesktopDelivery {
-    public static let sourceName = "Mac 桌面"
+    public static let sourceName = L("Mac 桌面")
 
     /// The desktop source (registered once by kind and name; the same one the ledger import used).
     public static func registerSource(_ channel: LocalChannel) async throws -> String {
@@ -44,7 +45,7 @@ public enum DesktopDelivery {
                 _ = try await channel.ingest(IngestBatch(source_id: sourceID, events: events, on_missing_parent: "detach", merge_text: true))
             } catch CoreError.service(400, let code, let message) {
                 // A batch the core can never take (it fails validation): keep it out of the way and say so.
-                return (seqs, "有 \(seqs.count) 组记录无法写入时间线库（\(code)）：\(message)")
+                return (seqs, L("有 %@ 组记录无法写入时间线库（%@）：%@", seqs.count, code, message))
             }
             return (seqs, nil)
         }

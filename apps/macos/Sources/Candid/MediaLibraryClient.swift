@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import CandidShared
 import CandidClient
 
@@ -9,10 +10,10 @@ struct MediaLibraryRecord: Decodable, Identifiable {
 
         var label: String {
             switch self {
-            case .import: "文件导入"
-            case .macMicrophone: "Mac 麦克风"
-            case .macSystemAudio: "系统声音与麦克风"
-            case .macRegion: "Mac 框选截图"
+            case .import: L("文件导入")
+            case .macMicrophone: L("Mac 麦克风")
+            case .macSystemAudio: L("系统声音与麦克风")
+            case .macRegion: L("Mac 框选截图")
             }
         }
     }
@@ -20,11 +21,11 @@ struct MediaLibraryRecord: Decodable, Identifiable {
         case idle, queued, processing, ready, failed
         var label: String {
             switch self {
-            case .idle: "未识别"
-            case .queued: "等待识别"
-            case .processing: "正在识别"
-            case .ready: "已识别"
-            case .failed: "识别失败"
+            case .idle: L("未识别")
+            case .queued: L("等待识别")
+            case .processing: L("正在识别")
+            case .ready: L("已识别")
+            case .failed: L("识别失败")
             }
         }
         var isActive: Bool { self == .queued || self == .processing }
@@ -32,7 +33,7 @@ struct MediaLibraryRecord: Decodable, Identifiable {
     enum Mode: String, CaseIterable, Identifiable {
         case quick, conversation
         var id: Self { self }
-        var label: String { self == .quick ? "单人转写" : "多人分段与声纹" }
+        var label: String { self == .quick ? L("单人转写") : L("多人分段与声纹") }
     }
 
     struct Segment: Decodable {
@@ -154,13 +155,13 @@ enum MediaWorkspaceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .configuration: "资料库尚未连接，请连接资料库后重试。"
-        case .unsupported: "请选择支持的录音或图片文件。"
-        case .busyDraft: "请先保存或丢弃当前待入库素材。"
-        case .rejected(401, _): "资料库授权失效，请重新运行启动脚本。"
-        case .rejected(413, _), .tooLarge: "文件超过资料库的大小限制。"
-        case .rejected(_, let message): message ?? "资料库未能完成操作。"
-        case .malformed: "资料库返回了无法读取的内容。"
+        case .configuration: L("资料库尚未连接，请连接资料库后重试。")
+        case .unsupported: L("请选择支持的录音或图片文件。")
+        case .busyDraft: L("请先保存或丢弃当前待入库素材。")
+        case .rejected(401, _): L("资料库授权失效，请重新运行启动脚本。")
+        case .rejected(413, _), .tooLarge: L("文件超过资料库的大小限制。")
+        case .rejected(_, let message): message ?? L("资料库未能完成操作。")
+        case .malformed: L("资料库返回了无法读取的内容。")
         }
     }
 }

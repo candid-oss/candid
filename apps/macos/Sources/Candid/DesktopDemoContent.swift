@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import DesktopCore
 
 /// A synthetic day for `--mock`: system app identities for real icons, but
@@ -25,42 +26,42 @@ enum DesktopDemoContent {
 
     @MainActor private static func plan() -> [Segment?] {
         let editor = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode") != nil
-            ? ("com.apple.dt.Xcode", "Xcode") : ("com.apple.TextEdit", "文本编辑")
+            ? ("com.apple.dt.Xcode", "Xcode") : ("com.apple.TextEdit", L("文本编辑"))
         func code(_ title: String, _ text: String, _ minutes: Double) -> Segment {
             Segment(minutes: minutes, bundle: editor.0, app: editor.1, title: title, text: text, dark: true)
         }
         let plan: [Segment?] = [
-            Segment(minutes: 27, bundle: "com.apple.Notes", app: "备忘录", title: "晨间计划", text: "完成横向时间线；核对截图预算；下午整理会议纪要", dark: false),
-            Segment(minutes: 4, bundle: "com.apple.mail", app: "邮件", title: "收件箱", text: "挂件第二版外壳打样寄到了，明天可以试装", dark: false),
+            Segment(minutes: 27, bundle: "com.apple.Notes", app: L("备忘录"), title: L("晨间计划"), text: L("完成横向时间线；核对截图预算；下午整理会议纪要"), dark: false),
+            Segment(minutes: 4, bundle: "com.apple.mail", app: L("邮件"), title: L("收件箱"), text: L("挂件第二版外壳打样寄到了，明天可以试装"), dark: false),
             code("DesktopSession.swift", "let loaded = try await store.activities(from: day, to: end, query: searchText)", 39),
-            Segment(minutes: 4, bundle: "com.apple.Terminal", app: "终端", title: "zsh — macos", text: "swift test --filter DesktopTimelineGroupingTests", dark: true),
+            Segment(minutes: 4, bundle: "com.apple.Terminal", app: L("终端"), title: "zsh — macos", text: "swift test --filter DesktopTimelineGroupingTests", dark: true),
             Segment(minutes: 8, bundle: "com.apple.Safari", app: "Safari", title: "ScreenCaptureKit", text: "Capture a single frame of shareable content as an image.", dark: false),
-            Segment(minutes: 41, bundle: "com.apple.iCal", app: "日历", title: "周会 · 硬件与时间线", text: "SD 卡实时写入；时间轴横向；挂件下周试装", dark: false),
+            Segment(minutes: 41, bundle: "com.apple.iCal", app: L("日历"), title: L("周会 · 硬件与时间线"), text: L("SD 卡实时写入；时间轴横向；挂件下周试装"), dark: false),
             code("TimelineScrubber.swift", "struct TimelineScrubber: View { @Binding var playhead: Date }", 42),
-            Segment(minutes: 5, bundle: "com.apple.mail", app: "邮件", title: "周末安排", text: "周末回来吃饭吗", dark: false),
-            Segment(minutes: 3, bundle: "com.apple.finder", app: "访达", title: "下载", text: "datasheet.pdf · 外壳_v2.step · 接线.heic", dark: false),
-            Segment(minutes: 33, bundle: "com.apple.Safari", app: "Safari", title: "Gradient 文档", text: "A two-dimensional gradient defined by a grid of colors.", dark: false),
+            Segment(minutes: 5, bundle: "com.apple.mail", app: L("邮件"), title: L("周末安排"), text: L("周末回来吃饭吗"), dark: false),
+            Segment(minutes: 3, bundle: "com.apple.finder", app: L("访达"), title: L("下载"), text: L("datasheet.pdf · 外壳_v2.step · 接线.heic"), dark: false),
+            Segment(minutes: 33, bundle: "com.apple.Safari", app: "Safari", title: L("Gradient 文档"), text: "A two-dimensional gradient defined by a grid of colors.", dark: false),
             nil, // lunch: recording paused
-            Segment(minutes: 15, bundle: "com.apple.Music", app: "音乐", title: "每日推荐", text: "后摇合集", dark: true),
-            Segment(minutes: 9, bundle: "com.apple.Notes", app: "备忘录", title: "时间线设计", text: "时间轴放底部；图标挂在细线上；细节按需展开", dark: false),
+            Segment(minutes: 15, bundle: "com.apple.Music", app: L("音乐"), title: L("每日推荐"), text: L("后摇合集"), dark: true),
+            Segment(minutes: 9, bundle: "com.apple.Notes", app: L("备忘录"), title: L("时间线设计"), text: L("时间轴放底部；图标挂在细线上；细节按需展开"), dark: false),
             code("HangingIcon.swift", "let scale = 1 + 0.75 * exp(-(d * d) / (2 * sigma * sigma))", 68),
-            Segment(minutes: 4, bundle: "com.apple.Terminal", app: "终端", title: "zsh — build", text: "script/build_and_run.sh --mock", dark: true),
-            Segment(minutes: 11, bundle: "com.apple.mail", app: "邮件", title: "项目进度", text: "文字识别在聊天窗口里的效果如何？", dark: false),
-            Segment(minutes: 42, bundle: "com.apple.Notes", app: "备忘录", title: "会议纪要 · 周会", text: "SD 卡实时写入；时间轴横向；挂件试装下周", dark: false),
-            Segment(minutes: 8, bundle: "com.apple.Safari", app: "Safari", title: "本地模型接口", text: "OpenAI compatible endpoints: /v1/models", dark: false),
+            Segment(minutes: 4, bundle: "com.apple.Terminal", app: L("终端"), title: "zsh — build", text: "script/build_and_run.sh --mock", dark: true),
+            Segment(minutes: 11, bundle: "com.apple.mail", app: L("邮件"), title: L("项目进度"), text: L("文字识别在聊天窗口里的效果如何？"), dark: false),
+            Segment(minutes: 42, bundle: "com.apple.Notes", app: L("备忘录"), title: L("会议纪要 · 周会"), text: L("SD 卡实时写入；时间轴横向；挂件试装下周"), dark: false),
+            Segment(minutes: 8, bundle: "com.apple.Safari", app: "Safari", title: L("本地模型接口"), text: "OpenAI compatible endpoints: /v1/models", dark: false),
             code("TimelineScrubber.swift", "if next.reveal(value, width: width, margin: 36, bounds: scene.bounds)", 17),
-            Segment(minutes: 3, bundle: "com.apple.Preview", app: "预览", title: "外壳_v2.pdf", text: "外壳尺寸 42 × 28 × 14 mm", dark: false),
+            Segment(minutes: 3, bundle: "com.apple.Preview", app: L("预览"), title: L("外壳_v2.pdf"), text: L("外壳尺寸 42 × 28 × 14 mm"), dark: false),
             // A short glance at another app inside one editing run, then a fragmented stretch of quick switches.
             code("DayRhythmView.swift", "RingArc(start: fraction(span.start), end: fraction(span.end))", 16),
-            Segment(minutes: 2, bundle: "com.apple.MobileSMS", app: "信息", title: "硬件小组", text: "外壳样品到了吗", dark: false),
+            Segment(minutes: 2, bundle: "com.apple.MobileSMS", app: L("信息"), title: L("硬件小组"), text: L("外壳样品到了吗"), dark: false),
             code("DayRhythmView.swift", "let fraction = (date - dayStart) / 86_400", 18),
             Segment(minutes: 3, bundle: "com.apple.Safari", app: "Safari", title: "himalaya README", text: "CLI to manage emails", dark: false),
-            Segment(minutes: 2, bundle: "com.apple.MobileSMS", app: "信息", title: "硬件小组", text: "到了，明天试装", dark: false),
-            Segment(minutes: 4, bundle: "com.apple.Safari", app: "Safari", title: "pimalaya 文档", text: "email-lib: IMAP, SMTP, Maildir", dark: false),
-            Segment(minutes: 1, bundle: "com.apple.mail", app: "邮件", title: "收件箱", text: "新邮件 2 封", dark: false),
-            Segment(minutes: 2, bundle: "com.apple.finder", app: "访达", title: "下载", text: "外壳_v3.step", dark: false),
-            Segment(minutes: 2, bundle: "com.apple.Notes", app: "备忘录", title: "待办", text: "邮件连接器：先读本机邮件", dark: false),
-            Segment(minutes: 6, bundle: "com.apple.mail", app: "邮件", title: "样稿", text: "样稿今晚能看吗", dark: false),
+            Segment(minutes: 2, bundle: "com.apple.MobileSMS", app: L("信息"), title: L("硬件小组"), text: L("到了，明天试装"), dark: false),
+            Segment(minutes: 4, bundle: "com.apple.Safari", app: "Safari", title: L("pimalaya 文档"), text: "email-lib: IMAP, SMTP, Maildir", dark: false),
+            Segment(minutes: 1, bundle: "com.apple.mail", app: L("邮件"), title: L("收件箱"), text: L("新邮件 2 封"), dark: false),
+            Segment(minutes: 2, bundle: "com.apple.finder", app: L("访达"), title: L("下载"), text: L("外壳_v3.step"), dark: false),
+            Segment(minutes: 2, bundle: "com.apple.Notes", app: L("备忘录"), title: L("待办"), text: L("邮件连接器：先读本机邮件"), dark: false),
+            Segment(minutes: 6, bundle: "com.apple.mail", app: L("邮件"), title: L("样稿"), text: L("样稿今晚能看吗"), dark: false),
             code("TimelineHomeView.swift", ".matchedGeometryEffect(id: episode.id, in: cards)", 32),
         ]
         return plan
@@ -87,26 +88,26 @@ enum DesktopDemoContent {
         func audio(_ name: String, at start: Date, lines: [(Double, Double, String?, String)]) -> MediaLibraryRecord {
             MediaLibraryRecord(id: UUID(), filename: name, kind: .audio, source: .macMicrophone, occurredAt: start, importedAt: start,
                                processingStatus: .ready,
-                               segments: lines.map { .init(startSeconds: $0.0, endSeconds: $0.1, text: $0.3 + "（合成样例）", speaker: $0.2, identity: nil) },
+                               segments: lines.map { .init(startSeconds: $0.0, endSeconds: $0.1, text: $0.3 + L("（合成样例）"), speaker: $0.2, identity: nil) },
                                error: nil, processingMode: "conversation")
         }
         return [
-            audio("周会录音.m4a", at: starts[5].addingTimeInterval(60), lines: [
-                (0, 240, "说话人 1", "SD 卡这边建议直接实时写 Opus，断电最多丢一秒。"),
-                (300, 620, "说话人 2", "可以。时间轴想改成横向，放在底部，图标挂在线上。"),
-                (700, 1100, "说话人 1", "悬停放大要克制，别晃。"),
-                (1200, 1600, "说话人 2", "详细信息默认收起，需要时再展开。"),
-                (1700, 2280, "说话人 1", "挂件外壳下周试装，到时候一起看收音。")
+            audio(L("周会录音.m4a"), at: starts[5].addingTimeInterval(60), lines: [
+                (0, 240, L("说话人 1"), L("SD 卡这边建议直接实时写 Opus，断电最多丢一秒。")),
+                (300, 620, L("说话人 2"), L("可以。时间轴想改成横向，放在底部，图标挂在线上。")),
+                (700, 1100, L("说话人 1"), L("悬停放大要克制，别晃。")),
+                (1200, 1600, L("说话人 2"), L("详细信息默认收起，需要时再展开。")),
+                (1700, 2280, L("说话人 1"), L("挂件外壳下周试装，到时候一起看收音。"))
             ]),
-            audio("语音备忘.m4a", at: starts[13].addingTimeInterval(25 * 60), lines: [
-                (0, 70, nil, "卡片闪烁是因为悬停区域和卡片本身重叠了。"),
-                (75, 150, nil, "提示卡应该浮在整条时间轴上方。")
+            audio(L("语音备忘.m4a"), at: starts[13].addingTimeInterval(25 * 60), lines: [
+                (0, 70, nil, L("卡片闪烁是因为悬停区域和卡片本身重叠了。")),
+                (75, 150, nil, L("提示卡应该浮在整条时间轴上方。"))
             ]),
-            audio("节律视图想法.m4a", at: starts[18].addingTimeInterval(6 * 60), lines: [
-                (0, 60, nil, "节律用 24 小时的环，夜里空着本身就是信息。"),
-                (62, 100, nil, "右边只放应用排行，别的都不要。")
+            audio(L("节律视图想法.m4a"), at: starts[18].addingTimeInterval(6 * 60), lines: [
+                (0, 60, nil, L("节律用 24 小时的环，夜里空着本身就是信息。")),
+                (62, 100, nil, L("右边只放应用排行，别的都不要。"))
             ]),
-            MediaLibraryRecord(id: UUID(), filename: "框选截图.png", kind: .image, source: .macRegion, occurredAt: starts[15].addingTimeInterval(180),
+            MediaLibraryRecord(id: UUID(), filename: L("框选截图.png"), kind: .image, source: .macRegion, occurredAt: starts[15].addingTimeInterval(180),
                                importedAt: starts[15].addingTimeInterval(180), processingStatus: .idle, segments: [], error: nil, processingMode: nil),
         ]
     }
@@ -119,7 +120,7 @@ enum DesktopDemoContent {
         let run = "synthetic-demo"
         for (index, segment) in plan.enumerated() {
             guard let segment else {
-                items.append(Item(record: DesktopRecord(timestamp: cursor, kind: .gap, detail: "合成样例：午饭时暂停记录", runID: run), image: nil))
+                items.append(Item(record: DesktopRecord(timestamp: cursor, kind: .gap, detail: L("合成样例：午饭时暂停记录"), runID: run), image: nil))
                 cursor = cursor.addingTimeInterval(lunch * 60); continue
             }
             let activity = "demo-\(index)"
@@ -130,14 +131,14 @@ enum DesktopDemoContent {
             while t < cursor.addingTimeInterval(segment.minutes * 60 - 20) {
                 let observation = DesktopRecord(
                     timestamp: t, kind: first ? .application : .context, appName: segment.app, bundleID: segment.bundle,
-                    windowTitle: segment.title, detail: "合成样例", runID: run, trigger: first ? "application" : "timer",
-                    context: DesktopContextSnapshot(readableText: segment.text + "（合成样例）", textStatus: "partial"),
+                    windowTitle: segment.title, detail: L("合成样例"), runID: run, trigger: first ? "application" : "timer",
+                    context: DesktopContextSnapshot(readableText: segment.text + L("（合成样例）"), textStatus: "partial"),
                     activityID: activity)
                 items.append(Item(record: observation, image: nil))
                 lastObservation = observation; first = false
                 if t >= nextShot, let parent = lastObservation {
                     let record = DesktopRecord(timestamp: t.addingTimeInterval(2), kind: .screenshot, appName: segment.app,
-                                               bundleID: segment.bundle, windowTitle: segment.title, detail: "合成样例截图",
+                                               bundleID: segment.bundle, windowTitle: segment.title, detail: L("合成样例截图"),
                                                imageWidth: 1280, imageHeight: 800, parentID: parent.id, runID: run,
                                                trigger: shot == 0 ? "application" : "timer", activityID: activity)
                     items.append(Item(record: record, image: autoreleasepool { render(segment, variant: shot) }))
@@ -148,7 +149,7 @@ enum DesktopDemoContent {
             }
             if index == 5 || index == 13 {
                 items.append(Item(record: DesktopRecord(timestamp: cursor.addingTimeInterval(segment.minutes * 25), kind: .marker,
-                                                        detail: index == 5 ? "合成样例：这里定了方案" : "合成样例：复现了一个问题", runID: run), image: nil))
+                                                        detail: index == 5 ? L("合成样例：这里定了方案") : L("合成样例：复现了一个问题"), runID: run), image: nil))
             }
             cursor = cursor.addingTimeInterval(segment.minutes * 60)
         }
@@ -197,7 +198,7 @@ enum DesktopDemoContent {
             muted.setFill()
             NSBezierPath(roundedRect: NSRect(x: 300, y: h - 520 - CGFloat(line) * 38, width: CGFloat(420 + (line * 131 + variant * 57) % 480), height: 14), xRadius: 7, yRadius: 7).fill()
         }
-        draw("合成样例", at: NSPoint(x: w - 150, y: 24), size: 20, weight: .semibold, color: ink.withAlphaComponent(0.35))
+        draw(L("合成样例"), at: NSPoint(x: w - 150, y: 24), size: 20, weight: .semibold, color: ink.withAlphaComponent(0.35))
         return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.72])
     }
 

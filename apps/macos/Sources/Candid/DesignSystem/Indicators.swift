@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import SwiftUI
 
 // Tags, status and feedback: small, fixed vocabulary, so the same state always looks the same.
@@ -20,12 +21,12 @@ struct Tag: View {
 /// 「默认 / 已修改」 for anything the user can override.
 struct StateTag: View {
     let isDefault: Bool
-    var body: some View { Tag(text: isDefault ? "默认" : "已修改", tint: isDefault ? nil : Palette.accent) }
+    var body: some View { Tag(text: isDefault ? L("默认") : L("已修改"), tint: isDefault ? nil : Palette.accent) }
 }
 
 extension Destination {
     var label: String {
-        switch self { case .onDevice: "本机"; case .selfHosted: "自建"; case .cloud: "云端" }
+        switch self { case .onDevice: L("本机"); case .selfHosted: L("自建"); case .cloud: L("云端") }
     }
     var tint: Color {
         switch self { case .onDevice: .green; case .selfHosted: .blue; case .cloud: .orange }
@@ -40,7 +41,7 @@ struct DestinationTag: View {
     let destination: Destination
     var body: some View {
         Tag(text: destination.label, tint: destination.tint)
-            .help(destination == .cloud ? "内容会发往第三方服务" : destination == .selfHosted ? "内容只发往你自己登记的服务器" : "内容留在这台电脑上")
+            .help(destination == .cloud ? L("内容会发往第三方服务") : destination == .selfHosted ? L("内容只发往你自己登记的服务器") : L("内容留在这台电脑上"))
     }
 }
 
@@ -91,7 +92,7 @@ struct NoticeCapsule: View {
             Text(text).typography(.body).lineLimit(3).textSelection(.enabled)
             if let onClose {
                 Button(action: onClose) { Image(systemName: "xmark").typography(.caption, .bold) }
-                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel("关闭提示")
+                    .buttonStyle(.plain).foregroundStyle(.secondary).accessibilityLabel(L("关闭提示"))
             }
         }
         .padding(.horizontal, 14).padding(.vertical, 9)
@@ -116,7 +117,7 @@ struct ConfirmCapsule: View {
                 if let message { Text(message).typography(.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: Space.s)
-            QuietButton(title: "取消", action: onCancel).keyboardShortcut(.cancelAction)
+            QuietButton(title: L("取消"), action: onCancel).keyboardShortcut(.cancelAction)
             QuietButton(title: confirmTitle, role: .destructive, action: onConfirm)
         }
         .padding(.leading, Space.m).padding(.trailing, Space.xs).padding(.vertical, 10)
@@ -127,7 +128,7 @@ struct ConfirmCapsule: View {
 
 extension View {
     /// Shows a `ConfirmCapsule` over the top of this view while `isPresented` is true.
-    func confirmCapsule(_ title: String, isPresented: Binding<Bool>, message: String? = nil, confirmTitle: String = "删除",
+    func confirmCapsule(_ title: String, isPresented: Binding<Bool>, message: String? = nil, confirmTitle: String = L("删除"),
                         action: @escaping () -> Void) -> some View {
         overlay(alignment: .top) {
             if isPresented.wrappedValue {
@@ -185,7 +186,7 @@ struct ActivityBars: View {
             }
         }
         .frame(height: ControlHeight.button, alignment: .bottom)
-        .accessibilityElement(children: .ignore).accessibilityLabel("最近七天调用：" + values.map(String.init).joined(separator: "、"))
+        .accessibilityElement(children: .ignore).accessibilityLabel(L("最近七天调用：") + values.map(String.init).joined(separator: L("、")))
     }
 }
 

@@ -1,4 +1,5 @@
 import CoreGraphics
+import CandidLocalization
 import Foundation
 
 /// The lanes of the home timeline, top to bottom. Calendar joins when its data does.
@@ -6,17 +7,17 @@ enum TimelineLane: String, CaseIterable, Identifiable, Sendable {
     case screen, shots, ai, audio
     var id: String { rawValue }
     var title: String {
-        switch self { case .screen: "屏幕"; case .shots: "截图"; case .ai: "AI"; case .audio: "录音" }
+        switch self { case .screen: L("屏幕"); case .shots: L("截图"); case .ai: "AI"; case .audio: L("录音") }
     }
     var systemImage: String {
         switch self { case .screen: "display"; case .shots: "photo"; case .ai: "sparkle"; case .audio: "waveform" }
     }
     var help: String {
         switch self {
-        case .screen: "用过的应用和窗口；单击定位，再点一次打开"
-        case .shots: "截图；悬停逐张预览，单击定位到那一张"
-        case .ai: "发给 AI 的指令和工作时段；单击展开"
-        case .audio: "录音；单击定位，再点一次打开"
+        case .screen: L("用过的应用和窗口；单击定位，再点一次打开")
+        case .shots: L("截图；悬停逐张预览，单击定位到那一张")
+        case .ai: L("发给 AI 的指令和工作时段；单击展开")
+        case .audio: L("录音；单击定位，再点一次打开")
         }
     }
 }

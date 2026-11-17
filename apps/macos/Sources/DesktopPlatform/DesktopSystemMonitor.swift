@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import ApplicationServices
 import DesktopCore
 import Foundation
@@ -88,7 +89,7 @@ public final class DesktopSystemMonitor {
 
     private func startInteractionTap() -> Bool {
         interactionTap.start(returnEnabled: returnEnabled, scrollEnabled: scrollEnabled, onSignal: { [weak self] trigger in self?.interactionSignal(trigger) }, onFailure: { [weak self] status in
-            self?.onEvent?(.init(kind: .system, detail: status == "permission_denied" ? "输入监控权限已失效，回车与滚动触发已停止" : "系统已停止回车与滚动触发，请在设置中重新启用", trigger: "system"))
+            self?.onEvent?(.init(kind: .system, detail: status == "permission_denied" ? L("输入监控权限已失效，回车与滚动触发已停止") : L("系统已停止回车与滚动触发，请在设置中重新启用"), trigger: "system"))
         })
     }
     private func interactionSignal(_ trigger: String) {
@@ -192,20 +193,20 @@ public final class DesktopSystemMonitor {
         let memoryGiB = Double(process.physicalMemory) / 1_073_741_824
         let displays = NSScreen.screens.enumerated().map { index, screen in
             let pixels = screen.convertRectToBacking(screen.frame)
-            return "\(index + 1)：\(Int(pixels.width)) × \(Int(pixels.height))"
-        }.joined(separator: "；")
+            return L("%@：%@ × %@", index + 1, Int(pixels.width), Int(pixels.height))
+        }.joined(separator: L("；"))
         let version = process.operatingSystemVersion
         let rows = [
-            DesktopInfoRow("系统", "macOS \(version.majorVersion).\(version.minorVersion).\(version.patchVersion)", symbol: "desktopcomputer"),
-            DesktopInfoRow("芯片", Self.sysctlString("machdep.cpu.brand_string") ?? "未知", symbol: "cpu"),
-            DesktopInfoRow("内存", String(format: "%.0f GiB", memoryGiB), symbol: "memorychip"),
-            DesktopInfoRow("逻辑核心", "\(process.activeProcessorCount)", symbol: "square.grid.3x3"),
-            DesktopInfoRow("显示器", displays.isEmpty ? "不可用" : displays, symbol: "display"),
-            DesktopInfoRow("屏幕权限", screen ? "已允许" : "未允许", symbol: "rectangle.dashed.badge.record"),
-            DesktopInfoRow("辅助功能", accessibility ? "已允许" : "未允许", symbol: "accessibility"),
-            DesktopInfoRow("低电量模式", process.isLowPowerModeEnabled ? "已开启" : "未开启", symbol: "battery.50percent"),
-            DesktopInfoRow("供电", onBattery.map { $0 ? "使用电池" : "外部电源" } ?? "未知", symbol: "powerplug"),
-            DesktopInfoRow("温度状态", Self.thermalDescription(thermal), symbol: "thermometer.medium")
+            DesktopInfoRow(L("系统"), "macOS \(version.majorVersion).\(version.minorVersion).\(version.patchVersion)", symbol: "desktopcomputer"),
+            DesktopInfoRow(L("芯片"), Self.sysctlString("machdep.cpu.brand_string") ?? L("未知"), symbol: "cpu"),
+            DesktopInfoRow(L("内存"), String(format: "%.0f GiB", memoryGiB), symbol: "memorychip"),
+            DesktopInfoRow(L("逻辑核心"), "\(process.activeProcessorCount)", symbol: "square.grid.3x3"),
+            DesktopInfoRow(L("显示器"), displays.isEmpty ? L("不可用") : displays, symbol: "display"),
+            DesktopInfoRow(L("屏幕权限"), screen ? L("已允许") : L("未允许"), symbol: "rectangle.dashed.badge.record"),
+            DesktopInfoRow(L("辅助功能"), accessibility ? L("已允许") : L("未允许"), symbol: "accessibility"),
+            DesktopInfoRow(L("低电量模式"), process.isLowPowerModeEnabled ? L("已开启") : L("未开启"), symbol: "battery.50percent"),
+            DesktopInfoRow(L("供电"), onBattery.map { $0 ? L("使用电池") : L("外部电源") } ?? L("未知"), symbol: "powerplug"),
+            DesktopInfoRow(L("温度状态"), Self.thermalDescription(thermal), symbol: "thermometer.medium")
         ]
         return DesktopSystemSnapshot(rows: rows, screenPermission: screen, accessibilityPermission: accessibility,
                                      thermalBlocked: thermal == .serious || thermal == .critical, lowPower: process.isLowPowerModeEnabled, onBattery: onBattery)
@@ -271,18 +272,18 @@ public final class DesktopSystemMonitor {
         defaultObservers.append(NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 DesktopSessionSafety.epoch &+= 1
-                self?.onEvent?(.init(kind: .system, detail: "显示器配置已变化"))
+                self?.onEvent?(.init(kind: .system, detail: L("显示器配置已变化")))
             }
         })
         _ = ProcessInfo.processInfo.thermalState
         for name in [ProcessInfo.thermalStateDidChangeNotification, Notification.Name.NSProcessInfoPowerStateDidChange] {
             defaultObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.onEvent?(.init(kind: .system, detail: "电源或温度状态已变化")) }
+                MainActor.assumeIsolated { self?.onEvent?(.init(kind: .system, detail: L("电源或温度状态已变化"))) }
             })
         }
         Self.activePowerMonitor = self
         if let source = IOPSNotificationCreateRunLoopSource({ _ in
-            MainActor.assumeIsolated { DesktopSystemMonitor.activePowerMonitor?.onEvent?(.init(kind: .system, detail: "供电来源已变化")) }
+            MainActor.assumeIsolated { DesktopSystemMonitor.activePowerMonitor?.onEvent?(.init(kind: .system, detail: L("供电来源已变化"))) }
         }, nil)?.takeRetainedValue() {
             powerSource = source
             CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
@@ -327,7 +328,7 @@ public final class DesktopSystemMonitor {
     private func block(_ reason: String) {
         guard blockedReasons.insert(reason).inserted else { return }
         updateSafety(); removeAXObserver(); interactionTap.stop()
-        onEvent?(.init(kind: .blocked, detail: "采集暂时停止：\(Self.reasonDescription(reason))"))
+        onEvent?(.init(kind: .blocked, detail: L("采集暂时停止：%@", Self.reasonDescription(reason))))
     }
     private func unblock(_ reason: String) {
         blockedReasons.remove(reason)
@@ -335,7 +336,7 @@ public final class DesktopSystemMonitor {
         else { blockedReasons.insert("session_unknown") }
         updateSafety()
         if isSessionActive, interactionTriggersRequested { _ = startInteractionTap() }
-        if isSessionActive { onEvent?(.init(kind: .resumed, detail: "会话恢复；继续遵循原采集设置")); applicationChanged() }
+        if isSessionActive { onEvent?(.init(kind: .resumed, detail: L("会话恢复；继续遵循原采集设置"))); applicationChanged() }
     }
     private func updateSafety() {
         isSessionActive = blockedReasons.isEmpty && DesktopSessionSafety.currentConsoleIsUsable()
@@ -354,7 +355,7 @@ public final class DesktopSystemMonitor {
         if interactionTriggersRequested, !interactionTap.isActive { _ = startInteractionTap() }
         // Deliver lightweight app metadata immediately; AX title/geometry is
         // acquired on its own serial executor and emitted as a window event.
-        onEvent?(.init(kind: .application, application: application, detail: "前台应用切换", trigger: "application"))
+        onEvent?(.init(kind: .application, application: application, detail: L("前台应用切换"), trigger: "application"))
         if windowContentScope.contains(application.bundleID) { requestFocusRefresh(application) }
         else { removeAXObserver(); lastFocus = "" }
     }
@@ -452,10 +453,10 @@ public final class DesktopSystemMonitor {
         if Self.activeAXMonitor === self { Self.activeAXMonitor = nil }
     }
     private static func reasonDescription(_ reason: String) -> String {
-        switch reason { case "sleep": "系统休眠"; case "screen_off": "屏幕关闭"; case "session_inactive": "用户会话不活跃"; case "locked": "屏幕锁定"; case "screensaver": "屏幕保护程序"; default: "会话状态待确认" }
+        switch reason { case "sleep": L("系统休眠"); case "screen_off": L("屏幕关闭"); case "session_inactive": L("用户会话不活跃"); case "locked": L("屏幕锁定"); case "screensaver": L("屏幕保护程序"); default: L("会话状态待确认") }
     }
     private static func thermalDescription(_ state: ProcessInfo.ThermalState) -> String {
-        switch state { case .nominal: "正常"; case .fair: "轻微升温"; case .serious: "高温，暂停截图"; case .critical: "严重高温，暂停截图"; @unknown default: "未知" }
+        switch state { case .nominal: L("正常"); case .fair: L("轻微升温"); case .serious: L("高温，暂停截图"); case .critical: L("严重高温，暂停截图"); @unknown default: L("未知") }
     }
     private static func sysctlString(_ name: String) -> String? {
         var size = 0

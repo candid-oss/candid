@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 /// Mail sources: the Mail.app data on this Mac and any IMAP accounts, then the rules every mail source shares.
@@ -16,16 +17,16 @@ struct MailConnectorPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.l) {
             if model.needsConfirmation {
-                InlineMessage(kind: .note, text: "已连接「邮件」App，但还没有导入任何邮件。先选好范围、看预览，点「导入」后才开始。")
+                InlineMessage(kind: .note, text: L("已连接「邮件」App，但还没有导入任何邮件。先选好范围、看预览，点「导入」后才开始。"))
             }
             if !model.mailSources.isEmpty {
                 HStack(spacing: Space.s) {
-                    ConnectorStat(value: "\(model.mailSources.reduce(0) { $0 + $1.events })", label: "已存邮件")
-                    ConnectorStat(value: "\(model.mailSources.count)", label: "来源")
-                    ConnectorStat(value: lastSync, label: "最近同步")
+                    ConnectorStat(value: "\(model.mailSources.reduce(0) { $0 + $1.events })", label: L("已存邮件"))
+                    ConnectorStat(value: "\(model.mailSources.count)", label: L("来源"))
+                    ConnectorStat(value: lastSync, label: L("最近同步"))
                 }
             }
-            SettingsGroup(title: "来源") {
+            SettingsGroup(title: L("来源")) {
                 appleRow
                 if let source = model.appleMail, revoking?.id == source.id { revokeConfirm(source) }
                 ForEach(model.imapAccounts) { account in
@@ -36,13 +37,13 @@ struct MailConnectorPane: View {
                 }
                 HairlineDivider()
                 if adding { addForm } else {
-                    SettingRow(title: "IMAP 登录", detail: "Gmail 等邮箱用应用专用密码；密码存在钥匙串") {
-                        QuietButton(title: "添加账户", emphasized: true) { withAnimation(Motion.spring) { adding = true } }
+                    SettingRow(title: L("IMAP 登录"), detail: L("Gmail 等邮箱用应用专用密码；密码存在钥匙串")) {
+                        QuietButton(title: L("添加账户"), emphasized: true) { withAnimation(Motion.spring) { adding = true } }
                     }
                 }
             } accessory: {
                 if !model.mailSources.isEmpty {
-                    QuietButton(title: model.busy == "sync" ? "同步中…" : "立即同步", emphasized: true) { Task { await model.sync() } }
+                    QuietButton(title: model.busy == "sync" ? L("同步中…") : L("立即同步"), emphasized: true) { Task { await model.sync() } }
                         .disabled(model.busy != nil)
                 }
             }
@@ -61,17 +62,17 @@ struct MailConnectorPane: View {
     private var appleRow: some View {
         let source = model.appleMail.flatMap { $0.status == "revoked" ? nil : $0 }
         let state = ConnectorsModel.state(source)
-        return SettingRow(title: "本机「邮件」App", detail: source == nil ? "读取其中登录的全部账户；需要给 Candid 开「完全磁盘访问」" : detail(source!)) {
+        return SettingRow(title: L("本机「邮件」App"), detail: source == nil ? L("读取其中登录的全部账户；需要给 Candid 开「完全磁盘访问」") : detail(source!)) {
             HStack(spacing: Space.s) {
                 StatusDot(state: state.state, text: state.text)
                 if let source {
                     if source.needs == "full_disk_access" {
-                        SecondaryButton(title: "打开系统设置") { openFullDiskAccess() }
-                        QuietButton(title: "重新检查", emphasized: true) { Task { await model.sync(source) } }
+                        SecondaryButton(title: L("打开系统设置")) { openFullDiskAccess() }
+                        QuietButton(title: L("重新检查"), emphasized: true) { Task { await model.sync(source) } }
                     }
                     sourceMenu(source)
                 } else {
-                    PrimaryButton(title: model.busy == "mail.apple" ? "连接中…" : "授权") { Task { await model.authorizeAppleMail() } }
+                    PrimaryButton(title: model.busy == "mail.apple" ? L("连接中…") : L("授权")) { Task { await model.authorizeAppleMail() } }
                         .disabled(model.busy != nil)
                 }
             }
@@ -83,18 +84,18 @@ struct MailConnectorPane: View {
         return SettingRow(title: source.account_ref ?? source.display_name, detail: detail(source)) {
             HStack(spacing: Space.s) {
                 StatusDot(state: state.state, text: state.text)
-                if source.needs == "credentials" { SecondaryButton(title: "输入密码") { passwordFor = source } }
+                if source.needs == "credentials" { SecondaryButton(title: L("输入密码")) { passwordFor = source } }
                 sourceMenu(source)
             }
         }
     }
 
     private func sourceMenu(_ source: ConnectorsModel.Source) -> some View {
-        MenuButton(title: "管理") {
-            Button("立即同步") { Task { await model.sync(source) } }
-            if source.kind == "mail.imap" { Button("更新密码…") { passwordFor = source } }
+        MenuButton(title: L("管理")) {
+            Button(L("立即同步")) { Task { await model.sync(source) } }
+            if source.kind == "mail.imap" { Button(L("更新密码…")) { passwordFor = source } }
             Divider()  // style-exempt: menu separator
-            Button("断开…", role: .destructive) { revoking = source }
+            Button(L("断开…"), role: .destructive) { revoking = source }
         }
         .disabled(model.busy != nil)
     }
@@ -102,12 +103,12 @@ struct MailConnectorPane: View {
     private func revokeConfirm(_ source: ConnectorsModel.Source) -> some View {
         InlinePanel {
             VStack(alignment: .leading, spacing: Space.s) {
-                Text("断开\(name(source))后不再读取。已存邮件可以保留在时间线里，也可以一并删除。").typography(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(L("断开%@后不再读取。已存邮件可以保留在时间线里，也可以一并删除。", name(source))).typography(.secondary).fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
-                    QuietButton(title: "取消") { revoking = nil }
-                    QuietButton(title: "断开并删除已存邮件", role: .destructive) { revoking = nil; Task { await model.revoke(source, deleteStored: true) } }
-                    PrimaryButton(title: "断开，保留邮件") { revoking = nil; Task { await model.revoke(source) } }
+                    QuietButton(title: L("取消")) { revoking = nil }
+                    QuietButton(title: L("断开并删除已存邮件"), role: .destructive) { revoking = nil; Task { await model.revoke(source, deleteStored: true) } }
+                    PrimaryButton(title: L("断开，保留邮件")) { revoking = nil; Task { await model.revoke(source) } }
                 }
             }
         }
@@ -117,9 +118,9 @@ struct MailConnectorPane: View {
     private func passwordForm(_ source: ConnectorsModel.Source) -> some View {
         InlinePanel {
             HStack(alignment: .bottom, spacing: Space.s) {
-                QuietField(title: "\(source.account_ref ?? "") 的应用专用密码", text: $newPassword, secure: true)
-                QuietButton(title: "取消") { passwordFor = nil; newPassword = "" }
-                PrimaryButton(title: "保存", isDefault: true) {
+                QuietField(title: L("%@ 的应用专用密码", source.account_ref ?? ""), text: $newPassword, secure: true)
+                QuietButton(title: L("取消")) { passwordFor = nil; newPassword = "" }
+                PrimaryButton(title: L("保存"), isDefault: true) {
                     let value = newPassword; passwordFor = nil; newPassword = ""
                     Task { await model.updatePassword(source, password: value) }
                 }
@@ -131,18 +132,18 @@ struct MailConnectorPane: View {
 
     private var addForm: some View {
         VStack(alignment: .leading, spacing: Space.s) {
-            Text("添加 IMAP 账户").typography(.body, .medium).padding(.top, Space.row)
+            Text(L("添加 IMAP 账户")).typography(.body, .medium).padding(.top, Space.row)
             HStack(spacing: Space.s) {
-                QuietField(title: "邮箱地址", text: $address, placeholder: "name@example.com")
-                QuietField(title: "服务器", text: $host, placeholder: "imap.gmail.com")
-                QuietField(title: "端口", text: $port, mono: true).frame(width: 80)
+                QuietField(title: L("邮箱地址"), text: $address, placeholder: "name@example.com")
+                QuietField(title: L("服务器"), text: $host, placeholder: "imap.gmail.com")
+                QuietField(title: L("端口"), text: $port, mono: true).frame(width: 80)
             }
-            QuietField(title: "应用专用密码", text: $password, secure: true)
-            Text("只读，加密连接。密码只存在这台 Mac 的钥匙串里，核心进程只在内存中使用。").typography(.secondary).foregroundStyle(.secondary)
+            QuietField(title: L("应用专用密码"), text: $password, secure: true)
+            Text(L("只读，加密连接。密码只存在这台 Mac 的钥匙串里，核心进程只在内存中使用。")).typography(.secondary).foregroundStyle(.secondary)
             HStack {
                 Spacer()
-                QuietButton(title: "取消") { reset() }
-                PrimaryButton(title: model.busy == "mail.imap" ? "添加中…" : "添加", isDefault: true) {
+                QuietButton(title: L("取消")) { reset() }
+                PrimaryButton(title: model.busy == "mail.imap" ? L("添加中…") : L("添加"), isDefault: true) {
                     let values = (address, host, Int(port) ?? 993, password)
                     Task {
                         await model.addIMAP(address: values.0, host: values.1, port: values.2, password: values.3)
@@ -166,17 +167,17 @@ struct MailConnectorPane: View {
     }
 
     private var lastSync: String {
-        guard let ms = model.mailSources.compactMap(\.last_sync_ms).max() else { return "尚未同步" }
+        guard let ms = model.mailSources.compactMap(\.last_sync_ms).max() else { return L("尚未同步") }
         return Date(timeIntervalSince1970: Double(ms) / 1000).formatted(.relative(presentation: .named))
     }
 
     private func detail(_ source: ConnectorsModel.Source) -> String {
-        let count = source.events > 0 ? "已存 \(source.events) 封" : "尚未入库"
+        let count = source.events > 0 ? L("已存 %@ 封", source.events) : L("尚未入库")
         guard let ms = source.last_sync_ms else { return count }
-        return count + " · " + Date(timeIntervalSince1970: Double(ms) / 1000).formatted(.relative(presentation: .named)) + "同步"
+        return count + " · " + Date(timeIntervalSince1970: Double(ms) / 1000).formatted(.relative(presentation: .named)) + L("同步")
     }
 
-    private func name(_ source: ConnectorsModel.Source) -> String { source.kind == "mail.apple" ? "「邮件」App" : source.account_ref ?? source.display_name }
+    private func name(_ source: ConnectorsModel.Source) -> String { source.kind == "mail.apple" ? L("「邮件」App") : source.account_ref ?? source.display_name }
 
     private func reset() {
         withAnimation(Motion.spring) { adding = false }
@@ -198,29 +199,29 @@ struct BrowserConnectorPane: View {
             let previews = ConnectorsModel.browsers.compactMap { model.browserSource($0.id).flatMap { model.browserPreviews[$0.id] } }
             if !previews.isEmpty {
                 HStack(spacing: Space.s) {
-                    ConnectorStat(value: "\(previews.reduce(0) { $0 + $1.visits })", label: "可读访问记录")
-                    ConnectorStat(value: "\(previews.reduce(0) { $0 + $1.domains })", label: "网站")
-                    ConnectorStat(value: "关闭", label: "写入时间线")
+                    ConnectorStat(value: "\(previews.reduce(0) { $0 + $1.visits })", label: L("可读访问记录"))
+                    ConnectorStat(value: "\(previews.reduce(0) { $0 + $1.domains })", label: L("网站"))
+                    ConnectorStat(value: L("关闭"), label: L("写入时间线"))
                 }
             }
-            SettingsGroup(title: "浏览器") {
+            SettingsGroup(title: L("浏览器")) {
                 ForEach(Array(ConnectorsModel.browsers.enumerated()), id: \.offset) { index, browser in
                     if index > 0 { HairlineDivider() }
                     row(browser.id, browser.name)
                     if let source = model.browserSource(browser.id), revoking?.id == source.id {
                         InlinePanel {
                             HStack {
-                                Text("断开后不再读取 \(browser.name) 的历史。").typography(.secondary)
+                                Text(L("断开后不再读取 %@ 的历史。", browser.name)).typography(.secondary)
                                 Spacer()
-                                QuietButton(title: "取消") { revoking = nil }
-                                QuietButton(title: "断开", role: .destructive) { revoking = nil; Task { await model.revoke(source) } }
+                                QuietButton(title: L("取消")) { revoking = nil }
+                                QuietButton(title: L("断开"), role: .destructive) { revoking = nil; Task { await model.revoke(source) } }
                             }
                         }
                         .padding(.bottom, Space.s)
                     }
                 }
                 HairlineDivider()
-                SettingRow(title: "写入时间线", detail: "这一版只读取和统计，不导入") {
+                SettingRow(title: L("写入时间线"), detail: L("这一版只读取和统计，不导入")) {
                     Toggle("", isOn: .constant(false)).toggleStyle(.switch).labelsHidden().controlSize(.small).disabled(true)
                 }
             }
@@ -241,14 +242,14 @@ struct BrowserConnectorPane: View {
             HStack(spacing: Space.s) {
                 StatusDot(state: state.state, text: state.text)
                 if let source {
-                    if source.needs == "full_disk_access" { SecondaryButton(title: "打开系统设置") { openFullDiskAccess() } }
-                    MenuButton(title: "管理") {
-                        Button("重新统计") { Task { await model.preview(source.id) } }
+                    if source.needs == "full_disk_access" { SecondaryButton(title: L("打开系统设置")) { openFullDiskAccess() } }
+                    MenuButton(title: L("管理")) {
+                        Button(L("重新统计")) { Task { await model.preview(source.id) } }
                         Divider()  // style-exempt: menu separator
-                        Button("断开…", role: .destructive) { revoking = source }
+                        Button(L("断开…"), role: .destructive) { revoking = source }
                     }
                 } else {
-                    SecondaryButton(title: model.busy == "browser:" + id ? "连接中…" : "连接") { Task { await model.connectBrowser(id) } }
+                    SecondaryButton(title: model.busy == "browser:" + id ? L("连接中…") : L("连接")) { Task { await model.connectBrowser(id) } }
                         .disabled(model.busy != nil)
                 }
             }
@@ -256,10 +257,10 @@ struct BrowserConnectorPane: View {
     }
 
     private func detail(_ source: ConnectorsModel.Source?, _ id: String) -> String {
-        guard let source else { return id == "safari" ? "需要「完全磁盘访问」" : "默认用户" }
-        guard let p = model.browserPreviews[source.id] else { return "统计中…" }
-        let since = p.first_ms.map { "，最早 " + Date(timeIntervalSince1970: Double($0) / 1000).formatted(.dateTime.month().day()) } ?? ""
-        return "\(p.visits) 次访问 · \(p.distinct_urls) 个网址\(since)"
+        guard let source else { return id == "safari" ? L("需要「完全磁盘访问」") : L("默认用户") }
+        guard let p = model.browserPreviews[source.id] else { return L("统计中…") }
+        let since = p.first_ms.map { L("，最早 ") + Date(timeIntervalSince1970: Double($0) / 1000).formatted(.dateTime.month().day()) } ?? ""
+        return L("%@ 次访问 · %@ 个网址%@", p.visits, p.distinct_urls, since)
     }
 
     private func title(_ id: String) -> String { ConnectorsModel.browsers.first { $0.id == id }?.name ?? id }

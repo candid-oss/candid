@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// Direct capture controls, always in reach: start/pause recording, one window
 /// screenshot, one region screenshot, one microphone recording, a marker.
@@ -18,8 +19,8 @@ struct CaptureControls: View {
                 Task { await media.captureRegion() }
             }
             microphone
-            ControlIcon(systemImage: "bookmark", help: "标记此刻（⇧⌘M）", disabled: false, action: session.addMarker)
-            ControlIcon(systemImage: "chevron.down", help: "记录来源", disabled: false, size: 10) { showingSources.toggle() }
+            ControlIcon(systemImage: "bookmark", help: L("标记此刻（⇧⌘M）"), disabled: false, action: session.addMarker)
+            ControlIcon(systemImage: "chevron.down", help: L("记录来源"), disabled: false, size: 10) { showingSources.toggle() }
                 .popover(isPresented: $showingSources, arrowEdge: .bottom) { sources }
         }
         .padding(3)
@@ -40,7 +41,7 @@ struct CaptureControls: View {
                     .phaseAnimator([false, true], trigger: session.isRecording) { dot, phase in
                         dot.opacity(session.isRecording && phase ? 0.45 : 1)
                     } animation: { _ in .easeInOut(duration: 1.6) }
-                Text(session.isDemo ? "合成样例" : session.isRecording ? "记录中" : "开始记录")
+                Text(session.isDemo ? L("合成样例") : session.isRecording ? L("记录中") : L("开始记录"))
                     .typography(.secondary, .semibold)
                     .fixedSize()
                     .contentTransition(.opacity)
@@ -51,18 +52,18 @@ struct CaptureControls: View {
         }
         .buttonStyle(.plain)
         .disabled(session.isDemo)
-        .help(session.isRecording ? "暂停电脑记录" : "开始电脑记录")
-        .accessibilityLabel(session.isRecording ? "暂停电脑记录" : "开始电脑记录")
+        .help(session.isRecording ? L("暂停电脑记录") : L("开始电脑记录"))
+        .accessibilityLabel(session.isRecording ? L("暂停电脑记录") : L("开始电脑记录"))
     }
 
     @ViewBuilder private var windowShot: some View {
         if session.captureBusy {
-            ProgressView().controlSize(.small).frame(width: 28, height: 26).help("正在截图")
+            ProgressView().controlSize(.small).frame(width: 28, height: 26).help(L("正在截图"))
         } else if !session.screenPermission || !session.screenshotsEnabled || session.allowedBundleIDs.isEmpty {
             // Not set up yet: the button leads to the one place that sets it up.
-            ControlIcon(systemImage: "camera", help: "设置窗口截图", disabled: session.isDemo, dimmed: true, action: openSettings)
+            ControlIcon(systemImage: "camera", help: L("设置窗口截图"), disabled: session.isDemo, dimmed: true, action: openSettings)
         } else {
-            ControlIcon(systemImage: "camera", help: session.isRecording ? "3 秒后截取允许的窗口" : "开始记录后可以截取窗口",
+            ControlIcon(systemImage: "camera", help: session.isRecording ? L("3 秒后截取允许的窗口") : L("开始记录后可以截取窗口"),
                         disabled: !session.isRecording || session.isDemo, action: session.captureNow)
         }
     }
@@ -83,60 +84,60 @@ struct CaptureControls: View {
             }
             .buttonStyle(.plain)
             .disabled(media.recordingFinishing)
-            .help(media.microphoneQuiet ? "麦克风几秒没有收到声音。点按停止录音" : "正在录制\(media.activeRecordingInput.label)，点按停止")
+            .help(media.microphoneQuiet ? L("麦克风几秒没有收到声音。点按停止录音") : L("正在录制%@，点按停止", media.activeRecordingInput.label))
             .transition(.scale(scale: 0.7).combined(with: .opacity))
         } else {
-            ControlIcon(systemImage: media.recordingInput == .microphone ? "mic" : "waveform.badge.mic", help: media.canCapture ? "开始\(media.recordingInput.label)录音，每 \(media.recordingSegmentSeconds) 秒自动保存到本机资料库" : "先保存或丢弃上一份素材", disabled: !media.canCapture) {
+            ControlIcon(systemImage: media.recordingInput == .microphone ? "mic" : "waveform.badge.mic", help: media.canCapture ? L("开始%@录音，每 %@ 秒自动保存到本机资料库", media.recordingInput.label, media.recordingSegmentSeconds) : L("先保存或丢弃上一份素材"), disabled: !media.canCapture) {
                 Task { await media.startRecording() }
             }
             .transition(.scale(scale: 0.7).combined(with: .opacity))
         }
     }
 
-    private var regionHelp: String { media.canCapture ? "框选屏幕的一块" : "先保存或丢弃上一份素材" }
+    private var regionHelp: String { media.canCapture ? L("框选屏幕的一块") : L("先保存或丢弃上一份素材") }
 
     private var sources: some View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle(isOn: Binding(get: { session.isRecording }, set: { $0 ? session.startRecording() : session.pauseRecording() })) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("电脑活动")
+                    Text(L("电脑活动"))
                     Text(session.statusText).typography(.caption).foregroundStyle(.secondary)
                 }
             }
             .disabled(session.isDemo)
             Toggle(isOn: Binding(get: { session.screenshotsEnabled }, set: session.setScreenshotsEnabled)) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("窗口截图")
-                    Text(session.screenPermission ? "\(session.allowedBundleIDs.count) 个应用" : "需要屏幕录制授权")
+                    Text(L("窗口截图"))
+                    Text(session.screenPermission ? L("%@ 个应用", session.allowedBundleIDs.count) : L("需要屏幕录制授权"))
                         .typography(.caption).foregroundStyle(.secondary)
                 }
             }
             .disabled(session.isDemo || !session.screenPermission)
             HStack {
-                Text("录音来源").typography(.secondary).foregroundStyle(.secondary)
+                Text(L("录音来源")).typography(.secondary).foregroundStyle(.secondary)
                 Spacer()
                 MenuChoice(options: RecordingInput.allCases.filter { $0 == .microphone || RecordingInput.systemAvailable }.map { ($0, $0.label) },
                            selection: Binding(get: { media.recordingInput }, set: { media.recordingInput = $0 }))
             }
             .disabled(media.isRecording || media.busy)
             if RecordingInput.systemAvailable {
-                Toggle("通话时提醒录音", isOn: Binding(get: { media.callRecordingReminders }, set: { media.callRecordingReminders = $0 }))
+                Toggle(L("通话时提醒录音"), isOn: Binding(get: { media.callRecordingReminders }, set: { media.callRecordingReminders = $0 }))
                     .disabled(media.isDemo)
-                Toggle("通话结束自动停止", isOn: Binding(get: { media.autoStopCallRecording }, set: { media.autoStopCallRecording = $0 }))
+                Toggle(L("通话结束自动停止"), isOn: Binding(get: { media.autoStopCallRecording }, set: { media.autoStopCallRecording = $0 }))
                     .disabled(media.isDemo)
             }
             HStack {
-                Text("录音分段保存").typography(.secondary).foregroundStyle(.secondary)
+                Text(L("录音分段保存")).typography(.secondary).foregroundStyle(.secondary)
                 Spacer()
-                MenuChoice(options: [(30, "每 30 秒"), (60, "每 60 秒")],
+                MenuChoice(options: [(30, L("每 30 秒")), (60, L("每 60 秒"))],
                            selection: Binding(get: { media.recordingSegmentSeconds }, set: { media.recordingSegmentSeconds = $0 }))
             }
             .disabled(media.isRecording || media.busy)
             HairlineDivider().padding(.vertical, 6)
             HStack {
-                Text(session.lastSaved.map { "最近保存 " + $0.clockText } ?? "本次还没有保存").typography(.caption).foregroundStyle(.secondary)
+                Text(session.lastSaved.map { L("最近保存 ") + $0.clockText } ?? L("本次还没有保存")).typography(.caption).foregroundStyle(.secondary)
                 Spacer()
-                QuietButton(title: "设置…") { showingSources = false; openSettings() }
+                QuietButton(title: L("设置…")) { showingSources = false; openSettings() }
             }
         }
         .toggleStyle(.switch)
@@ -233,14 +234,14 @@ struct DraftBar: View {
                 Image(systemName: draft.kind == "audio" ? "waveform" : "photo")
                     .typography(.headline).foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(draft.kind == "audio" ? "录音已就绪" : "截图已就绪").typography(.body, .semibold)
+                    Text(draft.kind == "audio" ? L("录音已就绪") : L("截图已就绪")).typography(.body, .semibold)
                     Text(draft.filename).typography(.secondary).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 12)
-                QuietButton(title: "查看", emphasized: true, action: openLibrary)
-                QuietButton(title: "丢弃", role: .destructive) { media.discardDraft() }
+                QuietButton(title: L("查看"), emphasized: true, action: openLibrary)
+                QuietButton(title: L("丢弃"), role: .destructive) { media.discardDraft() }
                 Button { Task { await media.saveDraft() } } label: {
-                    Text("保存").typography(.secondary, .semibold).padding(.horizontal, 12).frame(height: 26)
+                    Text(L("保存")).typography(.secondary, .semibold).padding(.horizontal, 12).frame(height: 26)
                         .background(Capsule().fill(Color.accentColor)).foregroundStyle(.white)
                 }
                 .buttonStyle(.plain).disabled(media.busy)
@@ -256,9 +257,9 @@ struct DraftBar: View {
                 if media.recordingFinishing { ProgressView().controlSize(.small) }
                 else { Image(systemName: media.error == nil ? "checkmark.circle" : "exclamationmark.triangle").foregroundStyle(media.error == nil ? Palette.success : Palette.warning) }
                 Text(status).typography(.secondary, .medium)
-                QuietButton(title: "查看资料", emphasized: true, action: openLibrary)
+                QuietButton(title: L("查看资料"), emphasized: true, action: openLibrary)
                 if !media.recordingFinishing {
-                    QuietButton(title: "关闭") { media.recordingNotice = nil }
+                    QuietButton(title: L("关闭")) { media.recordingNotice = nil }
                 }
             }
             .padding(Space.s).floatingSurface(radius: Radius.large)

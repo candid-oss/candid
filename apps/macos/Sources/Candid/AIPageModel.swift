@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import Foundation
 import Observation
 import CandidClient
@@ -38,15 +39,15 @@ struct AgendaProposal: Decodable, Identifiable, Equatable, Sendable {
     var result: Outcome?
 
     var id: String { proposal_id }
-    var title: String { payload.title ?? payload.item_id.map { _ in "已有的一条" } ?? "提案" }
+    var title: String { payload.title ?? payload.item_id.map { _ in L("已有的一条") } ?? L("提案") }
     static let executableKinds = ["create_reminder", "update_reminder", "complete_reminder", "delete_reminder",
                                   "create_calendar_event", "update_calendar_event", "delete_calendar_event"]
     /// The App knows how to carry these out (§4.1 propose kinds).
     var executable: Bool { Self.executableKinds.contains(kind) }
     var isDelete: Bool { kind.hasPrefix("delete_") }
     static func label(_ kind: String) -> String {
-        ["create_reminder": "加到提醒事项", "update_reminder": "修改提醒", "complete_reminder": "完成提醒", "delete_reminder": "删除提醒",
-         "create_calendar_event": "加到日历", "update_calendar_event": "修改日程", "delete_calendar_event": "删除日程"][kind] ?? kind
+        ["create_reminder": L("加到提醒事项"), "update_reminder": L("修改提醒"), "complete_reminder": L("完成提醒"), "delete_reminder": L("删除提醒"),
+         "create_calendar_event": L("加到日历"), "update_calendar_event": L("修改日程"), "delete_calendar_event": L("删除日程")][kind] ?? kind
     }
     /// Waits for the user: pending, or failed (retry or reject), or approved but never finished.
     var open: Bool { ["pending", "approved", "failed"].contains(status) }
@@ -192,8 +193,8 @@ enum AIRun: Equatable, Sendable {
             if let policy = automation.config.skills[skill.id] {
                 switch policy.trigger {
                 case "daily": skill.trigger = .timed(policy.time)
-                case "recording_sealed": skill.trigger = .event("录音保存后")
-                case "episode_ended": skill.trigger = .event("片段结束后")
+                case "recording_sealed": skill.trigger = .event(L("录音保存后"))
+                case "episode_ended": skill.trigger = .event(L("片段结束后"))
                 default: skill.trigger = .manual
                 }
                 skill.enabled = policy.enabled && policy.automatic && automation.passed
@@ -203,9 +204,9 @@ enum AIRun: Equatable, Sendable {
     }
     func canRunSkill(_ id: String) -> Bool { automation.config.skills[id]?.enabled ?? true }
     func skillStatus(_ skill: AISkill) -> String {
-        if !canRunSkill(skill.id) { return "已关闭" }
-        if automation.config.skills[skill.id]?.automatic == true { return automation.passed ? "自动运行已开" : "自动运行等待评估" }
-        return "手动可用"
+        if !canRunSkill(skill.id) { return L("已关闭") }
+        if automation.config.skills[skill.id]?.automatic == true { return automation.passed ? L("自动运行已开") : L("自动运行等待评估") }
+        return L("手动可用")
     }
     /// What the running (or last) turn was started by.
     private(set) var run: AIRun?
@@ -302,7 +303,7 @@ enum AIRun: Equatable, Sendable {
             reminders = ReminderGroups.make(due, now: now())
             problems["agenda"] = nil
         } catch {
-            problems["agenda"] = "读取系统日历失败：\(error.localizedDescription)"
+            problems["agenda"] = L("读取系统日历失败：%@", error.localizedDescription)
         }
     }
 
@@ -314,7 +315,7 @@ enum AIRun: Equatable, Sendable {
 
     func refreshCore() async {
         await automation.refresh(includeRuns: false)
-        guard let channel = channel() else { problems["core"] = "时间线库尚未打开"; return }
+        guard let channel = channel() else { problems["core"] = L("时间线库尚未打开"); return }
         do {
             let since = Int64(Calendar.current.startOfDay(for: now()).timeIntervalSince1970 * 1000)
             let data = try await channel.send("POST", "/local/agenda", body: JSONSerialization.data(withJSONObject: ["action": "today", "since_ms": since])).checked()
@@ -325,7 +326,7 @@ enum AIRun: Equatable, Sendable {
             problems["core"] = nil
             syncActionCards()
         } catch {
-            problems["core"] = "读取待处理事项失败：\(error.localizedDescription)"
+            problems["core"] = L("读取待处理事项失败：%@", error.localizedDescription)
         }
     }
 
@@ -376,7 +377,7 @@ enum AIRun: Equatable, Sendable {
         problems[key] = nil
         let approved: AgendaProposal
         do { approved = try await decide(proposal.id, "approve") } catch {
-            problems[key] = "没能批准：\(error.localizedDescription)"
+            problems[key] = L("没能批准：%@", error.localizedDescription)
             return
         }
         replace(approved)
@@ -396,31 +397,31 @@ enum AIRun: Equatable, Sendable {
         let p = proposal.payload
         let draft = AgendaDraft(title: p.title ?? "", due: AgendaDate.parse(p.due), start: AgendaDate.parse(p.start), end: AgendaDate.parse(p.end), notes: p.notes)
         func item() throws -> String {
-            guard let id = p.item_id, !id.isEmpty else { throw AgendaWriteError.incomplete("要改的那一条（item_id）") }
+            guard let id = p.item_id, !id.isEmpty else { throw AgendaWriteError.incomplete(L("要改的那一条（item_id）")) }
             // Pi may echo the context reference as `reminder:<id>` / `event:<id>`.
             for prefix in ["reminder:", "event:"] where id.hasPrefix(prefix) { return String(id.dropFirst(prefix.count)) }
             return id
         }
         switch proposal.kind {
         case "create_reminder":
-            guard !draft.title.isEmpty else { throw AgendaWriteError.incomplete("标题") }
+            guard !draft.title.isEmpty else { throw AgendaWriteError.incomplete(L("标题")) }
             return try await agenda.createReminder(draft)
         case "create_calendar_event":
-            guard !draft.title.isEmpty else { throw AgendaWriteError.incomplete("标题") }
+            guard !draft.title.isEmpty else { throw AgendaWriteError.incomplete(L("标题")) }
             return try await agenda.createEvent(draft)
         case "update_reminder": return try await agenda.updateReminder(try item(), draft)
         case "complete_reminder": return try await agenda.completeReminder(try item())
         case "delete_reminder": return try await agenda.deleteReminder(try item())
         case "update_calendar_event": return try await agenda.updateEvent(try item(), draft)
         case "delete_calendar_event": return try await agenda.deleteEvent(try item())
-        default: throw AgendaWriteError.incomplete("App 能执行的种类")
+        default: throw AgendaWriteError.incomplete(L("App 能执行的种类"))
         }
     }
 
     func reject(_ proposal: AgendaProposal) async {
         let key = "proposal:" + proposal.id
         working.insert(key); defer { working.remove(key) }
-        do { replace(try await decide(proposal.id, "reject")); problems[key] = nil } catch { problems[key] = "没能拒绝：\(error.localizedDescription)" }
+        do { replace(try await decide(proposal.id, "reject")); problems[key] = nil } catch { problems[key] = L("没能拒绝：%@", error.localizedDescription) }
     }
 
     /// 加到提醒: confirming the candidate files a `create_reminder` proposal, which this click also approves.
@@ -436,7 +437,7 @@ enum AIRun: Equatable, Sendable {
                 replace(proposal)
                 await approve(proposal)
             }
-        } catch { problems[key] = "没能加到提醒：\(error.localizedDescription)" }
+        } catch { problems[key] = L("没能加到提醒：%@", error.localizedDescription) }
     }
 
     func ignore(_ commitment: AgendaCommitment) async {
@@ -446,7 +447,7 @@ enum AIRun: Equatable, Sendable {
             _ = try await agendaCall(["action": "commitment", "memory_id": commitment.id, "decision": "ignore"])
             commitments.removeAll { $0.id == commitment.id }
             problems[key] = nil
-        } catch { problems[key] = "没能忽略：\(error.localizedDescription)" }
+        } catch { problems[key] = L("没能忽略：%@", error.localizedDescription) }
     }
 
     func confirm(_ speaker: SpeakerToConfirm) async {
@@ -456,7 +457,7 @@ enum AIRun: Equatable, Sendable {
             try await confirmSpeaker(speaker)
             speakers.removeAll { $0.id == speaker.id }
             problems[key] = nil
-        } catch { problems[key] = "没能确认：\(error.localizedDescription)" }
+        } catch { problems[key] = L("没能确认：%@", error.localizedDescription) }
     }
 
     func cancel(_ job: WorkflowControlModel.Job) async { await workflows.command("cancel", job: job) }
@@ -481,7 +482,7 @@ enum AIRun: Equatable, Sendable {
     /// What Pi receives: the context lines, then the user's words.
     static func prompt(_ text: String, context: [AIContextItem]) -> String {
         guard !context.isEmpty else { return text }
-        return "上下文（用户从 AI 页左栏带进来的）：\n" + context.map(\.promptLine).joined(separator: "\n") + "\n\n" + text
+        return L("上下文（用户从 AI 页左栏带进来的）：\n") + context.map(\.promptLine).joined(separator: "\n") + "\n\n" + text
     }
 
     /// Pi gets a fresh permission scope each turn, so carry the visible conversation with it.
@@ -489,7 +490,7 @@ enum AIRun: Equatable, Sendable {
     static func turnPrompt(_ request: String, history: [AIChatMessage], now: Date) -> String {
         let clock = ISO8601DateFormatter()
         clock.timeZone = .current
-        let time = "当前本地时间：" + clock.string(from: now) + "（" + TimeZone.current.identifier + "）"
+        let time = L("当前本地时间：") + clock.string(from: now) + L("（") + TimeZone.current.identifier + L("）")
         var turns: [[String: String]] = []
         var remaining = 24000
         for message in history.reversed() where message.role == .user || message.role == .assistant {
@@ -503,7 +504,7 @@ enum AIRun: Equatable, Sendable {
         }
         guard !turns.isEmpty, let encoded = try? JSONSerialization.data(withJSONObject: Array(turns.reversed()), options: [.sortedKeys]),
               let text = String(data: encoded, encoding: .utf8) else { return request + "\n\n" + time }
-        return time + "\n以下 JSON 是本次对话的历史，帮助理解追问，不重复执行历史操作：\n<candid_conversation>\n" + text + "\n</candid_conversation>\n\n用户当前请求：\n" + request
+        return time + L("\n以下 JSON 是本次对话的历史，帮助理解追问，不重复执行历史操作：\n<candid_conversation>\n") + text + L("\n</candid_conversation>\n\n用户当前请求：\n") + request
     }
 
     func send() async {
@@ -511,30 +512,30 @@ enum AIRun: Equatable, Sendable {
         if let skill = pendingSkill {
             pendingSkill = nil
             let items = context
-            await submit(display: "运行「\(skill.title)」" + (text.isEmpty ? "" : "：" + text), context: items,
+            await submit(display: L("运行「%@」", skill.title) + (text.isEmpty ? "" : L("：") + text), context: items,
                          prompt: skill.prompt(today: now(), context: items, extra: text), run: .skill(skill.id))
             return
         }
         guard !text.isEmpty || !context.isEmpty else { return }
-        let words = text.isEmpty ? "帮我看看这些" : text
+        let words = text.isEmpty ? L("帮我看看这些") : text
         await submit(display: words, context: context, prompt: Self.prompt(words, context: context), run: .chat)
     }
 
     /// Runs a skill through Pi. One that needs input (a recording, a topic) and has none waits in the input first.
     func runSkill(_ skill: AISkill) async {
-        guard canRunSkill(skill.id) else { problems["run:" + AIRun.skill(skill.id).key] = "技能已关闭，可在 AI 功能设置中开启"; return }
+        guard canRunSkill(skill.id) else { problems["run:" + AIRun.skill(skill.id).key] = L("技能已关闭，可在 AI 功能设置中开启"); return }
         if skill.input != nil && context.isEmpty {
             pendingSkill = skill
             show(.chat)
             return
         }
-        await submit(display: "运行「\(skill.title)」", context: context, prompt: skill.prompt(today: now(), context: context), run: .skill(skill.id))
+        await submit(display: L("运行「%@」", skill.title), context: context, prompt: skill.prompt(today: now(), context: context), run: .skill(skill.id))
     }
 
     /// 「回顾今天」: the 日回顾 skill through Pi; its draft lands in the 回顾 card.
     func reviewToday() async {
         guard let skill = skills.first(where: { $0.id == "daily-review" }) else {
-            problems["run:" + AIRun.skill("daily-review").key] = "找不到日回顾技能（agents/skills/daily-review）"
+            problems["run:" + AIRun.skill("daily-review").key] = L("找不到日回顾技能（agents/skills/daily-review）")
             return
         }
         await runSkill(skill)
@@ -542,8 +543,8 @@ enum AIRun: Equatable, Sendable {
 
     /// 「会前要点」 for an event in the 日程 card.
     func prepare(_ event: AIContextItem) async {
-        let words = "会前要点"
-        await submit(display: words, context: [event], prompt: Self.prompt(words + "：查上次相关的会议、邮件和待办，列出这次要谈的几点。", context: [event]), run: .prepare(event.id))
+        let words = L("会前要点")
+        await submit(display: words, context: [event], prompt: Self.prompt(words + L("：查上次相关的会议、邮件和待办，列出这次要谈的几点。"), context: [event]), run: .prepare(event.id))
     }
 
     /// Stops the running turn (Pi aborts; nothing more is written).
@@ -552,7 +553,7 @@ enum AIRun: Equatable, Sendable {
     func isRunning(_ run: AIRun) -> Bool { turnRunning && self.run == run }
 
     private func submit(display words: String, context items: [AIContextItem], prompt: String, run: AIRun) async {
-        guard !turnRunning else { problems["run:" + run.key] = "上一轮还没结束"; return }
+        guard !turnRunning else { problems["run:" + run.key] = L("上一轮还没结束"); return }
         problems["run:" + run.key] = nil
         self.run = run
         let preparedPrompt = Self.turnPrompt(prompt, history: conversation.messages, now: now())
@@ -651,11 +652,11 @@ enum AIRun: Equatable, Sendable {
             updateAction(action.id) { $0.status = "undone" }
             problems[key] = nil
             persist()
-        } catch { problems[key] = "没能撤销：\(error.localizedDescription)" }
+        } catch { problems[key] = L("没能撤销：%@", error.localizedDescription) }
     }
 
     /// What a chip says for a cited record.
-    func recordLabel(_ id: String) -> String { records[id]?.label ?? "记录" }
+    func recordLabel(_ id: String) -> String { records[id]?.label ?? L("记录") }
 
     /// The call running now, for the live line (「正在搜索「预算」…」).
     var liveCall: AIToolCall? { turnRunning ? conversation.messages.last?.calls?.last(where: { $0.state == .running }) : nil }
@@ -670,7 +671,7 @@ enum AIRun: Equatable, Sendable {
             records[id] = ref
             start = AgendaDate.parse(ref.start)
         }
-        guard let start else { problems["record:" + id] = "找不到这条记录，可能不在可读范围内"; return }
+        guard let start else { problems["record:" + id] = L("找不到这条记录，可能不在可读范围内"); return }
         showInTimeline?(start)
     }
 
@@ -704,9 +705,9 @@ enum AIRun: Equatable, Sendable {
 
     static func explain(_ error: Error) -> String {
         if case CoreError.service(_, let code, let message) = error {
-            if code == "waiting_model" { return "还没有给 AI 对话选模型：在 设置 → 模型 里给角色 agent_chat 选一个。" }
-            if code == "remote_not_allowed" { return "AI 对话用的是远程模型，但没有允许发往远程。" }
-            let known = ["user_edited": "这段已有你的修改，自动摘要会保留它", "source_not_allowed": "这条资料不在技能的读取范围内", "source_unavailable": "来源已不可用", "configuration_changed": "设置已改变，请重新运行", "feature_disabled": "这个技能已关闭，可在 AI 功能设置中开启", "daily_run_budget": "这个技能已到每日运行上限", "source_policy_changed": "来源权限已改变，请重新运行", "model_configuration_changed": "模型设置已改变，请重新运行", "waiting_quality": "自动运行还在等待质量评估"]
+            if code == "waiting_model" { return L("还没有给 AI 对话选模型：在 设置 → 模型 里给角色 agent_chat 选一个。") }
+            if code == "remote_not_allowed" { return L("AI 对话用的是远程模型，但没有允许发往远程。") }
+            let known = ["user_edited": L("这段已有你的修改，自动摘要会保留它"), "source_not_allowed": L("这条资料不在技能的读取范围内"), "source_unavailable": L("来源已不可用"), "configuration_changed": L("设置已改变，请重新运行"), "feature_disabled": L("这个技能已关闭，可在 AI 功能设置中开启"), "daily_run_budget": L("这个技能已到每日运行上限"), "source_policy_changed": L("来源权限已改变，请重新运行"), "model_configuration_changed": L("模型设置已改变，请重新运行"), "waiting_quality": L("自动运行还在等待质量评估")]
             return known[message] ?? message
         }
         return error.localizedDescription
@@ -756,7 +757,7 @@ enum AIRun: Equatable, Sendable {
             skillError = message
             conversation.messages.append(AIChatMessage(role: .note, text: message))
         case .restarting(_, let reason):
-            agentProblem = "AI 正在重启（\(reason)）"
+            agentProblem = L("AI 正在重启（%@）", reason)
         case .ready:
             agentProblem = nil
         case .turnStarted, .stopped:

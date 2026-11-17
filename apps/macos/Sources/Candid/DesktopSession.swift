@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import Combine
 import CryptoKit
 import DesktopCore
@@ -30,8 +31,8 @@ final class DesktopSession {
     var selectedDate = Date() { didSet { scheduleReload() } }
     private(set) var isRecording = false
     private(set) var screenshotsEnabled = false
-    private(set) var statusText = "已暂停"
-    private(set) var statusDetail = "记录由你开启，所有资料保存在本机。"
+    private(set) var statusText = L("已暂停")
+    private(set) var statusDetail = L("记录由你开启，所有资料保存在本机。")
     private(set) var error: String?
     private(set) var notice: String?
     private(set) var statistics = DesktopStatistics()
@@ -223,7 +224,7 @@ final class DesktopSession {
     }
     func addApplication(_ url: URL) {
         guard !isDemo, storageReady else { return }
-        guard monitor.addApplication(url: url) else { error = "请选择独立应用；辅助程序或扩展不能单独添加。"; return }
+        guard monitor.addApplication(url: url) else { error = L("请选择独立应用；辅助程序或扩展不能单独添加。"); return }
         updateApplicationList()
     }
     private func updateSystem() {
@@ -255,8 +256,8 @@ final class DesktopSession {
         guard storageReady, store != nil, !isRecording else { return }
         generation &+= 1
         isRecording = true; _ = gate.enable(); _ = eventGate.enable()
-        statusText = "正在记录"; statusDetail = screenshotsEnabled ? (automaticCaptureAvailable ? "实验模式：允许范围内的窗口按事件采样。" : "记录应用活动；可手动测试允许范围内的窗口截图。") : "轻量应用事件已开启，截图仍由你单独控制。"
-        enqueue(DesktopRecord(kind: .system, detail: "用户开启应用活动记录", runID: runID))
+        statusText = L("正在记录"); statusDetail = screenshotsEnabled ? (automaticCaptureAvailable ? L("实验模式：允许范围内的窗口按事件采样。") : L("记录应用活动；可手动测试允许范围内的窗口截图。")) : L("轻量应用事件已开启，截图仍由你单独控制。")
+        enqueue(DesktopRecord(kind: .system, detail: L("用户开启应用活动记录"), runID: runID))
         if !isDemo {
             updateWindowContentScope()
             monitor.setInteractionTriggerSelection(returnEnabled: preferences.samplingOptions.returnEnabled, scrollEnabled: preferences.samplingOptions.scrollEnabled)
@@ -270,13 +271,13 @@ final class DesktopSession {
         inputWindows.removeAll(); windowLinks.removeAll(); sourceConfirmation.reset(); nativeProofTask?.cancel(); nativeProofTask = nil; nativeDrafts.removeAll(); nativeConfirmed.removeAll(); nativeExamined.removeAll()
         resetSamplingActivity(); currentActivity = nil
         recentImages.removeAll()
-        invalidateCapture(reason: "已暂停，未截图")
+        invalidateCapture(reason: L("已暂停，未截图"))
         generation &+= 1; eventGate.invalidate(); gate.invalidate(); periodicSampler.stop(); capture.cancelPendingCapture(); scheduledCapture?.cancel(); scheduledCapture = nil; cancelManualCapture()
         monitor.stop(); isRecording = false
-        statusText = "已暂停"; statusDetail = "不会新增活动或截图。已有记录仍可查看和导出。"
+        statusText = L("已暂停"); statusDetail = L("不会新增活动或截图。已有记录仍可查看和导出。")
     }
 
-    func prepareToQuit() { recognition.stop(); resetSamplingActivity(); currentActivity = nil; invalidateCapture(reason: "应用已退出，未截图"); eventGate.invalidate(); gate.invalidate(); periodicSampler.stop(); capture.cancelPendingCapture(); monitor.stop(); scheduledCapture?.cancel(); cancelManualCapture(); selectedImageTask?.cancel(); isRecording = false }
+    func prepareToQuit() { recognition.stop(); resetSamplingActivity(); currentActivity = nil; invalidateCapture(reason: L("应用已退出，未截图")); eventGate.invalidate(); gate.invalidate(); periodicSampler.stop(); capture.cancelPendingCapture(); monitor.stop(); scheduledCapture?.cancel(); cancelManualCapture(); selectedImageTask?.cancel(); isRecording = false }
 
     func requestScreenPermission() {
         guard !isDemo else { return }
@@ -293,8 +294,8 @@ final class DesktopSession {
         invalidateCapture()
         if enabled {
             updateSystem()
-            guard screenPermission && accessibilityPermission else { error = "请先允许屏幕录制和辅助功能，再启用窗口截图。应用活动不受影响。"; return }
-            guard !allowedBundleIDs.isEmpty else { error = "请先选择至少一个允许截图的应用。"; return }
+            guard screenPermission && accessibilityPermission else { error = L("请先允许屏幕录制和辅助功能，再启用窗口截图。应用活动不受影响。"); return }
+            guard !allowedBundleIDs.isEmpty else { error = L("请先选择至少一个允许截图的应用。"); return }
         }
         desiredPreferences.screenshotEnabled = enabled
         if !enabled {
@@ -312,7 +313,7 @@ final class DesktopSession {
             guard screenshotsEnabled, desiredPreferences.screenshotEnabled, screenPermission, accessibilityPermission,
                   !preferences.allowedBundleIDs.intersection(desiredPreferences.allowedBundleIDs)
                     .subtracting(preferences.excludedBundleIDs.union(desiredPreferences.excludedBundleIDs)).isEmpty else {
-                error = "请先授权、选择应用并开启窗口截图。"; return
+                error = L("请先授权、选择应用并开启窗口截图。"); return
             }
         }
         automaticCaptureQAOverride = false
@@ -357,8 +358,8 @@ final class DesktopSession {
         guard !isDemo, storageReady else { return }
         if enabled {
             updateSystem()
-            guard accessibilityPermission else { error = "请先允许辅助功能。"; return }
-            guard !textAllowedBundleIDs.isEmpty else { error = "请先在应用设置中选择允许读取文字的软件。"; return }
+            guard accessibilityPermission else { error = L("请先允许辅助功能。"); return }
+            guard !textAllowedBundleIDs.isEmpty else { error = L("请先在应用设置中选择允许读取文字的软件。"); return }
         }
         invalidateContentPolicy()
         desiredPreferences.textEnabled = enabled; updateWindowContentScope(); savePreferences()
@@ -411,8 +412,8 @@ final class DesktopSession {
     func setInteractionTriggersEnabled(_ enabled: Bool) {
         guard !isDemo, storageReady else { return }
         inputMonitoringAuthorized = monitor.inputMonitoringAuthorized
-        guard !enabled || inputMonitoringAuthorized else { error = "请先允许输入监控。"; return }
-        if !monitor.setInteractionTriggersEnabled(enabled), enabled { error = "回车与滚动监听暂不可用。"; return }
+        guard !enabled || inputMonitoringAuthorized else { error = L("请先允许输入监控。"); return }
+        if !monitor.setInteractionTriggersEnabled(enabled), enabled { error = L("回车与滚动监听暂不可用。"); return }
         desiredPreferences.interactionTriggersEnabled = enabled; savePreferences()
     }
     func setSamplingOptions(_ options: DesktopSamplingOptions) {
@@ -479,7 +480,7 @@ final class DesktopSession {
             guard isRecording, inputWindows.contains(where: { $0.id == id }), record.runID == runID else { return false }
             windowLinks[key] = WindowLink(object: object, session: reference, expires: Date().addingTimeInterval(600))
             return true
-        } catch { self.error = "会话尚不可关联，请核对来源授权和会话引用"; return false }
+        } catch { self.error = L("会话尚不可关联，请核对来源授权和会话引用"); return false }
     }
     /// Explicit user confirmation is screen evidence under the screen source grant.
     @discardableResult func confirmScreenInput(_ id: String) -> Bool {
@@ -502,7 +503,7 @@ final class DesktopSession {
         }
         if let e = published.context?.recordEvidence, e.input_status == "captured", e.input_value?.isEmpty == false,
            e.confirmation == nil, DesktopNativeSendProof.session(for: published) == nil {
-            published.detail = "输入已保存，发出未确认：来源未提供稳定会话身份"
+            published.detail = L("输入已保存，发出未确认：来源未提供稳定会话身份")
         }
         return published
     }
@@ -514,7 +515,7 @@ final class DesktopSession {
     func setInteractionTrigger(_ trigger: String, enabled: Bool) {
         guard !isDemo, storageReady, trigger == "return" || trigger == "scroll" else { return }
         inputMonitoringAuthorized = monitor.inputMonitoringAuthorized
-        guard !enabled || inputMonitoringAuthorized else { error = "请先允许输入监控。"; return }
+        guard !enabled || inputMonitoringAuthorized else { error = L("请先允许输入监控。"); return }
         var options = desiredPreferences.samplingOptions
         // Disabled legacy master represents both triggers off.
         if !desiredPreferences.interactionTriggersEnabled { options.returnEnabled = false; options.scrollEnabled = false }
@@ -551,7 +552,7 @@ final class DesktopSession {
     }
     /// Per-day amounts for the date jumper; throws while the core is not ready.
     func dayAmounts(_ days: [DateInterval]) async throws -> [Date: DayAmount] {
-        guard let store else { throw DesktopStoreError.unavailable("时间线尚未就绪") }
+        guard let store else { throw DesktopStoreError.unavailable(L("时间线尚未就绪")) }
         return try await store.dayAmounts(days)
     }
     func setTimelineVisible(_ visible: Bool) {
@@ -568,7 +569,7 @@ final class DesktopSession {
         resetSamplingActivity(); currentActivity = nil
         invalidateCapture(); eventGate.invalidate(); if isRecording { _ = eventGate.enable() }
     }
-    private func invalidateCapture(cancelManual: Bool = true, reason: String = "采集设置已变化，未截图") {
+    private func invalidateCapture(cancelManual: Bool = true, reason: String = L("采集设置已变化，未截图")) {
         capturePumpGeneration &+= 1
         if let pendingCapture { setCaptureMessage(pendingCapture.id, reason) }
         pendingCapture = nil
@@ -580,7 +581,7 @@ final class DesktopSession {
         let allowed = app.bundleID != Bundle.main.bundleIdentifier &&
             preferences.allowedBundleIDs.contains(app.bundleID) && desiredPreferences.allowedBundleIDs.contains(app.bundleID) &&
             !preferences.excludedBundleIDs.contains(app.bundleID) && !desiredPreferences.excludedBundleIDs.contains(app.bundleID)
-        return allowed ? "已切换应用，取消上一窗口待截图" : "已切到截图范围外，取消上一窗口待截图"
+        return allowed ? L("已切换应用，取消上一窗口待截图") : L("已切到截图范围外，取消上一窗口待截图")
     }
     private func cancelManualCapture() {
         manualCaptureGeneration &+= 1
@@ -752,7 +753,7 @@ final class DesktopSession {
             (event.windowIdentity != nil && event.windowIdentity != currentActivity?.windowIdentity) ||
             (!title.isEmpty && title != currentActivity?.title) || currentActivity?.protected != (context.isProtected == true)
         if newSource {
-            resetSamplingActivity(); invalidateCapture(cancelManual: false, reason: "窗口或保护状态已变化，未截图")
+            resetSamplingActivity(); invalidateCapture(cancelManual: false, reason: L("窗口或保护状态已变化，未截图"))
             let record = assignActivity(DesktopRecord(kind: event.kind == .window ? .window : .context,
                 appName: app.name, bundleID: app.bundleID, windowTitle: title, detail: event.detail,
                 runID: runID, trigger: event.trigger ?? "window", context: context), windowIdentity: event.windowIdentity)
@@ -810,7 +811,7 @@ final class DesktopSession {
             let record = assignActivity(DesktopRecord(kind: .context, appName: reading.application.name,
                 bundleID: reading.application.bundleID, windowTitle: reading.title, runID: runID,
                 trigger: trigger, context: context), windowIdentity: reading.windowIdentity)
-            if priorActivity != record.activityID { invalidateCapture(cancelManual: false, reason: "窗口已变化，未截图") }
+            if priorActivity != record.activityID { invalidateCapture(cancelManual: false, reason: L("窗口已变化，未截图")) }
             let signature = DesktopContentSignature.make(record)
             let imageDue = forceImage || periodicImageIsDue(baseInterval: preferences.samplingOptions.imageFallbackInterval)
             let canImage = automaticCaptureAvailable && screenshotsEnabled && desiredPreferences.screenshotEnabled &&
@@ -825,12 +826,12 @@ final class DesktopSession {
                 // The window trigger already waited before the balanced read.
                 scheduleCapture(parent: record, automatic: true, delay: trigger == "window" ? 0 : 0.75)
             }
-            else if canImage { setCaptureMessage(record.id, "尚未到图片采样间隔") }
+            else if canImage { setCaptureMessage(record.id, L("尚未到图片采样间隔")) }
         } catch {
             guard !Task.isCancelled, eventGate.permits(epoch), isRecording else { return }
             // Do not call an unreadable page unchanged. Preserve a bounded gap.
             enqueue(DesktopRecord(kind: .gap, appName: app.name, bundleID: app.bundleID,
-                detail: "内容检查未完成：" + error.localizedDescription, runID: runID, trigger: trigger))
+                detail: L("内容检查未完成：") + error.localizedDescription, runID: runID, trigger: trigger))
         }
     }
 
@@ -844,10 +845,10 @@ final class DesktopSession {
         case .blocked:
             resetSamplingActivity(); currentActivity = nil
             periodicSampler.stop(); eventGate.invalidate(); _ = eventGate.enable()
-            invalidateCapture(); gate.invalidate(); statusText = "系统暂停"; statusDetail = event.detail
+            invalidateCapture(); gate.invalidate(); statusText = L("系统暂停"); statusDetail = event.detail
             enqueue(DesktopRecord(kind: .gap, detail: event.detail, runID: runID, trigger: "system", context: stateContext()))
         case .resumed:
-            if monitor.isSessionActive { _ = gate.enable(); statusText = "正在记录"; statusDetail = "系统会话已恢复，截图继续遵守当前模式与允许范围。" }
+            if monitor.isSessionActive { _ = gate.enable(); statusText = L("正在记录"); statusDetail = L("系统会话已恢复，截图继续遵守当前模式与允许范围。") }
             enqueue(DesktopRecord(kind: .system, detail: event.detail, runID: runID, trigger: "system", context: stateContext())); updateSystem(); restartPeriodicSampling()
         case .application, .window, .context:
             guard let app = event.application, monitor.isSessionActive else { return }
@@ -868,7 +869,7 @@ final class DesktopSession {
             let oldActivity = currentActivity?.id
             let record = assignActivity(DesktopRecord(kind: kind, appName: app.name, bundleID: app.bundleID, windowTitle: title, detail: event.detail, runID: runID, trigger: event.trigger ?? (event.kind == .application ? "application" : "window"), context: context), forceNew: event.kind == .application, windowIdentity: event.windowIdentity)
             if oldActivity != record.activityID || context.isProtected == true {
-                invalidateCapture(cancelManual: false, reason: event.kind == .application ? captureSwitchReason(to: app) : "窗口或保护状态已变化，未截图")
+                invalidateCapture(cancelManual: false, reason: event.kind == .application ? captureSwitchReason(to: app) : L("窗口或保护状态已变化，未截图"))
             }
             enqueue(record)
             let sourceTrigger = event.kind == .application || event.kind == .window || event.trigger == "window" || oldActivity != record.activityID
@@ -946,7 +947,7 @@ final class DesktopSession {
     }
     private func queueWrite(_ item: PendingEvent) {
         guard pendingEvents.count < 256 else {
-            droppedEvents += 1; pauseRecording(); error = "写入队列达到上限，采集已停止。请检查磁盘后恢复。"; return
+            droppedEvents += 1; pauseRecording(); error = L("写入队列达到上限，采集已停止。请检查磁盘后恢复。"); return
         }
         pendingEvents.append(item)
         guard !draining else { return }; draining = true
@@ -968,10 +969,10 @@ final class DesktopSession {
     }
 
     func captureNow() {
-        guard !isDemo else { notice = "演示空间仅使用合成记录，不访问屏幕。"; return }
-        guard isRecording else { error = "请先开始记录；手动截图也遵守暂停和应用范围。"; return }
-        guard screenshotsEnabled, desiredPreferences.screenshotEnabled else { error = "请在记录设置中开启允许范围内的截图。"; return }
-        notice = "3 秒后截取当前允许的窗口，请切换到目标应用。"
+        guard !isDemo else { notice = L("演示空间仅使用合成记录，不访问屏幕。"); return }
+        guard isRecording else { error = L("请先开始记录；手动截图也遵守暂停和应用范围。"); return }
+        guard screenshotsEnabled, desiredPreferences.screenshotEnabled else { error = L("请在记录设置中开启允许范围内的截图。"); return }
+        notice = L("3 秒后截取当前允许的窗口，请切换到目标应用。")
         manualCaptureTask?.cancel()
         manualCaptureGeneration &+= 1
         let manualGeneration = manualCaptureGeneration
@@ -986,8 +987,8 @@ final class DesktopSession {
 
     func captureFeedback(for record: DesktopRecord) -> String? {
         if let message = captureMessages[record.id] { return message }
-        if record.context?.isProtected == true { return "受保护，未采集截图" }
-        if record.context?.isComposing == true { return "输入法尚未确认，未截图" }
+        if record.context?.isProtected == true { return L("受保护，未采集截图") }
+        if record.context?.isComposing == true { return L("输入法尚未确认，未截图") }
         return selectedEvent?.issues.last { $0.parentID == record.id }?.detail
     }
     private func setCaptureMessage(_ id: String, _ message: String?) {
@@ -997,12 +998,12 @@ final class DesktopSession {
     }
     private func scheduleCapture(parent: DesktopRecord, automatic: Bool, delay: Double = 0.75) {
         if let previous = pendingCapture, previous.id != parent.id {
-            setCaptureMessage(previous.id, "已合并到后续快照")
+            setCaptureMessage(previous.id, L("已合并到后续快照"))
         }
         pendingCapture = parent
         pendingCaptureRevision = monitor.contextRevision
         pendingCaptureReadyAt = captureClock() + delay
-        setCaptureMessage(parent.id, "等待内容稳定后截图")
+        setCaptureMessage(parent.id, L("等待内容稳定后截图"))
         // Keep one pump. A later notification replaces only the pending value,
         // never cancels a valid native request already in progress.
         guard scheduledCapture == nil else { return }
@@ -1019,18 +1020,18 @@ final class DesktopSession {
                 let cooldownDelay = cooldownUntil.timeIntervalSinceNow
                 delay = max(delay, cooldownDelay)
                 if !automatic, samplingMode == .balanced, !monitor.isContentSettling, pendingCaptureRevision != monitor.contextRevision {
-                    setCaptureMessage(parent.id, "内容已变化，等待重新核对")
+                    setCaptureMessage(parent.id, L("内容已变化，等待重新核对"))
                     pendingCapture = nil
                     requestBalancedCheck(trigger: "refresh", image: true)
                     return
                 }
                 if !automatic && (monitor.isContentSettling || pendingCaptureRevision != monitor.contextRevision) {
-                    setCaptureMessage(parent.id, "正在输入，等待文字稳定")
+                    setCaptureMessage(parent.id, L("正在输入，等待文字稳定"))
                     delay = max(delay, 1.5)
                 } else if cooldownDelay > 0 {
-                    setCaptureMessage(parent.id, "系统截图请求连续失败，暂缓重试")
+                    setCaptureMessage(parent.id, L("系统截图请求连续失败，暂缓重试"))
                 } else if delay > 0.8 {
-                    setCaptureMessage(parent.id, "已达截图频率限制，仍在此窗口时补图")
+                    setCaptureMessage(parent.id, L("已达截图频率限制，仍在此窗口时补图"))
                 }
                 if captureBusy { delay = max(delay, 0.1) }
                 if delay > 0 {
@@ -1054,18 +1055,18 @@ final class DesktopSession {
         if automatic, let parent, parent.activityID != currentActivity?.id { return .complete }
         if captureBusy { return .retry(0.1) }
         if Date() < cooldownUntil {
-            if parent == nil { error = "系统截图请求连续失败，请稍后重试。" }
+            if parent == nil { error = L("系统截图请求连续失败，请稍后重试。") }
             return .retry(cooldownUntil.timeIntervalSinceNow)
         }
         if monitor.isContentSettling, !automatic {
-            if let parent { setCaptureMessage(parent.id, "正在输入，等待文字稳定") }
-            else { error = "窗口内容仍在变化，请等它稳定后再截图。" }
+            if let parent { setCaptureMessage(parent.id, L("正在输入，等待文字稳定")) }
+            else { error = L("窗口内容仍在变化，请等它稳定后再截图。") }
             return .retry(1.5)
         }
         let state = monitor.snapshot()
         guard !state.thermalBlocked else {
-            if let parent { setCaptureMessage(parent.id, "温度较高，等待恢复后截图") }
-            else { error = "系统温度较高，请稍后再截图。" }
+            if let parent { setCaptureMessage(parent.id, L("温度较高，等待恢复后截图")) }
+            else { error = L("系统温度较高，请稍后再截图。") }
             return .retry(60)
         }
         let source = automatic ? samplingWindow : nil
@@ -1075,14 +1076,14 @@ final class DesktopSession {
         let capacity = preferences.samplingOptions.imageCapacity
         guard limiter.admit(now: now, automatic: automatic, interval: interval, lowPower: lowPower, automaticCapacity: capacity, source: source) else {
             let delay = limiter.nextAvailableDelay(now: now, automatic: automatic, interval: interval, lowPower: lowPower, automaticCapacity: capacity, source: source)
-            if let parent { setCaptureMessage(parent.id, "已达截图频率限制，仍在此窗口时补图") }
-            else { error = "截图频率已达上限，请稍后重试。" }
+            if let parent { setCaptureMessage(parent.id, L("已达截图频率限制，仍在此窗口时补图")) }
+            else { error = L("截图频率已达上限，请稍后重试。") }
             return .retry(max(0.1, delay))
         }
         let epoch = gate.currentEpoch(); guard gate.permits(epoch) else { return .complete }
         let contextRevision = monitor.contextRevision
         captureBusy = true; captureAttempts += 1; samplingDiagnostics.imageAttempts += 1; lastImageAttemptClock = captureClock()
-        if let parent { setCaptureMessage(parent.id, "正在截图") }
+        if let parent { setCaptureMessage(parent.id, L("正在截图")) }
         defer { captureBusy = false }
         do {
             guard let store else { return .complete }
@@ -1110,7 +1111,7 @@ final class DesktopSession {
                 if parent?.trigger == "timer" { previous.repeated = min(3, previous.repeated + 1) }
                 recentImages[source] = previous
                 consecutiveFailures = 0
-                if let parent { setCaptureMessage(parent.id, "画面与上一张相同，已略过") }
+                if let parent { setCaptureMessage(parent.id, L("画面与上一张相同，已略过")) }
                 return .complete
             }
             var imageContext = parent?.context ?? DesktopContextSnapshot()
@@ -1118,7 +1119,7 @@ final class DesktopSession {
                 imageContext.readableText = nil; imageContext.selectedText = nil; imageContext.recordEvidence = nil
             }
             imageContext.axEvidence = frame.axEvidence
-            let record = DesktopRecord(timestamp: frame.capturedAt, kind: .screenshot, appName: frame.application.name, bundleID: frame.application.bundleID, windowTitle: frame.title, detail: automatic ? (parent?.trigger == "timer" ? "定时触发" : "事件触发") : "用户手动触发", imageWidth: frame.width, imageHeight: frame.height, parentID: parent?.id, runID: runID, trigger: automatic ? parent?.trigger : "manual", context: scopedContext(imageContext, bundle: frame.application.bundleID), activityID: parent?.activityID)
+            let record = DesktopRecord(timestamp: frame.capturedAt, kind: .screenshot, appName: frame.application.name, bundleID: frame.application.bundleID, windowTitle: frame.title, detail: automatic ? (parent?.trigger == "timer" ? L("定时触发") : L("事件触发")) : L("用户手动触发"), imageWidth: frame.width, imageHeight: frame.height, parentID: parent?.id, runID: runID, trigger: automatic ? parent?.trigger : "manual", context: scopedContext(imageContext, bundle: frame.application.bundleID), activityID: parent?.activityID)
             // The configured storage limit counts the library's desktop originals and what still waits in the outbox.
             let used = statistics.storageBytes + (await store.outbox.bytes)
             guard used + Int64(frame.data.count) <= preferences.maximumBytes else { throw DesktopStoreError.quotaExceeded }
@@ -1132,7 +1133,7 @@ final class DesktopSession {
             rememberRecord(savedImage)
             recognition.wake()
             samplingDiagnostics.imageSaved += 1
-            consecutiveFailures = 0; lastSaved = Date(); statusDetail = "截图已保存"
+            consecutiveFailures = 0; lastSaved = Date(); statusDetail = L("截图已保存")
             if let parent { setCaptureMessage(parent.id, nil) }
             return .complete
         } catch is CaptureAdmissionError { return .complete }
@@ -1140,7 +1141,7 @@ final class DesktopSession {
             guard gate.permits(epoch), isRecording else { return .complete }
             if let transient = error as? DesktopCaptureError, automatic,
                transient == .contentChanging || transient == .busy || (transient == .focusChanged && (monitor.isContentSettling || contextRevision != monitor.contextRevision)) {
-                if let parent { setCaptureMessage(parent.id, "内容仍在变化，等待稳定后补图") }
+                if let parent { setCaptureMessage(parent.id, L("内容仍在变化，等待稳定后补图")) }
                 return .retry(1.5)
             }
             captureFailures += 1
@@ -1150,7 +1151,7 @@ final class DesktopSession {
             } else {
                 consecutiveFailures = 0
             }
-            let message = "截图未保存：" + error.localizedDescription
+            let message = L("截图未保存：") + error.localizedDescription
             if let parent { setCaptureMessage(parent.id, message) }
             enqueue(DesktopRecord(kind: .gap, detail: message, parentID: parent?.id, runID: runID, activityID: parent?.activityID))
             if !automatic { self.error = error.localizedDescription }
@@ -1159,8 +1160,8 @@ final class DesktopSession {
     }
 
     func addMarker() {
-        guard storageReady else { error = "本地账本尚未准备好，请检查启动错误后重试。"; return }
-        enqueue(DesktopRecord(kind: .marker, windowTitle: "标记", detail: "用户手动标记", runID: runID))
+        guard storageReady else { error = L("本地账本尚未准备好，请检查启动错误后重试。"); return }
+        enqueue(DesktopRecord(kind: .marker, windowTitle: L("标记"), detail: L("用户手动标记"), runID: runID))
     }
     func dismissError() { error = nil; notice = nil }
     func deleteSelected() {
@@ -1170,8 +1171,8 @@ final class DesktopSession {
     }
     func exportSelection() {
         let selected = selectedEvent.map { [$0] } ?? timelineEvents
-        guard !selected.isEmpty else { notice = "当前范围没有可导出的记录。"; return }
-        let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; panel.prompt = "导出到此目录"; panel.message = "将在此目录创建一个独立可读的记录包。"
+        guard !selected.isEmpty else { notice = L("当前范围没有可导出的记录。"); return }
+        let panel = NSOpenPanel(); panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.canCreateDirectories = true; panel.prompt = L("导出到此目录"); panel.message = L("将在此目录创建一个独立可读的记录包。")
         guard panel.runModal() == .OK, let folder = panel.url else { return }
         let destination = folder.appendingPathComponent("Candid-" + UUID().uuidString.prefix(8), isDirectory: true)
         Task {

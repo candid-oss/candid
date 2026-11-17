@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 public enum RecordingFilter: String, CaseIterable, Identifiable, Sendable {
     case all = "全部来源", device = "设备录音", imported = "本机导入", synthetic = "合成样例"
@@ -32,15 +33,15 @@ public enum RecordingLibrary {
 public extension AudioAsset {
     var sourceTitle: String {
         switch source {
-        case "synthetic": "合成样例"
-        case "local_file": "本机导入"
-        case "serial", "serial_opus": "USB 设备"
-        case "http", "http_opus": "Wi-Fi 设备"
+        case "synthetic": L("合成样例")
+        case "local_file": L("本机导入")
+        case "serial", "serial_opus": L("USB 设备")
+        case "http", "http_opus": L("Wi-Fi 设备")
         default: source
         }
     }
     var durationLabel: String {
         let seconds = Int(metadata.duration_s ?? 0)
-        return seconds >= 60 ? "\(seconds / 60) 分 \(seconds % 60) 秒" : String(format: "%.1f 秒", metadata.duration_s ?? 0)
+        return seconds >= 60 ? L("%@ 分 %@ 秒", seconds / 60, seconds % 60) : String(format: L("%.1f 秒"), metadata.duration_s ?? 0)
     }
 }

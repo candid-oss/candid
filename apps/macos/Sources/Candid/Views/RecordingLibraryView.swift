@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 import ConsoleCore
 
 struct RecordingLibraryView: View {
@@ -11,20 +12,20 @@ struct RecordingLibraryView: View {
     var body: some View {
         HStack(alignment: .top, spacing: Space.l) {
             VStack(alignment: .leading, spacing: Space.s) {
-                SearchField(prompt: "搜索文件或已有文字", text: $query).accessibilityLabel("搜索录音")
+                SearchField(prompt: L("搜索文件或已有文字"), text: $query).accessibilityLabel(L("搜索录音"))
                 HStack {
                     MenuChoice(options: RecordingFilter.allCases.map { ($0, $0.rawValue) }, selection: $filter)
                     Spacer()
-                    MenuChoice(options: RecordingSort.allCases.map { ($0, $0.rawValue) }, selection: $sort).accessibilityLabel("录音排序")
+                    MenuChoice(options: RecordingSort.allCases.map { ($0, $0.rawValue) }, selection: $sort).accessibilityLabel(L("录音排序"))
                 }
                 if items.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(store.recordings.isEmpty ? "还没有录音" : "没有匹配的录音").typography(.headline)
+                        Text(store.recordings.isEmpty ? L("还没有录音") : L("没有匹配的录音")).typography(.headline)
                         if store.recordings.isEmpty {
-                            QuietButton(title: "导入 WAV", emphasized: true, action: importAction)
+                            QuietButton(title: L("导入 WAV"), emphasized: true, action: importAction)
                                 .disabled(store.connection != .online || store.service.isMock).offset(x: -9)
                         } else {
-                            QuietButton(title: "清除筛选") { query = ""; filter = .all }.offset(x: -9)
+                            QuietButton(title: L("清除筛选")) { query = ""; filter = .all }.offset(x: -9)
                         }
                     }
                     .padding(.top, Space.s)
@@ -47,13 +48,13 @@ struct RecordingLibraryView: View {
                     }
                     .scrollIndicators(.hidden)
                 }
-                Text("\(items.count) 条录音").typography(.caption, .regular).foregroundStyle(.secondary)
+                Text(L("%@ 条录音", items.count)).typography(.caption, .regular).foregroundStyle(.secondary)
             }
             .frame(width: 300)
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.m) {
                     if let asset = store.selectedAsset {
-                        Text(asset.date?.formatted(date: .complete, time: .shortened) ?? "录音详情")
+                        Text(asset.date?.formatted(date: .complete, time: .shortened) ?? L("录音详情"))
                             .typography(.secondary).foregroundStyle(.secondary)
                     }
                     if !items.isEmpty { RecordingDetailView(store: store) }
@@ -83,9 +84,9 @@ private struct LibraryRecordingRow: View {
                 HStack {
                     Text(asset.date?.formatted(date: .abbreviated, time: .shortened) ?? "")
                     Spacer(minLength: 4)
-                    if transcript?.result != nil { Image(systemName: "text.alignleft").help("已有文字") }
+                    if transcript?.result != nil { Image(systemName: "text.alignleft").help(L("已有文字")) }
                     else if transcript?.status == "running" { ProgressView().controlSize(.mini) }
-                    else if transcript?.status == "failed" { Image(systemName: "exclamationmark.circle").help("上次转写失败") }
+                    else if transcript?.status == "failed" { Image(systemName: "exclamationmark.circle").help(L("上次转写失败")) }
                 }.typography(.caption, .regular).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)

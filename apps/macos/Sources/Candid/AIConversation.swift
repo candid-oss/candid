@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 // Conversations with Pi on the AI page (agent-platform-v1 §4.2): kept only on this Mac, one JSON file each, listed
 // under 「历史对话」. They are working notes of the interaction, not facts of the timeline (CONTRIBUTING.md: agents).
@@ -13,7 +14,7 @@ struct AIContextItem: Codable, Identifiable, Equatable, Hashable, Sendable {
     var detail: String = ""
 
     var chip: String { "\(kind) · \(title)" }
-    var promptLine: String { "- \(kind)：\(title)" + (detail.isEmpty ? "" : "（\(detail)）") + (refID.map { " [\($0)]" } ?? "") }
+    var promptLine: String { L("- %@：%@", kind, title) + (detail.isEmpty ? "" : L("（%@）", detail)) + (refID.map { " [\($0)]" } ?? "") }
     /// What Pi can use: a store id (proposal, memory, event as `[[id]]`-citable record), or a system calendar item
     /// as `event:<item>@<start>` / `reminder:<item>` for `item_id` in an edit proposal.
     var refID: String? {
@@ -57,10 +58,10 @@ struct AIRecordRef: Codable, Equatable, Hashable, Sendable {
         if kind.hasPrefix("agent") { return "AI 会话" }
         if kind.hasPrefix("browser") || kind.hasPrefix("web") { return "网页" }
         if kind.hasPrefix("note") { return "笔记" }
-        return "记录"
+        return L("记录")
     }
 
-    private static let time: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日 HH:mm"; return f }()
+    private static let time: DateFormatter = { let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = L("M月d日 HH:mm"); return f }()
     var label: String { kindLabel + (AgendaDate.parse(start).map { " " + Self.time.string(from: $0) } ?? "") }
 }
 
@@ -94,24 +95,24 @@ struct AIChatMessage: Codable, Identifiable, Equatable, Sendable {
     /// 「查了 4 条记录 · 录音 11月12日 15:30、邮件 2 条」, or the tools used when nothing was found.
     var stepsSummary: String? {
         let calls = calls ?? []
-        guard !calls.isEmpty else { return steps.isEmpty ? nil : "查了 " + steps.joined(separator: "、") }
+        guard !calls.isEmpty else { return steps.isEmpty ? nil : L("查了 ") + steps.joined(separator: L("、")) }
         var seen = Set<String>(), records: [AIRecordRef] = []
         for r in calls.flatMap(\.records) where seen.insert(r.eventID).inserted { records.append(r) }
         if records.isEmpty {
             var tools: [String] = []
             for c in calls where !tools.contains(PiToolResult.step(c.tool)) { tools.append(PiToolResult.step(c.tool)) }
-            return "用了 " + tools.joined(separator: "、")
+            return L("用了 ") + tools.joined(separator: L("、"))
         }
         var kinds: [String] = [], byKind: [String: [AIRecordRef]] = [:]
         for r in records { if byKind[r.kindLabel] == nil { kinds.append(r.kindLabel) }; byKind[r.kindLabel, default: []].append(r) }
-        let parts = kinds.prefix(3).map { k in byKind[k]!.count == 1 ? byKind[k]![0].label : "\(k) \(byKind[k]!.count) 条" }
-        return "查了 \(records.count) 条记录 · " + parts.joined(separator: "、") + (kinds.count > 3 ? " 等" : "")
+        let parts = kinds.prefix(3).map { k in byKind[k]!.count == 1 ? byKind[k]![0].label : L("%@ %@ 条", k, byKind[k]!.count) }
+        return L("查了 %@ 条记录 · ", records.count) + parts.joined(separator: L("、")) + (kinds.count > 3 ? L(" 等") : "")
     }
 }
 
 struct AIConversation: Codable, Identifiable, Equatable, Sendable {
     var id = UUID()
-    var title = "新对话"
+    var title = L("新对话")
     var created = Date()
     var updated = Date()
     var messages: [AIChatMessage] = []
@@ -122,7 +123,7 @@ extension AIConversation {
     var preview: String {
         guard let last = messages.last(where: { $0.role == .assistant && !$0.text.isEmpty }) ?? messages.last else { return "" }
         var t = last.text
-        for (pattern, with) in [("\\[\\[[^\\]]*\\]\\]", "〔记录〕"), ("\\[([^\\]]*)\\]\\([^)]*\\)", "$1"), ("[*_`#>|]", ""), ("(?m)^\\s*([-+•]|\\d+[.)])\\s+", ""), ("\\s+", " ")] {
+        for (pattern, with) in [("\\[\\[[^\\]]*\\]\\]", L("〔记录〕")), ("\\[([^\\]]*)\\]\\([^)]*\\)", "$1"), ("[*_`#>|]", ""), ("(?m)^\\s*([-+•]|\\d+[.)])\\s+", ""), ("\\s+", " ")] {
             t = t.replacingOccurrences(of: pattern, with: with, options: .regularExpression)
         }
         return t.trimmingCharacters(in: .whitespaces)
@@ -156,10 +157,10 @@ struct AIHistoryGroups: Equatable {
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today)!
         var buckets: [String: [AIConversation]] = [:]
         for c in conversations where c.matches(query) {
-            let key = c.updated >= today ? "今天" : c.updated >= yesterday ? "昨天" : "更早"
+            let key = c.updated >= today ? L("今天") : c.updated >= yesterday ? L("昨天") : L("更早")
             buckets[key, default: []].append(c)
         }
-        return AIHistoryGroups(groups: ["今天", "昨天", "更早"].compactMap { k in
+        return AIHistoryGroups(groups: [L("今天"), L("昨天"), L("更早")].compactMap { k in
             buckets[k].map { Group(title: k, items: $0.sorted { $0.updated > $1.updated }) }
         })
     }
@@ -215,20 +216,20 @@ enum PiToolResult {
         let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
         if tool == "pv_propose", let id = data["proposal_id"] as? String {
             let payload = args["payload"] as? [String: Any] ?? [:]
-            let title = payload["title"] as? String ?? "提案"
+            let title = payload["title"] as? String ?? L("提案")
             let what = AgendaProposal.label(args["kind"] as? String ?? "")
-            return AIChatAction(id: id, kind: .proposal, tool: tool, summary: "\(what)：\(title)", status: data["status"] as? String ?? "pending",
+            return AIChatAction(id: id, kind: .proposal, tool: tool, summary: L("%@：%@", what, title), status: data["status"] as? String ?? "pending",
                                 detail: (payload["due"] ?? payload["start"]) as? String)
         }
         guard let writeID = data["write_id"] as? String else { return nil }
         let summary: String
         switch tool {
         case "pv_annotate":
-            if let title = args["title"] as? String { summary = "改标题为「\(title)」" }
-            else { summary = "存到备注：" + ((args["notes"] as? String) ?? "") }
-        case "pv_mark_reference": summary = "标为资料：" + ((args["label"] as? String) ?? "")
-        case "pv_commitment": summary = (args["decision"] as? String == "confirm" ? "确认承诺" : "忽略承诺候选")
-        case "pv_save_draft": summary = "保存回顾草稿"
+            if let title = args["title"] as? String { summary = L("改标题为「%@」", title) }
+            else { summary = L("存到备注：") + ((args["notes"] as? String) ?? "") }
+        case "pv_mark_reference": summary = L("标为资料：") + ((args["label"] as? String) ?? "")
+        case "pv_commitment": summary = (args["decision"] as? String == "confirm" ? L("确认承诺") : L("忽略承诺候选"))
+        case "pv_save_draft": summary = L("保存回顾草稿")
         default: summary = tool
         }
         return AIChatAction(id: writeID, kind: .write, tool: tool, summary: summary, status: "done")
@@ -254,30 +255,30 @@ enum PiToolResult {
     /// One line on what a finished call returned.
     static func outcome(_ result: String, isError: Bool) -> String {
         if isError { return String(result.prefix(160)) }
-        guard let data = data(result) else { return "完成" }
+        guard let data = data(result) else { return L("完成") }
         for key in ["hits", "events", "items", "episodes", "memories", "records", "sessions"] {
-            if let list = data[key] as? [Any] { return "\(list.count) 条" }
+            if let list = data[key] as? [Any] { return L("%@ 条", list.count) }
         }
-        return data["write_id"] != nil ? "已写入" : data["proposal_id"] != nil ? "已提出" : "完成"
+        return data["write_id"] != nil ? L("已写入") : data["proposal_id"] != nil ? L("已提出") : L("完成")
     }
 
     /// What the page says while a call runs (「正在搜索「预算」…」).
     static func live(_ tool: String, arguments: String) -> String {
         let args = (try? JSONSerialization.jsonObject(with: Data(arguments.utf8))) as? [String: Any] ?? [:]
-        if let q = (args["q"] ?? args["query"]) as? String, !q.isEmpty { return "正在搜索「\(q)」…" }
-        let verbs = ["pv_status": "正在看各来源状态…", "pv_overview": "正在看这段时间的概况…", "pv_search": "正在搜索…", "pv_timeline": "正在翻时间线…",
-                     "pv_context": "正在看前后的记录…", "pv_get_event": "正在打开一条记录…", "pv_episodes": "正在看片段…", "pv_episode": "正在打开片段…",
-                     "pv_records": "正在读记录修订…", "pv_agent_session": "正在读 AI 会话…", "pv_memories": "正在看记忆与候选…",
-                     "pv_annotate": "正在写标题或备注…", "pv_mark_reference": "正在标为资料…", "pv_commitment": "正在处理承诺候选…",
-                     "pv_save_draft": "正在保存草稿…", "pv_undo": "正在撤销…", "pv_propose": "正在拟提案…"]
-        return verbs[tool] ?? "正在处理…"
+        if let q = (args["q"] ?? args["query"]) as? String, !q.isEmpty { return L("正在搜索「%@」…", q) }
+        let verbs = ["pv_status": L("正在看各来源状态…"), "pv_overview": L("正在看这段时间的概况…"), "pv_search": L("正在搜索…"), "pv_timeline": L("正在翻时间线…"),
+                     "pv_context": L("正在看前后的记录…"), "pv_get_event": L("正在打开一条记录…"), "pv_episodes": L("正在看片段…"), "pv_episode": L("正在打开片段…"),
+                     "pv_records": L("正在读记录修订…"), "pv_agent_session": L("正在读 AI 会话…"), "pv_memories": L("正在看记忆与候选…"),
+                     "pv_annotate": L("正在写标题或备注…"), "pv_mark_reference": L("正在标为资料…"), "pv_commitment": L("正在处理承诺候选…"),
+                     "pv_save_draft": L("正在保存草稿…"), "pv_undo": L("正在撤销…"), "pv_propose": L("正在拟提案…")]
+        return verbs[tool] ?? L("正在处理…")
     }
 
     /// The short label of a lookup shown above an answer (「查了 时间线、搜索」).
     static func step(_ tool: String) -> String {
-        ["pv_status": "状态", "pv_overview": "概览", "pv_search": "搜索", "pv_timeline": "时间线", "pv_context": "前后记录",
-         "pv_get_event": "记录", "pv_episodes": "片段", "pv_episode": "片段", "pv_records": "记录修订", "pv_agent_session": "AI 会话",
-         "pv_memories": "记忆", "pv_annotate": "备注", "pv_mark_reference": "资料", "pv_commitment": "承诺", "pv_save_draft": "草稿",
-         "pv_undo": "撤销", "pv_propose": "提案"][tool] ?? tool
+        ["pv_status": L("状态"), "pv_overview": L("概览"), "pv_search": L("搜索"), "pv_timeline": L("时间线"), "pv_context": L("前后记录"),
+         "pv_get_event": L("记录"), "pv_episodes": L("片段"), "pv_episode": L("片段"), "pv_records": L("记录修订"), "pv_agent_session": L("AI 会话"),
+         "pv_memories": L("记忆"), "pv_annotate": L("备注"), "pv_mark_reference": L("资料"), "pv_commitment": L("承诺"), "pv_save_draft": L("草稿"),
+         "pv_undo": L("撤销"), "pv_propose": L("提案")][tool] ?? tool
     }
 }

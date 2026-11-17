@@ -1,4 +1,5 @@
 import AVFoundation
+import CandidLocalization
 import Combine
 import ConsoleCore
 
@@ -39,7 +40,7 @@ final class PlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegat
             if file.lastPathComponent.hasSuffix(".playlist.json") {
                 let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
                 let playlist = try decoder.decode(Playlist.self, from: Data(contentsOf: file))
-                guard playlist.format == "candid-playlist/1", !playlist.parts.isEmpty else { throw ConsoleError.rejected("录音分段无法读取") }
+                guard playlist.format == "candid-playlist/1", !playlist.parts.isEmpty else { throw ConsoleError.rejected(L("录音分段无法读取")) }
                 self.parts = playlist.parts
                 let time = startAt ?? 0
                 self.partIndex = self.parts.firstIndex(where: { time < $0.end }) ?? self.parts.count - 1
@@ -67,7 +68,7 @@ final class PlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegat
             guard generation == request, !Task.isCancelled else { return }
             player.delegate = self; player.prepareToPlay()
             if let startAt { player.currentTime = max(0, min(startAt - offset, player.duration)) }
-            guard player.play() else { throw ConsoleError.rejected("系统无法播放该录音") }
+            guard player.play() else { throw ConsoleError.rejected(L("系统无法播放该录音")) }
             self.player = player; loadedID = id; duration = parts.last?.end ?? player.duration
             position = offset + player.currentTime
             loading = false; isPlaying = true; tick()
@@ -124,7 +125,7 @@ final class PlaybackController: NSObject, ObservableObject, AVAudioPlayerDelegat
             }
             active.currentTime = 0
             isPlaying = false; ticker?.cancel(); position = 0
-            if !flag { error = "音频播放未能完成" }
+            if !flag { error = L("音频播放未能完成") }
         }
     }
 }

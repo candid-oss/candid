@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import Observation
 import AVFoundation
 import CryptoKit
@@ -73,7 +74,7 @@ final class MediaWorkspaceStore {
            FileManager.default.fileExists(atPath: file(for: saved).path) {
             draft = saved
         } else if FileManager.default.fileExists(atPath: draftManifest.path) {
-            error = "待入库素材暂时无法读取。原件保留在资料库的 Pending 文件夹。"
+            error = L("待入库素材暂时无法读取。原件保留在资料库的 Pending 文件夹。")
         }
     }
 
@@ -84,7 +85,7 @@ final class MediaWorkspaceStore {
             try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             try JSONEncoder().encode(AudioPreferences(input: recordingInput, reminders: callRecordingReminders, autoStop: autoStopCallRecording))
                 .write(to: profile.appendingPathComponent("audio-preferences.json"), options: .atomic)
-        } catch { self.error = "录音设置未保存。" + error.localizedDescription }
+        } catch { self.error = L("录音设置未保存。") + error.localizedDescription }
     }
 
     static func defaultProfile() -> URL {
@@ -134,7 +135,7 @@ final class MediaWorkspaceStore {
                 }
                 if let status = self.capture.recordingStatus, status.savedSegments != self.savedRecordingSegments {
                     self.savedRecordingSegments = status.savedSegments
-                    self.recordingNotice = "\(self.activeRecordingInput.label) · 自动保存中"
+                    self.recordingNotice = L("%@ · 自动保存中", self.activeRecordingInput.label)
                     Task { await self.syncRecordings() }
                 }
                 let now = Date()
@@ -213,7 +214,7 @@ final class MediaWorkspaceStore {
             if #available(macOS 15, *), let associated = associatedCall { associatedCall?.callWindowID = CallAudioActivity.callWindow(for: associated) }
             callRecordingTarget = associatedCall
             savedRecordingSegments = 0
-            recordingNotice = "\(activeRecordingInput.label) · 自动保存中 · 点按停止"
+            recordingNotice = L("%@ · 自动保存中 · 点按停止", activeRecordingInput.label)
             recordingStartedAt = started
         } catch { self.error = error.localizedDescription }
     }
@@ -222,14 +223,14 @@ final class MediaWorkspaceStore {
         guard isRecording, !recordingFinishing else { return }
         // Clear the capture indicator immediately; IO completion has its own status.
         recordingFinishing = true; recordingStartedAt = nil; callRecordingTarget = nil
-        recordingNotice = "音频采集已停止 · 正在保存最后一段"
+        recordingNotice = L("音频采集已停止 · 正在保存最后一段")
         do {
             try await capture.stopRecording(reason: failure == nil ? "stopped" : "input_fault")
-            recordingNotice = automatic ? "通话已结束 · 录音已自动保存" : "录音已停止 · 已保存"
+            recordingNotice = automatic ? L("通话已结束 · 录音已自动保存") : L("录音已停止 · 已保存")
             if let failure { error = failure }
         } catch {
-            self.error = "录音已停止。已封存分段保留，最后一段可能未保存。" + error.localizedDescription
-            recordingNotice = "录音已停止 · 请检查保存结果"
+            self.error = L("录音已停止。已封存分段保留，最后一段可能未保存。") + error.localizedDescription
+            recordingNotice = L("录音已停止 · 请检查保存结果")
         }
         recordingFinishing = false
         await syncRecordings()
@@ -270,7 +271,7 @@ final class MediaWorkspaceStore {
     }
 
     func recognize(_ record: MediaLibraryRecord, mode: MediaLibraryRecord.Mode) async {
-        guard !isDemo else { error = "合成样例不能重新识别。"; return }
+        guard !isDemo else { error = L("合成样例不能重新识别。"); return }
         guard !busy else { return }
         busy = true; error = nil
         defer { busy = false }
@@ -297,7 +298,7 @@ final class MediaWorkspaceStore {
     }
 
     func delete(_ record: MediaLibraryRecord) async {
-        guard !isDemo else { error = "合成样例不能删除。"; return }
+        guard !isDemo else { error = L("合成样例不能删除。"); return }
         guard !busy else { return }
         busy = true; error = nil
         defer { busy = false }
@@ -344,14 +345,14 @@ final class MediaWorkspaceStore {
     }
 
     func label(_ record: MediaLibraryRecord, speaker: String, as choice: SpeakerChoice) async {
-        guard !isDemo else { error = "合成样例不能标注说话人。"; return }
+        guard !isDemo else { error = L("合成样例不能标注说话人。"); return }
         guard labelingSpeaker == nil else { return }
         labelingSpeaker = speaker; speakerNote = nil; error = nil
         defer { labelingSpeaker = nil }
         do {
             let (updated, note) = try await client().labelSpeaker(record.id, speaker: speaker, as: choice)
             replace(updated)
-            if let note { speakerNote = "名字已记下；声纹样本这次没存上（\(note)），下次确认时会再试。" }
+            if let note { speakerNote = L("名字已记下；声纹样本这次没存上（%@），下次确认时会再试。", note) }
             await loadSpeakerPeople()
         } catch { self.error = error.localizedDescription }
     }
@@ -382,7 +383,7 @@ final class MediaWorkspaceStore {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
-            let title = source == .macRegion ? "框选截图" : "Mac 录音"
+            let title = source == .macRegion ? L("框选截图") : L("Mac 录音")
             filename = title + " " + formatter.string(from: occurredAt ?? Date()) + "." + suffix
         }
         let item = MediaDraft(id: id, filename: filename, storedName: id.uuidString + "." + suffix,

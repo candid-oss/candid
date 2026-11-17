@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import ApplicationServices
 import CoreGraphics
 import DesktopCore
@@ -64,22 +65,22 @@ public enum DesktopCaptureError: String, Error, Sendable, LocalizedError {
     public var shouldBackOffCapture: Bool { self == .timedOut || self == .unavailable }
     public var errorDescription: String? {
         switch self {
-        case .screenPermissionDenied: "屏幕录制权限尚未允许，请在系统设置中允许后重新检查。"
-        case .accessibilityPermissionDenied: "需要辅助功能权限来确认当前窗口；应用活动仍可记录。"
-        case .inactiveSession: "当前会话不活跃或状态无法确认，已跳过截图。"
-        case .excludedApplication: "当前应用未在截图允许范围内。"
-        case .noFocusedWindow: "无法读取当前窗口，已保留应用事件。"
-        case .noVerifiedFocus: "无法确认窗口内的控件焦点。可在「设置 → 应用」为此应用开启截图兼容。"
-        case .noMatchingWindow: "未找到与当前焦点对应的可截图窗口。"
-        case .ambiguousWindow: "存在多个同位置窗口，无法确定截图对象。"
-        case .focusChanged: "截图期间窗口发生变化，结果已丢弃。"
-        case .busy: "上一项系统截图请求尚未结束。"
-        case .timedOut: "系统截图请求超时；等待底层请求释放后才能继续。"
-        case .cancelled: "截图已取消。"
-        case .imageTooLarge: "截图超过单张大小上限，已跳过。"
-        case .unavailable: "系统暂时无法提供此窗口的截图。"
-        case .protectedContent: "当前焦点包含密码或受保护内容，已跳过采集。"
-        case .contentChanging: "文字仍在输入，等待内容稳定后再截图。"
+        case .screenPermissionDenied: L("屏幕录制权限尚未允许，请在系统设置中允许后重新检查。")
+        case .accessibilityPermissionDenied: L("需要辅助功能权限来确认当前窗口；应用活动仍可记录。")
+        case .inactiveSession: L("当前会话不活跃或状态无法确认，已跳过截图。")
+        case .excludedApplication: L("当前应用未在截图允许范围内。")
+        case .noFocusedWindow: L("无法读取当前窗口，已保留应用事件。")
+        case .noVerifiedFocus: L("无法确认窗口内的控件焦点。可在「设置 → 应用」为此应用开启截图兼容。")
+        case .noMatchingWindow: L("未找到与当前焦点对应的可截图窗口。")
+        case .ambiguousWindow: L("存在多个同位置窗口，无法确定截图对象。")
+        case .focusChanged: L("截图期间窗口发生变化，结果已丢弃。")
+        case .busy: L("上一项系统截图请求尚未结束。")
+        case .timedOut: L("系统截图请求超时；等待底层请求释放后才能继续。")
+        case .cancelled: L("截图已取消。")
+        case .imageTooLarge: L("截图超过单张大小上限，已跳过。")
+        case .unavailable: L("系统暂时无法提供此窗口的截图。")
+        case .protectedContent: L("当前焦点包含密码或受保护内容，已跳过采集。")
+        case .contentChanging: L("文字仍在输入，等待内容稳定后再截图。")
         }
     }
 }

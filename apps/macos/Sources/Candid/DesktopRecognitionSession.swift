@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import AppKit
 import DesktopCore
 import DesktopPlatform
@@ -134,7 +135,7 @@ final class DesktopRecognitionSession {
     }
 
     func cancel() {
-        if let activeScreenshotID { manualFeedback = (activeScreenshotID, "已取消识别。") }
+        if let activeScreenshotID { manualFeedback = (activeScreenshotID, L("已取消识别。")) }
         if let activeKind { retryAfter[activeKind] = Date().addingTimeInterval(60) }
         job?.cancel()
     }
@@ -190,7 +191,7 @@ final class DesktopRecognitionSession {
             if let retry = retryAfter[kind], retry > now { schedule(retry); continue }
             var batch = batches[kind] ?? Batch(next: defaults.object(forKey: batchKey(kind)) as? Date ?? now)
             if policy.mode == .batch && batch.remaining == 0 && batch.next > now {
-                status[kind] = "下一批约在 " + batch.next.formatted(date: .omitted, time: .shortened)
+                status[kind] = L("下一批约在 ") + batch.next.formatted(date: .omitted, time: .shortened)
                 schedule(batch.next)
                 continue
             }
@@ -203,7 +204,7 @@ final class DesktopRecognitionSession {
                     setBatch(batch, for: kind)
                 }
                 guard let record else {
-                    status[kind] = "没有待处理的截图"
+                    status[kind] = L("没有待处理的截图")
                     if policy.mode == .batch { schedule(batch.next) }
                     continue
                 }
@@ -224,7 +225,7 @@ final class DesktopRecognitionSession {
         if manualFeedback?.id == screenshot.id { manualFeedback = nil }
         activeKind = kind
         activeScreenshotID = screenshot.id
-        status[kind] = "正在处理截图"
+        status[kind] = L("正在处理截图")
         let requestPrompt = kind == .vision ? (promptOverride ?? prompt) : ""
         job = Task(priority: .utility) { [self] in
             defer {
@@ -260,10 +261,10 @@ final class DesktopRecognitionSession {
                 try Task.checkCancellation()
                 try await store.saveRecognition(result, kind: kind, screenshot: screenshot)
                 resultRevision &+= 1
-                status[kind] = "已完成"
+                status[kind] = L("已完成")
             } catch {
                 if Task.isCancelled {
-                    status[kind] = powerBlocks[kind] ?? "已取消"
+                    status[kind] = powerBlocks[kind] ?? L("已取消")
                     if !automatic, let reason = powerBlocks[kind] { manualFeedback = (screenshot.id, reason) }
                     return
                 }

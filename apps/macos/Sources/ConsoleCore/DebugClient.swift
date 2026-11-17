@@ -1,15 +1,16 @@
 import Foundation
+import CandidLocalization
 import CandidShared
 
 public enum ConsoleError: LocalizedError, Sendable {
     case invalidEndpoint, incompatible, http(Int, String), rejected(String), invalidMedia
     public var errorDescription: String? {
         switch self {
-        case .invalidEndpoint: "仅接受本机回环 HTTP 服务地址，且不能包含凭据、路径或查询参数。"
-        case .incompatible: "服务协议或 schema 版本不兼容；请核对调试服务版本。"
-        case let .http(code, detail): "\(detail)（HTTP \(code)）"
+        case .invalidEndpoint: L("仅接受本机回环 HTTP 服务地址，且不能包含凭据、路径或查询参数。")
+        case .incompatible: L("服务协议或 schema 版本不兼容；请核对调试服务版本。")
+        case let .http(code, detail): L("%@（HTTP %@）", detail, code)
         case let .rejected(detail): detail
-        case .invalidMedia: "录音 ID、媒体类型或大小不符合回听要求。"
+        case .invalidMedia: L("录音 ID、媒体类型或大小不符合回听要求。")
         }
     }
 }
@@ -29,7 +30,7 @@ public protocol ConsoleService: Sendable {
 
 public extension ConsoleService {
     func importAudio(data: Data, filename: String) async throws -> AudioAsset {
-        throw ConsoleError.rejected("当前连接暂不支持文件导入")
+        throw ConsoleError.rejected(L("当前连接暂不支持文件导入"))
     }
 }
 
@@ -70,7 +71,7 @@ public actor DebugClient: ConsoleService {
     public func state() async throws -> BenchState { try await get("/api/state") }
     public func command(_ request: CommandRequest) async throws -> CommandResult {
         let response: CommandResult = try await post("/api/device/commands", body: JSONEncoder().encode(request))
-        guard response.ok else { throw ConsoleError.rejected(response.error ?? "设备未确认操作；请查询状态后再决定是否重试。") }
+        guard response.ok else { throw ConsoleError.rejected(response.error ?? L("设备未确认操作；请查询状态后再决定是否重试。")) }
         return response
     }
     public func pauseMonitor() async throws { _ = try await send("/api/serial/vad/pause", body: Data("{}".utf8)) }
@@ -90,7 +91,7 @@ public actor DebugClient: ConsoleService {
     }
     public func importAudio(data: Data, filename: String) async throws -> AudioAsset {
         guard !data.isEmpty, data.count <= 20 * 1024 * 1024, filename.lowercased().hasSuffix(".wav") else {
-            throw ConsoleError.rejected("请选择不超过 20 MiB 的 WAV 录音文件")
+            throw ConsoleError.rejected(L("请选择不超过 20 MiB 的 WAV 录音文件"))
         }
         if token == nil { _ = try await configure() }
         var parts = URLComponents(url: base.appendingPathComponent("api/assets/import"), resolvingAgainstBaseURL: false)!
@@ -128,10 +129,10 @@ public actor DebugClient: ConsoleService {
         return data
     }
     private func check(_ response: URLResponse, data: Data) throws {
-        guard let response = response as? HTTPURLResponse else { throw ConsoleError.http(0, "服务没有返回 HTTP 响应") }
+        guard let response = response as? HTTPURLResponse else { throw ConsoleError.http(0, L("服务没有返回 HTTP 响应")) }
         guard (200..<300).contains(response.statusCode) else {
             struct Detail: Decodable { let detail: String }
-            let detail = (try? JSONDecoder().decode(Detail.self, from: data).detail) ?? "本机服务请求失败"
+            let detail = (try? JSONDecoder().decode(Detail.self, from: data).detail) ?? L("本机服务请求失败")
             throw ConsoleError.http(response.statusCode, String(detail.prefix(400)))
         }
     }

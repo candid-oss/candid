@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// A sample coverage strip, not an invented waveform. Empty spans are gaps.
 struct RecordingSampleStrip: View {
@@ -38,7 +39,7 @@ struct RecordingSampleStrip: View {
             })
         }
         .frame(height: 44)
-        .accessibilityLabel(gaps.isEmpty ? "完整录音" : "录音有 \(gaps.count) 处缺口")
+        .accessibilityLabel(gaps.isEmpty ? L("完整录音") : L("录音有 %@ 处缺口", gaps.count))
         .accessibilityAdjustableAction { direction in
             seek(max(0, min(duration, position + (direction == .increment ? 5 : -5))))
         }

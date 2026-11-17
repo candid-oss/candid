@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 /// All methods run on one serial IO queue. Samples are PCM16 mono at the input
 /// device's fixed rate. Segment boundaries split buffers, never restart input.
@@ -55,7 +56,7 @@ final class SegmentedRecordingWriter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
-        let filename = (session.input == .systemAndMicrophone ? "系统与麦克风录音 " : "Mac 录音 ") + formatter.string(from: occurredAt) + " · 第\(savedSegments + 1)段.wav"
+        let filename = (session.input == .systemAndMicrophone ? L("系统与麦克风录音 ") : L("Mac 录音 ")) + formatter.string(from: occurredAt) + L(" · 第%@段.wav", savedSegments + 1)
         let segment = RecordingSegment(id: UUID(), recordingID: session.id, index: savedSegments,
                                        sampleStart: savedFrames, sampleRate: session.sampleRate,
                                        occurredAt: occurredAt, filename: filename, input: session.input)

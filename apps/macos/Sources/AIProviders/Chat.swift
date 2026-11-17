@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 public enum ChatRole: String, Codable, Sendable { case system, user, assistant }
 
@@ -130,21 +131,21 @@ enum Redactor {
 extension AIError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .roleUnassigned(let role): "还没有为「\(ModelRoleInfo.info(role)?.title ?? role)」选择模型。请在 设置 → 模型 → 角色 里选择。"
-        case .noUsableModel(let role): "「\(ModelRoleInfo.info(role)?.title ?? role)」没有可用的模型：所选来源已停用或缺少密钥。"
-        case .unknownProvider: "所选模型的来源已被删除，请重新选择模型。"
-        case .unknownModel(let ref): "来源里已没有模型 \(ref.modelID)，请重新测试来源或改选模型。"
-        case .providerDisabled: "所选模型的来源已停用。"
-        case .unsupportedAPI(let api): "暂不支持 \(api.rawValue) 接口。"
-        case .missingSecret: "这个来源需要密钥，请在 设置 → 模型 → 来源 里填写。"
-        case .budgetExceeded(let role): "「\(ModelRoleInfo.info(role)?.title ?? role)」今天的用量已达上限。"
+        case .roleUnassigned(let role): L("还没有为「%@」选择模型。请在 设置 → 模型 → 角色 里选择。", ModelRoleInfo.info(role)?.title ?? role)
+        case .noUsableModel(let role): L("「%@」没有可用的模型：所选来源已停用或缺少密钥。", ModelRoleInfo.info(role)?.title ?? role)
+        case .unknownProvider: L("所选模型的来源已被删除，请重新选择模型。")
+        case .unknownModel(let ref): L("来源里已没有模型 %@，请重新测试来源或改选模型。", ref.modelID)
+        case .providerDisabled: L("所选模型的来源已停用。")
+        case .unsupportedAPI(let api): L("暂不支持 %@ 接口。", api.rawValue)
+        case .missingSecret: L("这个来源需要密钥，请在 设置 → 模型 → 来源 里填写。")
+        case .budgetExceeded(let role): L("「%@」今天的用量已达上限。", ModelRoleInfo.info(role)?.title ?? role)
         case .http(let status, let message):
-            status == 401 || status == 403 ? "模型服务拒绝访问（\(status)），请检查密钥。"
-                : "模型服务返回 \(status)\(message.isEmpty ? "" : "：" + String(message.prefix(160)))"
-        case .network(let message): "连不上模型服务：\(message)"
-        case .timeout: "模型服务响应超时。"
-        case .cancelled: "已取消。"
-        case .decoding(let message): "模型服务返回的内容无法识别：\(message)"
+            status == 401 || status == 403 ? L("模型服务拒绝访问（%@），请检查密钥。", status)
+                : L("模型服务返回 %@%@", status, message.isEmpty ? "" : L("：") + String(message.prefix(160)))
+        case .network(let message): L("连不上模型服务：%@", message)
+        case .timeout: L("模型服务响应超时。")
+        case .cancelled: L("已取消。")
+        case .decoding(let message): L("模型服务返回的内容无法识别：%@", message)
         }
     }
 }

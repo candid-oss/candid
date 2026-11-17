@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 /// Something in the menu bar panel that needs the user's attention.
@@ -14,18 +15,18 @@ struct StatusAlert: Identifiable, Equatable {
 @MainActor enum StatusAlerts {
     static func current(session: DesktopSession, media: MediaWorkspaceStore) -> [StatusAlert] {
         var alerts: [StatusAlert] = []
-        if let error = session.error { alerts.append(.init(id: "error", symbol: "exclamationmark.triangle.fill", text: error, actions: [("知道了", .dismissError)])) }
-        if let error = media.error { alerts.append(.init(id: "media-error", symbol: "exclamationmark.triangle.fill", text: error, actions: [("知道了", .dismissError)])) }
+        if let error = session.error { alerts.append(.init(id: "error", symbol: "exclamationmark.triangle.fill", text: error, actions: [(L("知道了"), .dismissError)])) }
+        if let error = media.error { alerts.append(.init(id: "media-error", symbol: "exclamationmark.triangle.fill", text: error, actions: [(L("知道了"), .dismissError)])) }
         if let draft = media.draft {
             alerts.append(.init(id: "draft", symbol: draft.kind == "audio" ? "waveform" : "photo",
-                                text: draft.kind == "audio" ? "录音已就绪，等你保存" : "截图已就绪，等你保存",
-                                actions: [("保存", .saveDraft), ("丢弃", .discardDraft)]))
+                                text: draft.kind == "audio" ? L("录音已就绪，等你保存") : L("截图已就绪，等你保存"),
+                                actions: [(L("保存"), .saveDraft), (L("丢弃"), .discardDraft)]))
         }
         if !session.isDemo, session.screenshotsEnabled, !session.screenPermission {
-            alerts.append(.init(id: "screen", symbol: "rectangle.dashed.badge.record", text: "窗口截图需要屏幕录制授权", actions: [("授权", .grantScreen)]))
+            alerts.append(.init(id: "screen", symbol: "rectangle.dashed.badge.record", text: L("窗口截图需要屏幕录制授权"), actions: [(L("授权"), .grantScreen)]))
         }
         if !session.isDemo, session.textEnabled, !session.accessibilityPermission {
-            alerts.append(.init(id: "ax", symbol: "accessibility", text: "读取文字需要辅助功能授权", actions: [("授权", .grantAccessibility)]))
+            alerts.append(.init(id: "ax", symbol: "accessibility", text: L("读取文字需要辅助功能授权"), actions: [(L("授权"), .grantAccessibility)]))
         }
         return alerts
     }
@@ -45,7 +46,7 @@ struct MenuBarLabel: View {
                 Text(clock).monospacedDigit()
             }
         }
-        .accessibilityLabel(media.isRecording ? "Candid 正在录音" : session.isRecording ? "Candid 正在记录" : "Candid 已暂停")
+        .accessibilityLabel(media.isRecording ? L("Candid 正在录音") : session.isRecording ? L("Candid 正在记录") : L("Candid 已暂停"))
     }
 
     private func symbol(alerting: Bool) -> String { Self.symbol(session: session, media: media, alerting: alerting) }
@@ -77,10 +78,10 @@ struct MenuBarPanel: View {
             today
             HairlineDivider()
             HStack {
-                Button("打开 Candid") { openMain() }.buttonStyle(.borderless)
+                Button(L("打开 Candid")) { openMain() }.buttonStyle(.borderless)
                 Spacer()
-                SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help("设置")
-                Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.buttonStyle(.borderless).help("退出 Candid")
+                SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help(L("设置"))
+                Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.buttonStyle(.borderless).help(L("退出 Candid"))
             }
             .typography(.secondary)
         }
@@ -110,7 +111,7 @@ struct MenuBarPanel: View {
             RecordingOrb(level: media.recordingLevels.last ?? 0, quiet: media.microphoneQuiet).frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(media.microphoneQuiet ? "没有听到声音" : media.activeRecordingInput.label).typography(.body, .semibold)
+                    Text(media.microphoneQuiet ? L("没有听到声音") : media.activeRecordingInput.label).typography(.body, .semibold)
                     Spacer()
                     if let started = media.recordingStartedAt {
                         Text(started, style: .timer).typography(.secondary, .medium, digits: true).foregroundStyle(.secondary)
@@ -118,7 +119,7 @@ struct MenuBarPanel: View {
                 }
                 LiveWaveform(levels: media.recordingLevels, color: .red, quiet: media.microphoneQuiet).frame(height: 18)
                 if media.microphoneQuiet {
-                    Text("检查麦克风是否静音，或在系统设置的声音里选对输入设备。").typography(.caption).foregroundStyle(.secondary)
+                    Text(L("检查麦克风是否静音，或在系统设置的声音里选对输入设备。")).typography(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -129,9 +130,9 @@ struct MenuBarPanel: View {
     }
 
     private var statusLine: String {
-        if session.isDemo { return "合成样例" }
-        var parts = [session.isRecording ? "正在记录" : "已暂停"]
-        if let saved = session.lastSaved { parts.append("最近保存 " + saved.clockText) }
+        if session.isDemo { return L("合成样例") }
+        var parts = [session.isRecording ? L("正在记录") : L("已暂停")]
+        if let saved = session.lastSaved { parts.append(L("最近保存 ") + saved.clockText) }
         return parts.joined(separator: " · ")
     }
 
@@ -150,19 +151,19 @@ struct MenuBarPanel: View {
 
     private var controls: some View {
         HStack(spacing: 0) {
-            control(session.isRecording ? "pause.fill" : "record.circle", session.isRecording ? "暂停" : "记录",
+            control(session.isRecording ? "pause.fill" : "record.circle", session.isRecording ? L("暂停") : L("记录"),
                     tint: session.isRecording ? .red : .accentColor, disabled: session.isDemo) {
                 session.isRecording ? session.pauseRecording() : session.startRecording()
             }
-            control("camera", "截窗", disabled: !session.isRecording || !session.screenshotsEnabled || session.captureBusy || session.isDemo,
+            control("camera", L("截窗"), disabled: !session.isRecording || !session.screenshotsEnabled || session.captureBusy || session.isDemo,
                     action: session.captureNow)
-            control("viewfinder", "框选", disabled: !media.canCapture) { Task { await media.captureRegion() } }
+            control("viewfinder", L("框选"), disabled: !media.canCapture) { Task { await media.captureRegion() } }
             if media.isRecording {
-                control("stop.fill", "停止", tint: .red, disabled: media.recordingFinishing) { Task { await media.stopRecording() } }
+                control("stop.fill", L("停止"), tint: .red, disabled: media.recordingFinishing) { Task { await media.stopRecording() } }
             } else {
-                control("mic", "录音", disabled: !media.canCapture) { Task { await media.startRecording() } }
+                control("mic", L("录音"), disabled: !media.canCapture) { Task { await media.startRecording() } }
             }
-            control("bookmark", "标记", disabled: false, action: session.addMarker)
+            control("bookmark", L("标记"), disabled: false, action: session.addMarker)
         }
     }
 
@@ -186,7 +187,7 @@ struct MenuBarPanel: View {
         let recent = Array(session.timelineEvents.filter { $0.record.kind != .system && $0.record.kind != .gap }.prefix(3))
         if !recent.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("最近").typography(.caption, .semibold).foregroundStyle(.secondary)
+                Text(L("最近")).typography(.caption, .semibold).foregroundStyle(.secondary)
                 ForEach(recent) { event in
                     Button { openMain() } label: {
                         HStack(spacing: 9) {

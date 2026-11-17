@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// The AI page (agent-platform-v1 §4.2, mockup ④): 「今天」 on the left (300pt), the chat with Pi on the right. Narrower
 /// than 900pt the columns become a 「今天 / 对话」 switch. The fixed-processing settings open in place from 「设置」.
@@ -64,7 +65,7 @@ struct AIHomeView: View {
     private static let dateFormat: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "M月d日 EEEE"
+        f.dateFormat = L("M月d日 EEEE")
         return f
     }()
 
@@ -75,24 +76,24 @@ struct AIHomeView: View {
             Spacer(minLength: Space.xs)
             Group {
                 if !split {
-                    PillSwitcher(items: [(AIPageTab.today, "今天"), (AIPageTab.chat, "对话")],
+                    PillSwitcher(items: [(AIPageTab.today, L("今天")), (AIPageTab.chat, L("对话"))],
                                  selection: Binding(get: { model.tab }, set: { model.show($0) }))
                         .overlay(alignment: .topTrailing) {
                             if model.chatUnread || (model.turnRunning && model.tab == .today) {
                                 Circle().fill(Palette.accent).frame(width: 6, height: 6).offset(x: -2, y: 2)
-                                    .accessibilityLabel("对话有新内容")
+                                    .accessibilityLabel(L("对话有新内容"))
                             }
                         }
                 }
-                ChipButton(title: "技能" + (model.skills.isEmpty ? "" : " · \(model.skills.count)"), systemImage: "wand.and.stars", emphasized: showingSkills) {
+                ChipButton(title: L("技能") + (model.skills.isEmpty ? "" : " · \(model.skills.count)"), systemImage: "wand.and.stars", emphasized: showingSkills) {
                     withAnimation(Motion.spring) { showingSkills.toggle(); if showingSkills { showingHistory = false } }
                 }
-                ChipButton(title: "历史对话" + (model.history.isEmpty ? "" : " · \(model.history.count)"), systemImage: "clock.arrow.circlepath", emphasized: showingHistory) {
+                ChipButton(title: L("历史对话") + (model.history.isEmpty ? "" : " · \(model.history.count)"), systemImage: "clock.arrow.circlepath", emphasized: showingHistory) {
                     withAnimation(Motion.spring) { showingHistory.toggle(); if showingHistory { showingSkills = false } }
                 }
-                ChipButton(title: "新对话", systemImage: "plus") { Task { await model.newConversation(); model.show(.chat) } }
+                ChipButton(title: L("新对话"), systemImage: "plus") { Task { await model.newConversation(); model.show(.chat) } }
             }
-            ChromeButton(systemImage: "slider.horizontal.3", help: "AI 功能设置", active: false) {
+            ChromeButton(systemImage: "slider.horizontal.3", help: L("AI 功能设置"), active: false) {
                 NotificationCenter.default.post(name: AIFunctionSettingsView.open, object: nil)
             }
         }

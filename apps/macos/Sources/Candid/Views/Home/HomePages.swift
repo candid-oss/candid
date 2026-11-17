@@ -1,4 +1,5 @@
 import ConsoleCore
+import CandidLocalization
 import SwiftUI
 
 /// Top navigation. AI carries its own gradient so it reads as the place
@@ -11,8 +12,8 @@ struct HomeNav: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            tab(.timeline) { Text("时间线") }
-            tab(.library) { Text("资料") }
+            tab(.timeline) { Text(L("时间线")) }
+            tab(.library) { Text(L("资料")) }
             tab(.ai) {
                 HStack(spacing: 4) {
                     Image(systemName: "sparkles").typography(.caption, .bold)
@@ -20,7 +21,7 @@ struct HomeNav: View {
                 }
                 .foregroundStyle(Self.aiGradient)
             }
-            tab(.connections) { Text("连接") }
+            tab(.connections) { Text(L("连接")) }
         }
     }
 

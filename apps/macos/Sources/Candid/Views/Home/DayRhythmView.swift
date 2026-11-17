@@ -1,4 +1,5 @@
 import SwiftUI
+import CandidLocalization
 
 /// The day as a 24-hour ring: empty night is information too. Hovering an app
 /// in the ring or the list isolates it; the hand follows the playhead.
@@ -78,7 +79,7 @@ struct DayRhythmView: View {
             } else {
                 Text(playhead.clockText).typography(.display, digits: true)
                     .contentTransition(.numericText(value: playhead.timeIntervalSince1970))
-                Text(scene.activity(at: playhead)?.appName ?? (scene.gap(at: playhead) != nil ? "暂停" : " "))
+                Text(scene.activity(at: playhead)?.appName ?? (scene.gap(at: playhead) != nil ? L("暂停") : " "))
                     .typography(.secondary).foregroundStyle(.secondary)
             }
         }
@@ -89,7 +90,7 @@ struct DayRhythmView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(scene.recordedSeconds.spokenDuration).typography(.title)
             if let longest = scene.longestEpisode {
-                Text("最长一段是 \(longest.appName)，\(longest.start.clockText) 起 \(longest.duration.spokenDuration)。")
+                Text(L("最长一段是 %@，%@ 起 %@。", longest.appName, longest.start.clockText, longest.duration.spokenDuration))
                     .typography(.body).foregroundStyle(.secondary).padding(.top, 4).padding(.bottom, 18)
             }
             ForEach(totals) { total in

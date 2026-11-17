@@ -1,4 +1,5 @@
 import AppKit
+import CandidLocalization
 import SwiftUI
 
 @MainActor final class FloatingControl {
@@ -24,9 +25,9 @@ private struct FloatingControlsView: View {
     var body: some View {
         HStack(spacing: Space.xs) {
             CaptureControls(session: session, media: media) { NotificationCenter.default.post(name: .candidQuickAction, object: "settings") }
-            ChromeButton(systemImage: "square.and.pencil", help: "快速记一笔") { NotificationCenter.default.post(name: .candidQuickAction, object: QuickAction.note) }
-            ChromeButton(systemImage: "magnifyingglass", help: "搜索") { NotificationCenter.default.post(name: .candidQuickAction, object: QuickAction.search) }
-            ChromeButton(systemImage: "xmark", help: "隐藏悬浮控件") { UserDefaults.standard.set(false, forKey: "candid.floating") }
+            ChromeButton(systemImage: "square.and.pencil", help: L("快速记一笔")) { NotificationCenter.default.post(name: .candidQuickAction, object: QuickAction.note) }
+            ChromeButton(systemImage: "magnifyingglass", help: L("搜索")) { NotificationCenter.default.post(name: .candidQuickAction, object: QuickAction.search) }
+            ChromeButton(systemImage: "xmark", help: L("隐藏悬浮控件")) { UserDefaults.standard.set(false, forKey: "candid.floating") }
         }.padding(Space.xs).visualStyleFromSettings()
     }
 }

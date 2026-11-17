@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 import Observation
 import CandidClient
 
@@ -41,11 +42,11 @@ struct AutomationRun: Decodable, Identifiable, Sendable {
         return result
     }
     var status: String {
-        if unavailable == true { return "来源已不可用" }
-        return ["queued": "排队中", "running": "运行中", "done": "完成", "failed": "失败", "cancelled": "已取消"][state] ?? state
+        if unavailable == true { return L("来源已不可用") }
+        return ["queued": L("排队中"), "running": L("运行中"), "done": L("完成"), "failed": L("失败"), "cancelled": L("已取消")][state] ?? state
     }
     var problem: String? {
-        error.map { ["offline": "模型离线", "interrupted": "上次运行中断，可重试", "configuration_changed": "设置已改变，请重新运行", "source_or_configuration_changed": "来源或设置已改变", "user_cancelled": "已取消", "model_budget": "本次模型额度已用完"][ $0 ] ?? $0 }
+        error.map { ["offline": L("模型离线"), "interrupted": L("上次运行中断，可重试"), "configuration_changed": L("设置已改变，请重新运行"), "source_or_configuration_changed": L("来源或设置已改变"), "user_cancelled": L("已取消"), "model_budget": L("本次模型额度已用完")][ $0 ] ?? $0 }
     }
 }
 struct AutomationSource: Decodable, Identifiable, Sendable {
@@ -117,7 +118,7 @@ func automationPost<T: Decodable>(_ channel: LocalChannel, _ body: [String: Any]
             await refresh()
         } catch { self.error = AIPageModel.explain(error) }
     }
-    func title(_ id: String) -> String { catalog.first { $0.id == id }?.title ?? "技能" }
+    func title(_ id: String) -> String { catalog.first { $0.id == id }?.title ?? L("技能") }
 }
 
 extension Notification.Name {

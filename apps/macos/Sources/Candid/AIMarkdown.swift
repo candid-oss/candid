@@ -1,4 +1,5 @@
 import Foundation
+import CandidLocalization
 
 // Markdown in Pi's answers: headings, paragraphs, bullet and numbered lists, quotes, code blocks, rules and tables as
 // blocks; bold, italic, inline code and links inline (Foundation's inline parser). Record citations become links with
@@ -85,9 +86,9 @@ enum AIMarkdown {
     // MARK: Citations
 
     private static let uuid = try! NSRegularExpression(pattern: "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b")
-    private static let bracketed = try! NSRegularExpression(pattern: "\\[\\[\\s*(?:ev(?:ent)?[:：]\\s*)?([^\\]\\s]+)\\s*\\]\\]")
-    private static let linked = try! NSRegularExpression(pattern: "\\[([^\\]]*)\\]\\((?:record|event)[:：]([^)\\s]+)\\)")
-    private static let labelled = try! NSRegularExpression(pattern: "(?:event_id|事件\\s*ID|id)\\s*[:：=]\\s*`?(" + "[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}" + ")`?", options: [.caseInsensitive])
+    private static let bracketed = try! NSRegularExpression(pattern: L("\\[\\[\\s*(?:ev(?:ent)?[:：]\\s*)?([^\\]\\s]+)\\s*\\]\\]"))
+    private static let linked = try! NSRegularExpression(pattern: L("\\[([^\\]]*)\\]\\((?:record|event)[:：]([^)\\s]+)\\)"))
+    private static let labelled = try! NSRegularExpression(pattern: L("(?:event_id|事件\\s*ID|id)\\s*[:：=]\\s*`?(") + "[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}" + ")`?", options: [.caseInsensitive])
 
     /// Rewrites record citations (`[[id]]`, `[x](record:id)`, `event_id: id` and bare ids) into chip links, outside code.
     static func citations(_ text: String, label: (String) -> String) -> String {

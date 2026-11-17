@@ -1,4 +1,5 @@
 import AIProviders
+import CandidLocalization
 import CandidShared
 import SwiftUI
 
@@ -15,7 +16,7 @@ struct ModelSettingsView: View {
     }
 
     var body: some View {
-        SettingsPage(title: "模型", accessory: AnyView(PillSwitcher(items: [("sources", "来源"), ("roles", "角色"), ("usage", "用量")], selection: $tab))) {
+        SettingsPage(title: L("模型"), accessory: AnyView(PillSwitcher(items: [("sources", L("来源")), ("roles", L("角色")), ("usage", L("用量"))], selection: $tab))) {
             if let error = model.error { InlineMessage(kind: .error, text: error) }
             Group {
                 switch tab {
@@ -56,7 +57,7 @@ struct ModelSourcesView: View {
             ModelSourceSummary(model: model)
             if model.config.providers.isEmpty && editing != "new" {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("还没有模型来源").typography(.section)
+                    Text(L("还没有模型来源")).typography(.section)
 
                 }.padding(.vertical, 18)
             }
@@ -69,8 +70,8 @@ struct ModelSourcesView: View {
                 Button { newDraft = ProviderPreset.all[0].makeProvider(); editing = "new" } label: {
                     VStack(spacing: Space.s) {
                         Image(systemName: "plus").typography(.section)
-                        Text("添加来源").typography(.body, .medium)
-                        Text("本机、自建或云端").typography(.caption).foregroundStyle(.secondary)
+                        Text(L("添加来源")).typography(.body, .medium)
+                        Text(L("本机、自建或云端")).typography(.caption).foregroundStyle(.secondary)
                     }
                     .frame(maxWidth: .infinity, minHeight: 220)
                     .background(Surface.wash.color, in: RoundedRectangle(cornerRadius: Radius.large))
@@ -100,8 +101,8 @@ private struct NetworkProxyRow: View {
     @AppStorage(NetworkProxy.defaultsKey) private var mode = NetworkProxy.system.rawValue
 
     var body: some View {
-        SettingRow(title: "网络") {
-            CapsuleChoice(options: [(NetworkProxy.system.rawValue, "系统代理"), (NetworkProxy.direct.rawValue, "不走代理")], selection: $mode)
+        SettingRow(title: L("网络")) {
+            CapsuleChoice(options: [(NetworkProxy.system.rawValue, L("系统代理")), (NetworkProxy.direct.rawValue, L("不走代理"))], selection: $mode)
         }
 
     }
@@ -135,34 +136,34 @@ private struct ProviderRow: View {
             }
             HStack(spacing: Space.xs) {
                 Circle().fill(dot).frame(width: 7, height: 7)
-                if !provider.enabled { Text("已停用").typography(.secondary).foregroundStyle(.secondary) }
+                if !provider.enabled { Text(L("已停用")).typography(.secondary).foregroundStyle(.secondary) }
                 else {
                     switch state {
-                    case .idle: Text("尚未测试").typography(.secondary).foregroundStyle(.secondary)
+                    case .idle: Text(L("尚未测试")).typography(.secondary).foregroundStyle(.secondary)
                     default: status
                     }
                 }
                 Spacer()
-                Text("\(count) 个模型").typography(.secondary).foregroundStyle(.secondary)
+                Text(L("%@ 个模型", count)).typography(.secondary).foregroundStyle(.secondary)
             }
             HStack(spacing: Space.xs) {
                 let texts = model.config.models(of: provider.providerID).filter { $0.modalities.contains("text") }.count
-                if texts > 0 { Tag(text: "文本 \(texts)") }
-                if visionCount > 0 { Tag(text: "看图 \(visionCount)") }
+                if texts > 0 { Tag(text: L("文本 %@", texts)) }
+                if visionCount > 0 { Tag(text: L("看图 %@", visionCount)) }
                 let tools = model.config.models(of: provider.providerID).filter { $0.supportsTools == true }.count
-                if tools > 0 { Tag(text: "工具 \(tools)") }
+                if tools > 0 { Tag(text: L("工具 %@", tools)) }
             }
             .frame(minHeight: ControlHeight.chip, alignment: .leading)
             ActivityBars(values: model.dailyCalls(provider.providerID))
             HStack(alignment: .center, spacing: Space.xs) {
                 let roles = model.config.roles.filter { $0.model?.providerID == provider.providerID }
                     .map { ModelRoleInfo.info($0.role)?.title ?? $0.role }
-                Text(roles.isEmpty ? "没有角色在用" : "用于 " + roles.joined(separator: "、"))
+                Text(roles.isEmpty ? L("没有角色在用") : L("用于 ") + roles.joined(separator: L("、")))
                     .typography(.caption).foregroundStyle(.secondary).lineLimit(2)
                 Spacer(minLength: 0)
-                IconChipButton(title: "测试 " + provider.name, symbol: "arrow.clockwise") { model.test(provider) }.disabled(state == .testing)
-                IconChipButton(title: "编辑 " + provider.name, symbol: open ? "chevron.up" : "pencil", action: toggle)
-                Toggle("启用来源", isOn: Binding(get: { provider.enabled }, set: { model.setEnabled(provider, $0) }))
+                IconChipButton(title: L("测试 ") + provider.name, symbol: "arrow.clockwise") { model.test(provider) }.disabled(state == .testing)
+                IconChipButton(title: L("编辑 ") + provider.name, symbol: open ? "chevron.up" : "pencil", action: toggle)
+                Toggle(L("启用来源"), isOn: Binding(get: { provider.enabled }, set: { model.setEnabled(provider, $0) }))
                     .labelsHidden().toggleStyle(.switch).controlSize(.small)
             }
         }
@@ -180,7 +181,7 @@ private struct ProviderRow: View {
         switch state {
         case .idle: EmptyView()
         case .testing: ProgressView().controlSize(.small)
-        case .ok(let ms, _): Text("在线 · \(ms) ms").typography(.secondary, digits: true).foregroundStyle(.secondary)
+        case .ok(let ms, _): Text(L("在线 · %@ ms", ms)).typography(.secondary, digits: true).foregroundStyle(.secondary)
         case .failed(let message): Text(message).typography(.secondary).foregroundStyle(.red).lineLimit(1).frame(maxWidth: 260, alignment: .trailing)
         }
     }
@@ -214,42 +215,42 @@ private struct ProviderForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             if isNew {
-                Text("添加模型来源").typography(.section)
+                Text(L("添加模型来源")).typography(.section)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 168), spacing: 8)], alignment: .leading, spacing: 8) {
                     ForEach(ProviderPreset.all) { p in PresetTile(preset: p, selected: p.id == preset) { applyPreset(p) } }
                 }
             }
             HStack(alignment: .top, spacing: 14) {
-                QuietField(title: "名称", text: $provider.name)
-                QuietField(title: "地址", text: $provider.baseURL, placeholder: "http://localhost:1234/v1", mono: true)
+                QuietField(title: L("名称"), text: $provider.name)
+                QuietField(title: L("地址"), text: $provider.baseURL, placeholder: "http://localhost:1234/v1", mono: true)
             }
             HStack(alignment: .top, spacing: 22) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("接口类型").typography(.secondary, .medium).foregroundStyle(.secondary)
-                    CapsuleChoice(options: [(ProviderAPI.openaiChat, "OpenAI 兼容"), (.anthropicMessages, "Anthropic"), (.ollama, "Ollama")],
+                    Text(L("接口类型")).typography(.secondary, .medium).foregroundStyle(.secondary)
+                    CapsuleChoice(options: [(ProviderAPI.openaiChat, L("OpenAI 兼容")), (.anthropicMessages, "Anthropic"), (.ollama, "Ollama")],
                                   selection: $provider.api)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("内容发往").typography(.secondary, .medium).foregroundStyle(.secondary)
+                    Text(L("内容发往")).typography(.secondary, .medium).foregroundStyle(.secondary)
                     CapsuleChoice(options: Destination.allCases.map { ($0, $0.label) }, selection: $provider.destination)
                 }
             }
             if provider.destination == .onDevice && !isLocalHost {
-                Text("地址不是本机；如果它在另一台机器上，请改选「自建」。").typography(.secondary).foregroundStyle(.orange)
+                Text(L("地址不是本机；如果它在另一台机器上，请改选「自建」。")).typography(.secondary).foregroundStyle(.orange)
             }
-            if provider.destination == .cloud { Text("选择云端后，用到这个来源的内容会发往第三方服务。").typography(.secondary).foregroundStyle(.secondary) }
-            QuietField(title: provider.destination == .onDevice ? "API 令牌（服务开启鉴权时填写）" : "API 密钥", text: $key,
-                       placeholder: hasSavedKey ? "已保存在钥匙串；留空则保持不变" : "仅保存在钥匙串", secure: true)
+            if provider.destination == .cloud { Text(L("选择云端后，用到这个来源的内容会发往第三方服务。")).typography(.secondary).foregroundStyle(.secondary) }
+            QuietField(title: provider.destination == .onDevice ? L("API 令牌（服务开启鉴权时填写）") : L("API 密钥"), text: $key,
+                       placeholder: hasSavedKey ? L("已保存在钥匙串；留空则保持不变") : L("仅保存在钥匙串"), secure: true)
             if let trial {
                 HStack(spacing: 6) {
                     Image(systemName: trial.reachable ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                    Text(trial.reachable ? "已连接 · \(trial.latencyMs ?? 0) ms · 读到 \(trial.models.count) 个模型，\(trial.models.filter { $0.supportsImages == true }.count) 个能看图" : (trial.error ?? "失败"))
+                    Text(trial.reachable ? L("已连接 · %@ ms · 读到 %@ 个模型，%@ 个能看图", trial.latencyMs ?? 0, trial.models.count, trial.models.filter { $0.supportsImages == true }.count) : (trial.error ?? L("失败")))
                 }
                 .typography(.secondary).foregroundStyle(trial.reachable ? Color.green : Color.red)
                 .transition(.opacity)
             }
             if isNew, let trial, trial.reachable {
-                Text("确认模型").typography(.headline)
+                Text(L("确认模型")).typography(.headline)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: Space.xs)], alignment: .leading) {
                     ForEach(trial.models) { item in
                         ToggleChip(title: item.displayName ?? item.modelID, isOn: Binding(get: { selectedModels.contains(item.modelID) }, set: { on in
@@ -257,18 +258,18 @@ private struct ProviderForm: View {
                         }))
                     }
                 }
-                ToggleChip(title: "为未配置的角色按能力分配模型", isOn: $assignSuggested)
+                ToggleChip(title: L("为未配置的角色按能力分配模型"), isOn: $assignSuggested)
             }
             HStack(spacing: 8) {
                 if !isNew {
-                    ConfirmButton(title: "删除…", confirmTitle: "删除来源和密钥") { model.delete(provider); close() }
-                        .help("使用它的角色会变成未选择；已记录的调用保留。")
+                    ConfirmButton(title: L("删除…"), confirmTitle: L("删除来源和密钥")) { model.delete(provider); close() }
+                        .help(L("使用它的角色会变成未选择；已记录的调用保留。"))
                 }
                 Spacer()
                 if testing { ProgressView().controlSize(.small) }
-                QuietButton(title: "测试连接") { runTrial() }.disabled(testing)
-                QuietButton(title: "取消", action: close)
-                PrimaryButton(title: isNew ? "添加" : "保存", isDefault: true) { commit() }
+                QuietButton(title: L("测试连接")) { runTrial() }.disabled(testing)
+                QuietButton(title: L("取消"), action: close)
+                PrimaryButton(title: isNew ? L("添加") : L("保存"), isDefault: true) { commit() }
                     .disabled(provider.name.isEmpty || provider.baseURL.count < 8 || (isNew && trial?.reachable != true))
             }
         }

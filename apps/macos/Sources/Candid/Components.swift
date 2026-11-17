@@ -1,4 +1,5 @@
 import CryptoKit
+import CandidLocalization
 import Foundation
 
 /// Runtimes Candid uses but does not ship inside the App: Node and Pi for the attached agent (and, separately, the
@@ -67,8 +68,8 @@ enum ComponentError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .noNode: "需要 Node 22.19 或更新版本，请先安装 Node"
-        case .checksum: "下载的文件校验不通过，已删除"
+        case .noNode: L("需要 Node 22.19 或更新版本，请先安装 Node")
+        case .checksum: L("下载的文件校验不通过，已删除")
         case .failed(let detail): detail
         }
     }
@@ -149,21 +150,21 @@ struct NodeRuntime: Sendable, Equatable {
         let staging = Components.root.appendingPathComponent(".staging-node-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: staging) }
-        progress("正在下载 Node \(pinned)…")
+        progress(L("正在下载 Node %@…", pinned))
         let (file, response) = try await URLSession.shared.download(from: URL(string: "https://nodejs.org/dist/v\(pinned)/\(name).tar.xz")!)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ComponentError.failed("下载 Node 失败") }
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw ComponentError.failed(L("下载 Node 失败")) }
         let tarball = staging.appendingPathComponent("node.tar.xz")
         try fm.moveItem(at: file, to: tarball)
-        progress("正在校验…")
+        progress(L("正在校验…"))
         let digest = SHA256.hash(data: try Data(contentsOf: tarball, options: .mappedIfSafe)).map { String(format: "%02x", $0) }.joined()
         guard digest == sha256[arch] else { throw ComponentError.checksum }
-        progress("正在解压…")
+        progress(L("正在解压…"))
         let result = try await Components.run(URL(fileURLWithPath: "/usr/bin/tar"), ["-xJf", tarball.path, "-C", staging.path])
-        guard result.status == 0 else { throw ComponentError.failed("解压 Node 失败：\(result.output.prefix(300))") }
+        guard result.status == 0 else { throw ComponentError.failed(L("解压 Node 失败：%@", result.output.prefix(300))) }
         let extracted = staging.appendingPathComponent(name, isDirectory: true)
         if fm.fileExists(atPath: managedDirectory.path) { try fm.removeItem(at: managedDirectory) }
         try fm.moveItem(at: extracted, to: managedDirectory)
-        guard let v = version(of: managedNode) else { throw ComponentError.failed("Node 安装后无法运行") }
+        guard let v = version(of: managedNode) else { throw ComponentError.failed(L("Node 安装后无法运行")) }
         return NodeRuntime(url: managedNode, version: v, origin: .managed)
     }
 }
@@ -218,20 +219,20 @@ enum PiComponent {
     /// Installs the pinned Pi and the extension into the managed folder with `npm ci`, without install scripts.
     static func installManaged(node: NodeRuntime, progress: @escaping @Sendable (String) -> Void) async throws {
         let fm = FileManager.default
-        guard let npm = node.npmCLI else { throw ComponentError.failed("找不到与 Node \(node.version) 配套的 npm") }
-        guard let pinned else { throw ComponentError.failed("App 里缺少 Pi 的版本清单") }
+        guard let npm = node.npmCLI else { throw ComponentError.failed(L("找不到与 Node %@ 配套的 npm", node.version)) }
+        guard let pinned else { throw ComponentError.failed(L("App 里缺少 Pi 的版本清单")) }
         let staging = Components.root.appendingPathComponent(".staging-pi-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: Components.root, withIntermediateDirectories: true)
         try fm.copyItem(at: skeleton, to: staging)
         defer { try? fm.removeItem(at: staging) }
-        progress("正在安装 Pi \(pinned)…")
+        progress(L("正在安装 Pi %@…", pinned))
         let home = Components.root.appendingPathComponent(".npm-home", isDirectory: true)
         try fm.createDirectory(at: home, withIntermediateDirectories: true)
         let result = try await Components.run(node.url, [npm.path, "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund",
                                                          "--no-update-notifier", "--loglevel=error", "--cache", Components.root.appendingPathComponent(".npm-cache").path],
                                               directory: staging,
                                               environment: ["PATH": node.url.deletingLastPathComponent().path + ":/usr/bin:/bin", "HOME": home.path])
-        guard result.status == 0 else { throw ComponentError.failed("npm 安装失败：\(result.output.suffix(400))") }
+        guard result.status == 0 else { throw ComponentError.failed(L("npm 安装失败：%@", result.output.suffix(400))) }
         // Only what runs: no shims, no optional native helpers, no SDKs for providers Candid never uses (the extension
         // is Pi's only provider, through the core).
         let modules = staging.appendingPathComponent("node_modules")
@@ -239,7 +240,7 @@ enum PiComponent {
                      "google-auth-library", "gaxios", "gcp-metadata", "google-logging-utils", "protobufjs", "@protobufjs"] {
             try? fm.removeItem(at: modules.appendingPathComponent(item))
         }
-        guard installedVersion(in: staging) == pinned else { throw ComponentError.failed("安装的 Pi 不是固定版本 \(pinned)") }
+        guard installedVersion(in: staging) == pinned else { throw ComponentError.failed(L("安装的 Pi 不是固定版本 %@", pinned)) }
         if fm.fileExists(atPath: managedHome.path) { try fm.removeItem(at: managedHome) }
         try fm.moveItem(at: staging, to: managedHome)
     }
