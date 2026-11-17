@@ -52,6 +52,8 @@ mkdir -p "$STAGED_APP/Contents/Helpers"
 /usr/bin/lipo -create -output "$STAGED_APP/Contents/Helpers/candid" "${CORE_SLICES[@]}"
 # The attached Pi agent (agent-platform-v1 §4.1): only the extension skeleton (lockfile, extension, prompt, skills).
 # Node and Pi are not bundled; the user installs them from Settings → 组件 (see Sources/Candid/Components.swift).
+# License and third-party notices, shown in Settings → 关于.
+cp "$ROOT_DIR/../../LICENSE" "$ROOT_DIR/../../THIRD_PARTY_LICENSES.txt" "$STAGED_APP/Contents/Resources/"
 PI_SKELETON="$STAGED_APP/Contents/Resources/Pi"
 EXTENSION_DIR="$ROOT_DIR/../../agents/pi-extension"
 rm -rf "$PI_SKELETON" && mkdir -p "$PI_SKELETON"

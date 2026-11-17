@@ -1,0 +1,45 @@
+name: Release
+
+# Push a tag like v0.1.0 to build a draft release. Builds are Apple Silicon only and are NOT signed with a
+# Developer ID or notarized: they are signed with a throwaway local certificate. Users open them via
+# System Settings → Privacy & Security → Open Anyway and grant permissions again after each update.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: Check the tag matches the app version
+        run: |
+          version="$(sed -n 's#.*<key>CFBundleShortVersionString</key><string>\([^<]*\)</string>.*#\1#p' apps/macos/script/build_and_run.sh | head -1)"
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "Tag $GITHUB_REF_NAME does not match app version $version"; exit 1; }
+      - name: Build the app
+        run: apps/macos/script/build_and_run.sh --build-only
+      - name: Package
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          mkdir -p out dmg
+          cp -R apps/macos/dist/Candid.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Candid $tag" -srcfolder dmg -ov -format UDZO "out/Candid-$tag-arm64.dmg"
+          tar -C apps/macos/dist/Candid.app/Contents/Helpers -czf "out/candid-cli-$tag-macos-universal.tar.gz" candid
+          (cd out && shasum -a 256 * > SHA256SUMS.txt)
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/* --draft --title "Candid $GITHUB_REF_NAME" --notes "Unsigned build for Apple Silicon (macOS 14+). See README for installation and the Components page for the optional agent runtime and voice service."

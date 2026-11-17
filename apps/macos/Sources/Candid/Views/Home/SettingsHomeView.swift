@@ -20,6 +20,7 @@ struct SettingsHomeView: View {
         ]
         if deviceSettings != nil { items.append(("console", "设备", "waveform")) }
         items.append(("diagnostics", "诊断", "stethoscope"))
+        items.append(("about", "关于", "info.circle"))
         return items.map { (id: $0.0, title: $0.1, symbol: $0.2) }
     }
 
@@ -59,6 +60,7 @@ struct SettingsHomeView: View {
                 else if current == "models" { ModelSettingsView() }
                 else if current == "ai-functions" { AIFunctionSettingsView() }
                 else if current == "components" { ComponentsSettingsView() }
+                else if current == "about" { AboutSettingsView() }
                 else if current == "people" { SettingsPage(title: "人物") { VoiceLibraryView() } }
                 else { DesktopSettingsView(session: session, deviceSettings: deviceSettings, section: current) }
             }

@@ -207,10 +207,8 @@ private struct DesktopRootView: View {
     private func updateLabel() {
         withObservationTracking {
             let alerting = !StatusAlerts.current(session: session, media: media).isEmpty
-            let symbol = MenuBarLabel.symbol(session: session, media: media, alerting: alerting)
-            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Candid")
-            image?.isTemplate = true
-            item.button?.image = image
+            let state = CandidMark.state(recordingScreen: session.isRecording, recordingAudio: media.isRecording, alerting: alerting)
+            item.button?.image = CandidMark.menuBarImage(state)
             item.button?.title = media.recordingClock.map { " " + $0 } ?? ""
             item.button?.setAccessibilityLabel(media.isRecording ? "Candid 正在录音" : session.isRecording ? "Candid 正在记录" : "Candid 已暂停")
         } onChange: { [weak self] in

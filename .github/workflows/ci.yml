@@ -69,7 +69,7 @@ jobs:
         run: |
           uv venv --python 3.12 .venv-asr-mlx
           uv pip sync --python .venv-asr-mlx/bin/python services/voice/asr/requirements-speaker.lock.txt
-          uv pip install --python .venv-asr-mlx/bin/python pytest
+          uv pip install --python .venv-asr-mlx/bin/python pytest httpx
           .venv-asr-mlx/bin/python -m pytest -q services/voice/tests
 
   secrets:

@@ -20,7 +20,7 @@ TEST_LOG="$(mktemp -t candid-swift-tests)"
 trap 'rm -f "$TEST_LOG"' EXIT
 # A stuck test (or a child process holding the output pipe) must fail the run, never hang it.
 TIMEOUT="${CANDID_TEST_TIMEOUT:-1500}"
-( swift test --package-path "$ROOT_DIR" "${FLAGS[@]}" "$@" 2>&1 | tee "$TEST_LOG" ) &
+( swift test --package-path "$ROOT_DIR" ${FLAGS[@]+"${FLAGS[@]}"} "$@" 2>&1 | tee "$TEST_LOG" ) &
 RUN_PID=$!
 ( sleep "$TIMEOUT"; echo "Swift tests exceeded ${TIMEOUT}s; stopping them." >&2; pkill -TERM -P "$RUN_PID" ) &
 WATCH_PID=$!
