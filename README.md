@@ -101,18 +101,6 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the gro
 | macOS app | `apps/macos/script/test.sh` |
 | Voice service | `.venv-asr-mlx/bin/python -m pytest -q services/voice/tests` |
 
-## Coming from Personavia
-
-If you ran the earlier private builds (Personavia / Personal AI), quit them and copy your library into Candid's folder. The original is only read:
-
-```bash
-python3 scripts/migrate-from-personavia.py --dry-run
-```
-
-```bash
-python3 scripts/migrate-from-personavia.py
-```
-
 ## License
 
 Candid is licensed under the [Apache License 2.0](LICENSE). Third-party notices are in [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt).

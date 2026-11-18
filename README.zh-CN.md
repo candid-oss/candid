@@ -101,18 +101,6 @@ Candid 的核心承诺只有一句：**没有你的知情，就不记录、不�
 | Mac App | `apps/macos/script/test.sh` |
 | 语音服务 | `.venv-asr-mlx/bin/python -m pytest -q services/voice/tests` |
 
-## 从 Personavia 迁移
-
-如果用过早期的私有版本（Personavia / Personal AI），先退出旧 App，再把资料复制到 Candid 的目录。脚本只读取原资料：
-
-```bash
-python3 scripts/migrate-from-personavia.py --dry-run
-```
-
-```bash
-python3 scripts/migrate-from-personavia.py
-```
-
 ## 许可证
 
 Candid 采用 [Apache License 2.0](LICENSE)。第三方声明见 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)。
