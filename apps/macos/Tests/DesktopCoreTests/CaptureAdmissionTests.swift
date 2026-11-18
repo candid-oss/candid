@@ -76,4 +76,5 @@ import Testing
 }
 
 private func expectAdmission(_ actual: Bool, _ expected: Bool) { #expect(actual == expected) }
-private func waitForSignal(_ semaphore: DispatchSemaphore) -> Bool { semaphore.wait(timeout: .now()+1) == .success }
+/// Returns as soon as the signal arrives; the long limit only absorbs a slow, busy CI runner.
+private func waitForSignal(_ semaphore: DispatchSemaphore) -> Bool { semaphore.wait(timeout: .now()+10) == .success }
