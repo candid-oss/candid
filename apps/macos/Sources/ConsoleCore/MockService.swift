@@ -8,9 +8,17 @@ public actor MockService: ConsoleService {
     private var current: BenchState
     private var started: Date?
     public init() {
-        let url = Bundle.module.url(forResource: "MockState", withExtension: "json")!
+        let url = Self.resources.url(forResource: "MockState", withExtension: "json")!
         current = try! JSONDecoder().decode(BenchState.self, from: Data(contentsOf: url))
     }
+    /// The installed app keeps this target's resource bundle in Contents/Resources, where SwiftPM's generated
+    /// `Bundle.module` never looks (it checks the app root, then the build machine's absolute path, and traps).
+    /// Tests and `swift run` have no such copy and fall back to `Bundle.module`.
+    static let resources: Bundle = {
+        if let url = Bundle.main.resourceURL?.appendingPathComponent("Candid_ConsoleCore.bundle"),
+           let bundle = Bundle(url: url) { return bundle }
+        return Bundle.module
+    }()
     public func configure() async throws -> ServiceConfig {
         try JSONDecoder().decode(ServiceConfig.self, from: Data(#"{"session_token":"mock-only","protocol_version":1,"schema_version":1,"max_record_seconds":15}"#.utf8))
     }
