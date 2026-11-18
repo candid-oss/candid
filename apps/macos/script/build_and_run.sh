@@ -116,7 +116,25 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST
-python3 "$ROOT_DIR/script/local_signing.py" "$STAGED_APP"
+if [[ "${CANDID_SIGNING:-local}" == "adhoc" ]]; then
+  # Release builds: ad-hoc signatures. A CI runner cannot use the local keychain identity without a prompt, and a
+  # per-run certificate would give users no more stable permissions than ad-hoc does.
+  for nested in "$STAGED_APP"/Contents/PlugIns/*.appex; do
+    [[ -d "$nested" ]] || continue
+    nested_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$nested/Contents/Info.plist")"
+    /usr/bin/codesign --force --sign - --identifier "$nested_id" \
+      --entitlements "$ROOT_DIR/script/$(basename "$nested" .appex).entitlements" --timestamp=none "$nested"
+  done
+  for tool in "$STAGED_APP"/Contents/Helpers/*; do
+    [[ -f "$tool" && -x "$tool" ]] || continue
+    /usr/bin/codesign --force --sign - --identifier "io.github.candid-oss.candid.$(basename "$tool")" \
+      --options runtime --timestamp=none "$tool"
+  done
+  /usr/bin/codesign --force --sign - --identifier io.github.candid-oss.candid --timestamp=none "$STAGED_APP"
+  /usr/bin/codesign --verify --deep --strict --verbose=2 "$STAGED_APP"
+else
+  python3 "$ROOT_DIR/script/local_signing.py" "$STAGED_APP"
+fi
 mkdir -p "$ROOT_DIR/dist"
 if [[ -d "$APP_BUNDLE" ]]; then mv "$APP_BUNDLE" "$STAGING_ROOT/Previous.app"; fi
 mv "$STAGED_APP" "$APP_BUNDLE"
