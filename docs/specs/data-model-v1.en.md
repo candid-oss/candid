@@ -241,6 +241,33 @@ A one-time script outside the repository, like the Personavia migration: convert
 - compare space before and after, item by item;
 - check dedup and near-duplicate merging against the evaluation set (Agent platform 2.9) for wrong merges.
 
+**Validation results** (2026-11-19, on a copy of the library):
+
+Space, after converting the copy to this structure, measured or estimated from measured ratios:
+
+| Part | Now | After | Basis |
+|---|---|---|---|
+| Database | 1,021 MB | about 475 MB | Measured 569 MB (episode inputs deduplicated and stored as references, selectors as ids and ranges, cursors as positions, empty tables dropped); the evidence embedded in `screen.text` treated the same way, measured 103 MB → 8 MB |
+| Screenshots | 4,685 MB | about 1,570 MB | Measured WebP ratio; capture-time dedup not counted |
+| Old ledger | 539 MB | 0 | Retired |
+| Derived JSON | 435 MB | about 54 MB | zstd measured at 8×; smaller once moved into tables |
+| Recordings | 140 MB | about 10 MB | AAC 48 kbps |
+| **Total** | **about 6.8 GB** | **about 2.1 GB** | About 70% less |
+
+Thumbnails (480 wide, WebP) measured 11 KB on average. All existing screenshots are under 30 days old, so age-based downgrade only starts to matter later.
+
+Feature queries, through the core's public query tools:
+
+| Feature | Result |
+|---|---|
+| Recall and search | Works: keyword and name searches return cited results within 1 second; results are flagged as scan-limited, so long ranges need index work |
+| Context for agents | Events and focused paragraphs around a moment work (0.2 s); recent episode summaries are missing |
+| Daily review | Time breakdown works; **no new episodes after November 13**: after episode summaries were turned off, 954 summary jobs were cancelled with `feature_disabled` and 24 failed with HTTP 400 from the model endpoint; existing episodes have titles but no summaries |
+| Commitments and to-dos | **No data**: extraction is not implemented yet |
+| People and project pages | **Almost no data**: only 2 entities (from voiceprint enrollment) |
+
+> Conclusion: the storage changes hold up: about 70% less space with fast enough queries. The main gaps for the five features are in the derived pipeline rather than the schema: episode generation stopped, and extraction and the entity layer are not built yet. After schema v1 lands, the next step is making the episode → extraction → entity pipeline work end to end.
+
 **Decided** (2026-11-18):
 
 1. The storage limit is set by the user; the UI gives guidance from measured compression, with no fixed default.
