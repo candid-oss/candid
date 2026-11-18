@@ -60,6 +60,10 @@ def verify_model(directory, model_id, revision):
                 raise RuntimeError(f"Model hash mismatch: {name}")
 
 
+class TokenLimit(RuntimeError):
+    """The transcript of this audio does not fit one model call; split it and retry."""
+
+
 def unit(vector):
     vector = np.asarray(vector, dtype=np.float32).reshape(-1)
     norm = np.linalg.norm(vector)
@@ -94,10 +98,10 @@ class Models:
         self.voice = ort.InferenceSession(str(VOICE_DIR / VOICE_FILE), options,
                                          providers=["CPUExecutionProvider"])
 
-    def transcribe(self, audio):
-        result = self.moss.generate(audio, max_tokens=4096, verbose=False)
-        if result.generation_tokens >= 4096:
-            raise RuntimeError("MOSS output reached token limit; shorten the audio and retry")
+    def transcribe(self, audio, max_tokens=4096):
+        result = self.moss.generate(audio, max_tokens=max_tokens, verbose=False)
+        if result.generation_tokens >= max_tokens:
+            raise TokenLimit("MOSS output reached token limit; shorten the audio and retry")
         return result.segments
 
     def embedding(self, audio):

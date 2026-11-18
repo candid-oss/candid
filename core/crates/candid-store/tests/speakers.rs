@@ -175,3 +175,57 @@ fn speaker_clustering_rejects_duplicate_intervals_and_revoked_sources() {
     assert!(fx.store.recording_speaker_input(&id).is_err());
     assert!(fx.store.recording_speakers_complete(&r,&out).is_err());
 }
+
+fn whole_recording(fx:&Fx,id:&str)->(Value,Value) {
+    let (r,_)=reconciliation(fx,id);
+    let line=|a:f64,b:f64,text:&str,who:&str,correction:&str,m:Value|json!({"start_seconds":a,"end_seconds":b,"text":text,"speaker":format!("recording-speaker:{who}"),"label":if who=="A"{"说话人 1"}else{"说话人 2"},"voice_ref":format!("SYNTHETIC-ref-{who}"),"match":m,"correction_key":correction});
+    let out=json!({"format":"recording-speakers/2","revision":r["input"]["revision"],"segments":[
+        line(0.0,1.2,"SYNTHETIC 整段第一句","A","说话人 1",Value::Null),
+        line(1.2,2.0,"SYNTHETIC 整段第二句","B","说话人 2",json!({"status":"matched","person_id":"v-li","name":"李娜","score":0.81,"margin":0.3,"threshold":0.62,"allow_auto":true})),
+        json!({"start_seconds":2.0,"end_seconds":3.8,"text":"SYNTHETIC 没有声音证据的一句","speaker":"unresolved","label":"未确定说话人","voice_ref":null,"match":null,"correction_key":null}),
+    ],"speaker_count":2,"unresolved_segments":1,"dropped_segments":2,"voice_refs":["SYNTHETIC-ref-A","SYNTHETIC-ref-B"],
+      "producer":{"model_id":"SYNTHETIC","model_revision":"fixture/1","processor_version":"recording-windows/1"}});
+    (r,out)
+}
+#[test]
+fn whole_recording_result_replaces_the_transcript_and_keeps_earlier_names() {
+    let (fx,id)=recording();
+    fx.store.label_speaker(&json!({"id":id,"speaker":"说话人 1","name":"SYNTHETIC Human"})).unwrap();
+    let (r,out)=whole_recording(&fx,&id);
+    let item=fx.store.recording_speakers_complete(&r,&out).unwrap();
+    let texts:Vec<_>=item["segments"].as_array().unwrap().iter().map(|s|s["text"].as_str().unwrap().to_string()).collect();
+    assert_eq!(texts,["SYNTHETIC 整段第一句","SYNTHETIC 整段第二句","SYNTHETIC 没有声音证据的一句"]);
+    assert_eq!(item["speaker_grouping"]["version"],2);
+    assert_eq!(item["speaker_grouping"]["dropped_segments"],2);
+    assert_eq!(item["speakers"].as_array().unwrap().len(),2);
+    assert_eq!(item["segments"][0]["speaker_name"],"SYNTHETIC Human","a name given before carries over");
+    assert_eq!(item["segments"][1]["speaker_status"],"auto");
+    assert!(item["segments"][2]["speaker"].is_null());
+    assert_eq!(item["segments"][0]["source_segment_id"],json!(id));
+    // The job depends on the per-file transcripts, so the replaced transcript does not ask for another run.
+    assert_eq!(fx.store.recording_speaker_input(&id).unwrap()["revision"],r["input"]["revision"]);
+    assert_eq!(fx.store.enqueue_recording_speakers(&id).unwrap()["id"],r["job"]["id"]);
+    assert_eq!(fx.store.recording_speakers_complete(&r,&out).unwrap()["segments"],item["segments"]);
+    // A name given on the new speakers sticks.
+    fx.store.label_speaker(&json!({"id":id,"speaker":"recording-speaker:B","name":"SYNTHETIC Second"})).unwrap();
+    assert_eq!(fx.store.media_item(&id).unwrap()["segments"][1]["speaker_name"],"SYNTHETIC Second");
+    fx.store.media_command(&json!({"action":"delete","id":id})).unwrap();
+    let forget=fx.store.voice_refs_to_forget(None).unwrap();
+    assert!(forget.contains(&"SYNTHETIC-ref-A".into()) && forget.contains(&"SYNTHETIC-ref-B".into()));
+}
+#[test]
+fn whole_recording_result_is_checked() {
+    let (fx,id)=recording();
+    let (r,out)=whole_recording(&fx,&id);
+    let mut bad=out.clone();bad["speaker_count"]=json!(3);
+    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
+    let mut bad=out.clone();bad["voice_refs"]=json!(["SYNTHETIC-ref-A"]);
+    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
+    let mut bad=out.clone();bad["segments"][1]["end_seconds"]=json!(0.5);
+    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
+    let mut bad=out.clone();bad["segments"][0]["start_seconds"]=json!(1.5);
+    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err(),"lines are in time order");
+    let mut bad=out.clone();bad["revision"]=json!("0".repeat(64));
+    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
+    assert!(fx.store.recording_speakers_complete(&r,&out).is_ok());
+}

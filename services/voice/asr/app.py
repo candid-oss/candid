@@ -9,7 +9,8 @@ from starlette.concurrency import run_in_threadpool
 from .runtime import AudioError, MAX_BYTES, MODEL_ID, MODEL_REVISION, Runtime
 
 
-def create_app(runtime=None, voice_runner=None, *, voiceprint_path=None, voiceprint_analyzer=None):
+def create_app(runtime=None, voice_runner=None, *, voiceprint_path=None, voiceprint_analyzer=None,
+               voiceprint_models=None):
     engine = runtime or Runtime()
     gate = asyncio.Lock()
 
@@ -57,5 +58,6 @@ def create_app(runtime=None, voice_runner=None, *, voiceprint_path=None, voicepr
     from .media_api import install_voice_api
     install_voice_api(app, engine, gate, voice_runner)
     from .voiceprint_api import install_voiceprint_api
-    install_voiceprint_api(app, gate, path=voiceprint_path, analyzer=voiceprint_analyzer)
+    install_voiceprint_api(app, gate, path=voiceprint_path, analyzer=voiceprint_analyzer,
+                           models=voiceprint_models)
     return app

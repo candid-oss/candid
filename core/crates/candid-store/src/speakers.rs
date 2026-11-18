@@ -106,7 +106,8 @@ impl TimelineStore {
                 };
                 let is_rematched=rematched.is_some();
                 let mut matched = rematched.unwrap_or_else(|| s["match"].clone());
-                if is_rematched && s.get("speaker_raw_fields").is_some() && matched.is_object() {
+                // Older voice services did not say which bar a match had to clear: hold those to the strict one.
+                if is_rematched && s.get("speaker_raw_fields").is_some() && matched.is_object() && matched["threshold"].is_null() {
                     matched["threshold"]=json!(0.70);
                     matched["allow_auto"]=json!(matched["score"].as_f64().is_some_and(|n|n>=0.70) && matched["margin"].as_f64().is_none_or(|n|n>=MATCH_MARGIN));
                 }

@@ -91,9 +91,16 @@ def match_of(identity: dict) -> dict | None:
     if not candidates or identity.get("score") is None:
         return None
     top = candidates[0]
-    return {"status": "matched" if identity.get("status") == "matched" else "unmatched",
-            "person_id": top["person_id"], "name": top["name"], "score": round(float(identity["score"]), 4),
-            "margin": None if identity.get("margin") is None else round(float(identity["margin"]), 4)}
+    matched = identity.get("status") == "matched"
+    out = {"status": "matched" if matched else "unmatched",
+           "person_id": top["person_id"], "name": top["name"], "score": round(float(identity["score"]), 4),
+           "margin": None if identity.get("margin") is None else round(float(identity["margin"]), 4)}
+    # The bar this vector had to clear, so the app offers 「可能是」 relative to the same policy.
+    if identity.get("threshold") is not None:
+        out["threshold"] = round(float(identity["threshold"]), 4)
+    if "allow_auto" in identity:
+        out["allow_auto"] = bool(identity["allow_auto"]) and matched
+    return out
 
 
 def conversation_result(decoded: Path, temp: Path) -> dict:
@@ -144,7 +151,7 @@ def conversation_result(decoded: Path, temp: Path) -> dict:
             ref = None
             if speaker.get("vector") is not None:
                 ref = hashlib.sha256(f"{source_hash}:{start}:{speaker['speaker_id']}:{VOICE_REV}".encode()).hexdigest()[:32]
-                refs.put(ref, speaker["vector"])
+                refs.put(ref, speaker["vector"], seconds=speaker.get("seconds"))
             speakers[speaker["speaker_id"]] = (f"说话人 {speaker_count + i}", speaker["identity"]["name"], match_of(speaker["identity"]), ref)
         speaker_count += len(speakers)
         for segment in result["segments"]:

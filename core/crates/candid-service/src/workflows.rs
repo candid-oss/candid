@@ -360,7 +360,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
     };
     let Some(r) = request else { return };
     on_start();
-    let result = if r["reconcile_speakers"]==true {crate::voiceprints::reconcile_recording(&r)} else {execute_workflow(store, &r)};
+    let result = if r["reconcile_speakers"]==true {crate::voiceprints::reconcile_recording_job(store,&r)} else {execute_workflow(store, &r)};
     let unused_refs=result.as_ref().ok().map(|o|o["voice_refs"].clone());
     let s = lock(store);
     let job = &r["job"];
