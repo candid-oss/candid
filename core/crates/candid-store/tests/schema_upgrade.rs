@@ -433,7 +433,36 @@ fn v7_checkpoint_upgrade_is_atomic_preserves_inline_history_and_resumes_metadata
     db.script("DROP TABLE agent_session_entries").unwrap();drop(db);
     fs::create_dir(root.join(".store.json.tmp")).unwrap();assert!(open(&root).is_err());
     fs::remove_dir(root.join(".store.json.tmp")).unwrap();
-    let store=open(&root).unwrap();assert_eq!(store.identity.schema_version,8);
+    let store=open(&root).unwrap();assert_eq!(store.identity.schema_version,SCHEMA_VERSION);
     assert!(store.cursor("s","session:SYNTHETIC").unwrap().unwrap().contains("SYNTHETIC history"));
     assert!(store.integrity_check(false).unwrap().ok);drop(store);fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn v8_upgrade_stores_large_content_once() {
+    let root = fixtures::temp_root("v8-upgrade");
+    let store = TimelineStore::open(&root, "SYNTHETIC-v8", true, fixtures::test_clock()).unwrap();
+    drop(store);
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    let input = r#"{"format":"screen-cleanup/1","digest":"d","revision":1,"policies":[],"episode":{"id":"screen:x","app":"A","window":"W","start_ms":1,"end_ms":2,"input_chars":3,"raw_chars":3,"frames":[{"event_id":"e","source_id":"s","revision":"r","start_ms":1,"end_ms":2,"app":"A","window":"W","field":"body","text":"SYNTHETIC frame text"}],"lines":[{"event_id":"e","start":0,"end":9,"field":"body","family":"f","weight":1.0,"is_new":true,"text":"SYNTHETIC"}]}}"#;
+    db.conn.execute("INSERT INTO store_meta VALUES('screen.input/1:screen:x',?)", [input]).unwrap();
+    db.conn.execute("INSERT INTO store_meta VALUES('screen.revision/1:screen:x:1',?)", [input]).unwrap();
+    db.script("DELETE FROM store_meta WHERE key='schema.upgrade'; PRAGMA user_version=8;").unwrap();
+    drop(db);
+    let mut identity: StoreIdentity = serde_json::from_str(&fs::read_to_string(root.join("store.json")).unwrap()).unwrap();
+    identity.schema_version = 8;
+    fs::write(root.join("store.json"), json::canonical_of(&identity)).unwrap();
+
+    let store = TimelineStore::open(&root, "SYNTHETIC-v9", false, fixtures::test_clock()).unwrap();
+    assert_eq!(store.identity.schema_version, SCHEMA_VERSION);
+    drop(store);
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    assert_eq!(db.scalar("PRAGMA user_version", &[]).unwrap(), 9);
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM store_meta WHERE key LIKE 'screen.revision/%'", &[]).unwrap(), 0);
+    let stored = db.first("SELECT value FROM store_meta WHERE key='screen.input/1:screen:x'", &[], |r| r.text(0)).unwrap().unwrap();
+    let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    assert!(stored["episode"]["frames"][0].get("text").is_none() && stored["episode"]["lines"][0].get("text").is_none());
+    assert_eq!((stored["digest"].as_str(), stored["episode"]["lines"][0]["end"].as_i64()), (Some("d"), Some(9)));
+    drop(db);
+    let _ = fs::remove_dir_all(root);
 }

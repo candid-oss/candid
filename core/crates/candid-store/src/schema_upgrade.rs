@@ -1,4 +1,4 @@
-//! Transactional upgrades v1 → v2 → v3 → v4 → v5. The database commit precedes atomic store.json replacement;
+//! Transactional upgrades v1 → … → v9. The database commit precedes atomic store.json replacement;
 //! a durable marker permits only that particular interrupted replacement to resume.
 use crate::{
     db::{text, Db, RowExt},
@@ -32,7 +32,8 @@ pub(crate) fn upgrade(
         result?;
     } else if version != identity.schema_version {
         let marker = db.first("SELECT value FROM store_meta WHERE key='schema.upgrade'", &[], |r| r.text(0))?;
-        let pending = (version == 8 && identity.schema_version <= 7 && marker.as_deref() == Some("7:8"))
+        let pending = (version == 9 && identity.schema_version <= 8 && marker.as_deref() == Some("8:9"))
+            || (version == 8 && identity.schema_version <= 7 && marker.as_deref() == Some("7:8"))
             || (version == 7 && identity.schema_version <= 6 && marker.as_deref() == Some("6:7"))
             || (version == 6 && identity.schema_version <= 5 && marker.as_deref() == Some("5:6"))
             || (version == 5 && identity.schema_version <= 4 && marker.as_deref() == Some("4:5"))
@@ -142,6 +143,23 @@ pub(crate) fn upgrade(
             db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','7:8')", &[])?;
             db.execute("PRAGMA user_version=8", &[])
         })?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 8 {
+        // Data model v1: large content is stored once. Revisions of screen inputs were written and never read;
+        // inputs keep references instead of text. Old inline session cursors stay: moved row by row into the entry
+        // table they grow (every entry repeats its file path and hash), so they wait for interned entries.
+        db.transaction(|| {
+            db.execute("DELETE FROM store_meta WHERE key LIKE 'screen.revision/%'", &[])?;
+            let inputs = db.query("SELECT key,value FROM store_meta WHERE key LIKE 'screen.input/%'", &[], |r| (r.text(0), r.text(1)))?;
+            for (key, value) in inputs {
+                let value: serde_json::Value = serde_json::from_str(&value).map_err(|e| TimelineError::InvalidStore(e.to_string()))?;
+                db.execute("UPDATE store_meta SET value=? WHERE key=?", &[text(crate::screen_pipeline::slim_screen_input(value).to_string()), text(&key)])?;
+            }
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','8:9')", &[])?;
+            db.execute("PRAGMA user_version=9", &[])
+        })?;
+        // Give the freed pages back once; outside the transaction by necessity.
+        db.script("VACUUM")?;
     }
     if identity.schema_version != schema::SCHEMA_VERSION {
         identity.schema_version = schema::SCHEMA_VERSION;

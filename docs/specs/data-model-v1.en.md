@@ -220,16 +220,19 @@ Tables and key columns only; full DDL follows after review.
 
 <a id="migration"></a>
 
-## 12. Converting from v8
+## 12. Upgrading from v8
 
-A one-time script outside the repository, like the Personavia migration: convert and verify a copy first, then swap. Main steps:
+v0.1.0 is public, so others may already have v8 libraries. Instead of starting a new library, the core's transactional upgrade chain continues (v8 → v9 → …): each step runs automatically when a library is opened and rolls back on failure. In steps:
 
-1. Move screen episode inputs and revisions out of `store_meta` into derived-layer tables, removing the duplicate.
-2. Strip text copies from evidence selectors in favor of paragraph ids and ranges.
-3. Keep only positions in sync cursors.
-4. Verify hashes, then delete the old desktop ledger's screenshots.
-5. Compute initial tiers for all records and originals.
-6. Optional: re-encode existing screenshots in bulk (run separately, preview first).
+| Version | Contents | Status |
+|---|---|---|
+| v9 | Drop screen input revisions that were written and never read; screen inputs no longer store text, which is rebuilt from the paragraph table when needed | Implemented. On a copy of real data: database 1,038 MB → 857 MB; 8,525 frames and 478,589 lines rebuilt identical to the stored text |
+| Next | Integer ids for paragraph families: screen inputs, evidence selectors and evidence embedded in `screen.text` store only ids and ranges | To do, about 200 MB more |
+| Next | AI session entries: file paths and hashes stored once and referenced by id; then convert old-format session cursors | To do. Moving entries row by row as they are grew the table from 82 MB to 221 MB, so duplication goes first |
+| Next | Retire the old desktop ledger and media library, with their migration code | To do, about 539 MB |
+| Next | Tables and cleanup job for tiers, fidelity, the reduction log and usage accounting | To do |
+
+Re-encoding existing screenshots to WebP is a separate optional step, previewed first.
 
 <a id="validation"></a>
 

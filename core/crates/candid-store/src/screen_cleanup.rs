@@ -13,6 +13,8 @@ pub struct ScreenFrame {
     pub end_ms: i64,
     pub app: String,
     pub window: String,
+    /// Stored without it since schema 9; rebuilt from the paragraph table when needed. Digests still cover it.
+    #[serde(default)]
     pub text: String,
     pub field: String,
 }
@@ -21,6 +23,8 @@ pub struct ScreenLine {
     pub event_id: String,
     pub start: usize,
     pub end: usize,
+    /// Stored without it since schema 9: `start..end` (characters) of the frame's text.
+    #[serde(default)]
     pub text: String,
     pub field: String,
     pub family: String,
