@@ -52,11 +52,19 @@ public struct CapturedWindow: Sendable {
     public let capturedAt: Date
     public let windowIdentity: UInt?
     public let axEvidence: DesktopAXEvidence?
+    /// The uncompressed frame, only when raw-frame delivery is on (OCR before compression).
+    public let frame: DesktopRawFrame?
     public init(data: Data, application: DesktopApplication, title: String, width: Int, height: Int, capturedAt: Date,
-                windowIdentity: UInt? = nil, axEvidence: DesktopAXEvidence? = nil) {
+                windowIdentity: UInt? = nil, axEvidence: DesktopAXEvidence? = nil, frame: DesktopRawFrame? = nil) {
         self.data = data; self.application = application; self.title = title; self.width = width; self.height = height; self.capturedAt = capturedAt; self.windowIdentity = windowIdentity
-        self.axEvidence = axEvidence
+        self.axEvidence = axEvidence; self.frame = frame
     }
+}
+
+/// CGImage is immutable; this only carries it across actors.
+public struct DesktopRawFrame: @unchecked Sendable {
+    public let image: CGImage
+    public init(_ image: CGImage) { self.image = image }
 }
 
 public enum DesktopCaptureError: String, Error, Sendable, LocalizedError {

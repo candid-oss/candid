@@ -18,3 +18,4 @@ unicode-normalization.workspace = true
 getrandom.workspace = true
 base64.workspace = true
 libc.workspace = true
+libwebp-sys.workspace = true

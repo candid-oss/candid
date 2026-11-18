@@ -14,3 +14,9 @@ allow-wildcard-paths = true
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+
+# libwebp-sys declares MIT for its bindings; the vendored libwebp it compiles in is BSD-3-Clause.
+[[licenses.clarify]]
+crate = "libwebp-sys"
+expression = "MIT AND BSD-3-Clause"
+license-files = [{ path = "vendor/COPYING", hash = 0x7272837f }]

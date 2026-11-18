@@ -373,7 +373,7 @@ final class MediaWorkspaceStore {
         let suffix = url.pathExtension.lowercased()
         let kind: String
         if ["wav", "m4a", "mp4", "mp3", "aac", "flac", "ogg", "opus"].contains(suffix) { kind = "audio" }
-        else if ["png", "jpg", "jpeg"].contains(suffix) { kind = "image" }
+        else if ["png", "jpg", "jpeg", "webp"].contains(suffix) { kind = "image" }
         else { throw MediaWorkspaceError.unsupported }
         let id = UUID()
         let filename: String

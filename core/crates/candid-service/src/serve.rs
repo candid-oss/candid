@@ -255,9 +255,11 @@ impl Service {
         let workflows = Some(std::thread::Builder::new().name("candid-workflows".into()).spawn(move || {
             crate::scheduling::background();
             let mut worker = crate::workflows::Worker::default();
+            let mut compactor = crate::audio_compaction::Compactor::default();
             while !workflow_stop.load(Ordering::SeqCst) {
                 let before = jobs_revision(&workflow_store);
                 worker.tick(&workflow_store, &|| workflow_core.feed.publish("data"));
+                compactor.tick(&workflow_store);
                 if jobs_revision(&workflow_store) != before { workflow_core.feed.publish("data"); }
                 if !workflow_stop.load(Ordering::SeqCst) { std::thread::park_timeout(Duration::from_secs(2)); }
             }

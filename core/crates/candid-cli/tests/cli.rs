@@ -85,3 +85,23 @@ fn an_app_that_dies_with_the_stderr_pipe_still_gets_a_clean_shutdown() {
     }
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn encode_webp_turns_stdin_pixels_into_webp() {
+    use std::io::Write;
+    let (w, h, stride) = (64usize, 40usize, 64 * 4 + 16);
+    let pixels: Vec<u8> = (0..stride * h).map(|i| if (i / 4) % 9 == 0 { 20 } else { 240 }).collect();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_candid"))
+        .args(["encode-webp", "--width", &w.to_string(), "--height", &h.to_string(), "--stride", &stride.to_string()])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(&pixels).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(out.stdout.len() > 12 && &out.stdout[..4] == b"RIFF" && &out.stdout[8..12] == b"WEBP");
+    // More pixels than the stated size is refused, not silently cropped.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_candid"))
+        .args(["encode-webp", "--width", "4", "--height", "4"])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    child.stdin.take().unwrap().write_all(&[0u8; 65]).unwrap();
+    assert!(!child.wait_with_output().unwrap().status.success());
+}

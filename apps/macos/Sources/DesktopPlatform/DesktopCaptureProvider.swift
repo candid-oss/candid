@@ -28,6 +28,8 @@ public final class DesktopCaptureProvider {
         var timeout: Task<Void, Never>?
         var windowServerID: UInt32?
         var imageOptions = DesktopImageOptions()
+        var deliversFrame = false
+        var frame: CGImage?
         init(id: UUID, epoch: UInt64, focus: DesktopFocusReader.Focus, allowed: Set<String>, allowsMissingControlFocus: Bool, continuation: CheckedContinuation<CapturedWindow, any Error>) {
             self.id = id; self.epoch = epoch; self.focus = focus; self.allowed = allowed; self.continuation = continuation
             self.allowsMissingControlFocus = allowsMissingControlFocus
@@ -46,6 +48,9 @@ public final class DesktopCaptureProvider {
     private var imageOptions = DesktopImageOptions()
     private var encodingCache: EncodedImage?
     private var encodingReuseEnabled = false
+    private var rawFrameDelivery = false
+    /// Hands the uncompressed frame to the caller with the encoded image, so OCR can read it before compression.
+    public func setRawFrameDelivery(_ enabled: Bool) { rawFrameDelivery = enabled }
     public func setImageEncodingReuseEnabled(_ enabled: Bool) {
         encodingReuseEnabled = enabled
         if !enabled { encodingCache = nil }
@@ -100,6 +105,7 @@ public final class DesktopCaptureProvider {
                 request.imageOptions = imageOptions
                 request.collectsAX = axTextBundleIDs.contains(application.bundleID)
                 request.includeAXFocus = includeAXFocus
+                request.deliversFrame = rawFrameDelivery
                 active = request
                 setTimeout(request, seconds: 2)
                 SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: true) { [weak self] content, error in
@@ -208,6 +214,7 @@ public final class DesktopCaptureProvider {
                 }
             }
             setTimeout(request, seconds: 3)
+            if request.deliversFrame { request.frame = image }
             // CGImage is immutable; ImageIO encoding and native-size release stay
             // off the main actor. There is exactly one such task at any time.
             let payload = ImageResponse(image: image, error: nil)
@@ -237,7 +244,8 @@ public final class DesktopCaptureProvider {
             let output = CapturedWindow(data: encoded.data, application: request.focus.application, title: request.focus.title,
                                         width: encoded.width, height: encoded.height, capturedAt: request.capturedAt ?? Date(),
                                         windowIdentity: request.focus.windowIdentity,
-                                        axEvidence: IsSecureEventInputEnabled() ? nil : request.axEvidence)
+                                        axEvidence: IsSecureEventInputEnabled() ? nil : request.axEvidence,
+                                        frame: request.frame.map(DesktopRawFrame.init))
             resolve(request, result: .success(output))
         } catch { resolve(request, result: .failure(error)) }
     }

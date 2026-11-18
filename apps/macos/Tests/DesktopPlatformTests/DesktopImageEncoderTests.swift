@@ -38,7 +38,7 @@ import UniformTypeIdentifiers
         // A fixed synthetic frame; compare the same encoder and quality with/without the single-entry cache.
         let image = try frame(width: 1920, height: 1080)
         let options = DesktopImageOptions()
-        let cached = try DesktopImageEncoder.encode(image, options: options)
+        let cached = try DesktopImageEncoder.encode(image, options: options, webp: false)
         let originalStart = ContinuousClock.now
         for _ in 0..<20 {
             let bytes = NSMutableData()
@@ -49,7 +49,7 @@ import UniformTypeIdentifiers
         }
         let original = originalStart.duration(to: .now)
         let start = ContinuousClock.now
-        for _ in 0..<20 { #expect(try DesktopImageEncoder.encode(image, options: options).data == cached.data) }
+        for _ in 0..<20 { #expect(try DesktopImageEncoder.encode(image, options: options, webp: false).data == cached.data) }
         let uncached = start.duration(to: .now)
         let hitStart = ContinuousClock.now
         for _ in 0..<20 { #expect(try DesktopImageEncoder.encode(image, options: options, cached: cached) === cached) }
@@ -80,5 +80,55 @@ import UniformTypeIdentifiers
         #expect(first.pixels == nil)
         #expect(first.fingerprint == nil)
         #expect(try DesktopImageEncoder.encode(image, options: DesktopImageOptions(), cached: first) !== first)
+    }
+
+    /// Text-like content: dark strokes on white, so sizes are in a realistic range.
+    private func page(width: Int = 1920, height: Int = 1130) throws -> CGImage {
+        let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(gray: 1, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor(red: 0.1, green: 0.1, blue: 0.2, alpha: 1))
+        for row in stride(from: 40, to: height - 40, by: 22) {
+            var x = 40
+            while x < width - 80 { let w = 6 + (x * 7 + row) % 40; context.fill(CGRect(x: x, y: row, width: w, height: 12)); x += w + 8 }
+        }
+        return try #require(context.makeImage())
+    }
+
+    @Test func newScreenshotsAreWebPWhenTheCoreEncoderIsAvailable() throws {
+        // script/test.sh points CANDID_CORE_BIN at the freshly built core; plain `swift test` may not.
+        guard DesktopWebPEncoder.isAvailable else { return }
+        let image = try page()
+        let start = ContinuousClock.now
+        let webp = try DesktopImageEncoder.encode(image, options: DesktopImageOptions())
+        let webpTime = start.duration(to: .now)
+        #expect(DesktopImageFormat(webp.data) == .webp)
+        let jpeg = try DesktopImageEncoder.encode(image, options: DesktopImageOptions(), webp: false)
+        #expect(DesktopImageFormat(jpeg.data) == .jpeg)
+        #expect(webp.data.count < jpeg.data.count)
+        // ImageIO reads it back at full size (display, OCR of stored originals, model JPEG copies).
+        let source = try #require(CGImageSourceCreateWithData(webp.data as CFData, nil))
+        let decoded = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        #expect(decoded.width == 1920 && decoded.height == 1130)
+        #expect(DesktopImageFormat(try DesktopImageEncoder.jpegForModels(webp.data)) == .jpeg)
+        print("SYNTHETIC-WEBP bytes=\(webp.data.count) jpeg=\(jpeg.data.count) encode=\(webpTime)")
+    }
+
+    @Test func aMissingEncoderFailsCleanly() throws {
+        let image = try frame(width: 64, height: 64)
+        let (pixels, stride) = try DesktopWebPEncoder.bgra(image)
+        #expect(stride == 256 && pixels.count == 64 * 64 * 4)
+        #expect(throws: (any Error).self) {
+            try DesktopWebPEncoder.run(URL(fileURLWithPath: "/usr/bin/false"), pixels: pixels, width: 64, height: 64, stride: stride, quality: 60, timeout: 5)
+        }
+    }
+
+    @Test func formatsAreReadFromTheFirstBytes() {
+        #expect(DesktopImageFormat(Data("RIFF\u{0}\u{0}\u{0}\u{0}WEBPVP8 ".utf8)) == .webp)
+        #expect(DesktopImageFormat(Data([0xFF, 0xD8, 0xFF, 0xE0])) == .jpeg)
+        #expect(DesktopImageFormat(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) == .png)
+        #expect(DesktopImageFormat(Data("RIFF\u{0}\u{0}\u{0}\u{0}WAVE".utf8)) == nil)
+        #expect(DesktopImageFormat.webp.fileExtension == "webp" && DesktopImageFormat.jpeg.fileExtension == "jpg")
+        #expect(DesktopImageFormat(mimeType: "image/webp") == .webp)
     }
 }

@@ -67,6 +67,8 @@ pub mod records;
 
 pub mod durable;
 pub mod media;
+pub mod webp;
+pub mod media_compaction;
 
 mod media_projection;
 

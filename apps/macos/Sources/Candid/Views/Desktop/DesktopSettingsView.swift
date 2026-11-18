@@ -110,7 +110,7 @@ private struct CaptureSettings: View {
                 MenuChoice(options: [1280, 1920, 2560, 3840].map { ($0, "\($0) px") }, selection: imageBinding(\.maximumEdge))
             }
             HairlineDivider()
-            SettingRow(title: L("JPEG 质量"), detail: L("越高文字越清楚，文件也越大。")) {
+            SettingRow(title: L("备用 JPEG 质量"), detail: L("截图存为 WebP（质量 60）；只有 WebP 编码不可用时才按这里存 JPEG。")) {
                 MenuChoice(options: [0.5, 0.7, 0.8, 0.9, 0.95].map { ($0, "\(Int($0 * 100))%") }, selection: imageBinding(\.jpegQuality))
             }
             HairlineDivider()

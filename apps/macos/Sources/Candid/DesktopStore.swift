@@ -73,15 +73,16 @@ import CandidClient
         await queued()
     }
 
-    /// Saves a screenshot with its JPEG; returns the record with its image hash.
+    /// Saves a screenshot with its original (WebP, or JPEG/PNG); returns the record with its image hash.
     func storeScreenshot(record original: DesktopRecord, data: Data, gate: CaptureCommitGate? = nil, epoch: UInt64 = 0) async throws -> DesktopRecord {
         guard !data.isEmpty, data.count <= DesktopEventMapping.maximumImageBytes else { throw DesktopStoreError.imageTooLarge }
+        guard let format = DesktopImageFormat(data) else { throw DesktopStoreError.invalidRecord }
         var record = original
         record.imageHash = DesktopEventMapping.sha256(data); record.kind = .screenshot
         try DesktopEventMapping.validate(record)
-        let (event, evidence) = try DesktopEventMapping.event(for: record)
+        let (event, evidence) = try DesktopEventMapping.event(for: record, imageFormat: format)
         var files = evidence.mapValues { (data: $0, ext: "json") }
-        files[record.imageHash!] = (data, "jpg")
+        files[record.imageHash!] = (data, format.fileExtension)
         try await outbox.append(.ingest([event]), files: files, gate: gate, epoch: epoch)
         await queued()
         return record

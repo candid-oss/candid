@@ -56,13 +56,16 @@ enum DesktopExport {
                     if let hash = record.imageHash, let source = images[hash] {
                         let folder = temporary.appendingPathComponent("images", isDirectory: true)
                         try manager.createDirectory(at: folder, withIntermediateDirectories: true)
-                        let target = folder.appendingPathComponent(hash + ".jpg")
+                        // New originals are WebP, older ones JPEG: the file keeps its own format and extension.
+                        let original = try Data(contentsOf: source)
+                        guard DesktopEventMapping.sha256(original) == hash else { throw DesktopStoreError.missingImage }
+                        let name = hash + "." + (DesktopImageFormat(original) ?? .jpeg).fileExtension
+                        let target = folder.appendingPathComponent(name)
                         if !manager.fileExists(atPath: target.path) {
-                            try manager.copyItem(at: source, to: target)
-                            guard DesktopEventMapping.sha256(try Data(contentsOf: target)) == hash else { throw DesktopStoreError.missingImage }
-                            entries.append(["path": "images/\(hash).jpg", "sha256": hash])
+                            try original.write(to: target)
+                            entries.append(["path": "images/\(name)", "sha256": hash])
                         }
-                        markdown += L("%@  [图片](images/%@.jpg)\n", indentation, hash)
+                        markdown += L("%@  [图片](images/%@)\n", indentation, name)
                     }
                 }
             }

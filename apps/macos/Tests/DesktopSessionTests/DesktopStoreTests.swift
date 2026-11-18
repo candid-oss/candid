@@ -1,4 +1,6 @@
+import AppKit
 import DesktopCore
+import DesktopPlatform
 import Foundation
 import CandidClient
 import Testing
@@ -151,5 +153,39 @@ struct DesktopStoreTests {
         #expect(info.results.count == 1 && info.older.isEmpty, "the earlier run was superseded")
         let imageHash = try #require(shot.imageHash)
         #expect(try await store.existingOCR(forImageHash: imageHash)?.text == "第二次")
+    }
+
+    /// Data model v1 §9.1 end to end: the frame is OCR'd before compression, stored as WebP through the outbox, kept
+    /// by the core as `image/webp`, and read back (by path, and by OCR of the stored original).
+    @Test func newScreenshotsAreStoredAsWebPAndReadBack() async throws {
+        guard DesktopWebPEncoder.isAvailable else { return } // script/test.sh provides the core's encoder
+        let size = NSSize(width: 960, height: 540)
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height), bitsPerSample: 8,
+                                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        NSColor.white.setFill(); NSRect(origin: .zero, size: size).fill()
+        ("Synthetic WebP capture 4721" as NSString).draw(at: NSPoint(x: 60, y: 260), withAttributes: [.font: NSFont.systemFont(ofSize: 40), .foregroundColor: NSColor.black])
+        NSGraphicsContext.restoreGraphicsState()
+        let frame = try #require(rep.cgImage)
+        let raw = try DesktopOCR.recognize(frame: frame)
+        #expect(raw.text.contains("4721"), "OCR of the uncompressed frame: \(raw.text)")
+        let webp = try DesktopWebPEncoder.encode(frame)
+        #expect(DesktopImageFormat(webp) == .webp)
+
+        let root = try syntheticRoot(); defer { TestCore.finish(root) }
+        let store = try DesktopStore(directory: root, core: try await TestCore.ready(root))
+        try await store.append(context("ctx"))
+        let shot = try await store.storeScreenshot(record: DesktopRecord(id: "shot", timestamp: Date().addingTimeInterval(-30), kind: .screenshot,
+                                                                         appName: "Synthetic Editor", imageWidth: 960, imageHeight: 540, parentID: "ctx",
+                                                                         runID: "run-1", activityID: "act-1"), data: webp)
+        try await drained(root)
+        let hash = try #require(shot.imageHash)
+        let url = try #require(await store.imageURL(hash: hash))
+        #expect(url.pathExtension == "webp")
+        #expect(try Data(contentsOf: url) == webp)
+        let input = try await store.recognitionInput(shot)
+        #expect(input.jpeg == webp)
+        #expect(try await DesktopOCR().recognize(input.jpeg).text.contains("4721"), "the stored WebP stays readable")
+        #expect(DesktopImageFormat(try DesktopImageEncoder.jpegForModels(input.jpeg)) == .jpeg)
     }
 }

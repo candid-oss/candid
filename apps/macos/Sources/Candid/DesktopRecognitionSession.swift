@@ -35,6 +35,9 @@ final class DesktopRecognitionSession {
     @ObservationIgnored private var batches: [DesktopRecognitionKind: Batch] = [:]
     @ObservationIgnored private var lastAutomaticKind: DesktopRecognitionKind = .vision
     @ObservationIgnored private var configObserver: NSObjectProtocol?
+    /// System OCR of uncompressed frames, by screenshot ID: run at capture, before the original is stored as WebP.
+    @ObservationIgnored private var frameOCR: [String: Task<DesktopRecognitionResult, any Error>] = [:]
+    @ObservationIgnored private var frameOCRTail: Task<DesktopRecognitionResult, any Error>?
 
     private struct Batch {
         var next: Date
@@ -66,6 +69,8 @@ final class DesktopRecognitionSession {
     }
 
     func stop() {
+        frameOCR.values.forEach { $0.cancel() }
+        frameOCR = [:]; frameOCRTail = nil
         store = nil
         timer?.cancel()
         job?.cancel()
@@ -107,6 +112,28 @@ final class DesktopRecognitionSession {
         guard store != nil, powerObservation != nil, job == nil,
               DesktopRecognitionKind.allCases.contains(where: { policy($0).mode != .manual }) else { return }
         timer = Task { [weak self] in await self?.evaluate() }
+    }
+
+    /// Whether capture should hand over the uncompressed frame: automatic OCR of new screenshots with the system
+    /// engine, allowed by the power policy right now. Other modes recognise the stored WebP later.
+    var wantsRawFrames: Bool {
+        store != nil && ocrPolicy.mode == .immediate && powerBlocks[.ocr] == nil && AIRuntime.shared.model(for: "ocr") == nil
+    }
+
+    /// Starts system OCR on the uncompressed frame; the automatic pass uses it when it reaches this screenshot.
+    /// Frames are recognised one at a time, in capture order.
+    func recognizeRawFrame(_ frame: DesktopRawFrame, screenshotID: String) {
+        guard wantsRawFrames else { return }
+        // Results the automatic pass never collected (deleted screenshot, policy changed) are dropped, not hoarded.
+        while frameOCR.count >= 16, let stale = frameOCR.keys.first { frameOCR.removeValue(forKey: stale)?.cancel() }
+        let previous = frameOCRTail
+        let task = Task.detached(priority: .utility) { () throws -> DesktopRecognitionResult in
+            _ = try? await previous?.value
+            try Task.checkCancellation()
+            return try DesktopOCR.recognize(frame: frame.image)
+        }
+        frameOCR[screenshotID] = task
+        frameOCRTail = task
     }
 
     func results(for screenshot: DesktopRecord) async throws -> [DesktopRecognitionKind: DesktopRecognitionResult] {
@@ -235,14 +262,21 @@ final class DesktopRecognitionSession {
                 wake()
             }
             do {
-                let (jpeg, evidence) = try await store.recognitionInput(screenshot)
+                if kind == .ocr, let early = frameOCR.removeValue(forKey: screenshot.id), let result = try? await early.value {
+                    try Task.checkCancellation()
+                    try await store.saveRecognition(result, kind: kind, screenshot: screenshot)
+                    resultRevision &+= 1
+                    status[kind] = L("已完成")
+                    return
+                }
+                let (jpeg, evidence) = try await store.recognitionInput(screenshot) // the stored original: WebP or JPEG
                 refreshPower()
                 try Task.checkCancellation()
                 let result: DesktopRecognitionResult
                 switch kind {
                 case .ocr:
                     if automatic, let previous = try await store.existingOCR(forImageHash: hash), previous.ocrLines != nil { result = previous }
-                    else if AIRuntime.shared.model(for: "ocr") != nil { result = try await modelOCR(jpeg) }
+                    else if AIRuntime.shared.model(for: "ocr") != nil { result = try await modelOCR(DesktopImageEncoder.jpegForModels(jpeg)) }
                     else { result = try await ocr.recognize(jpeg) }
                 case .vision:
                     let reference = useOCRReference ? try await store.recognitionResults(for: screenshot.id)[.ocr] : nil
@@ -254,7 +288,7 @@ final class DesktopRecognitionSession {
                         context["selectedText"] = focus.selectedText
                     }
                     try Task.checkCancellation()
-                    result = try await modelVision(jpeg, prompt: requestPrompt, ocrReference: reference, windowContext: context,
+                    result = try await modelVision(DesktopImageEncoder.jpegForModels(jpeg), prompt: requestPrompt, ocrReference: reference, windowContext: context,
                                                    focusMainPane: focusMainPane, axEvidence: evidence ?? screenshot.context?.axEvidence)
                 }
                 refreshPower()

@@ -24,14 +24,24 @@ public enum DesktopRecognitionError: LocalizedError {
 public actor DesktopOCR {
     public init() {}
 
-    public func recognize(_ jpeg: Data) throws -> DesktopRecognitionResult {
+    /// A stored original (WebP or JPEG; ImageIO reads both).
+    public func recognize(_ image: Data) throws -> DesktopRecognitionResult {
         try Task.checkCancellation()
+        return try Self.perform(VNImageRequestHandler(data: image))
+    }
+
+    /// The uncompressed capture, before WebP (data model v1 §9.1: OCR reads the original frame).
+    public static func recognize(frame: CGImage) throws -> DesktopRecognitionResult {
+        try perform(VNImageRequestHandler(cgImage: frame))
+    }
+
+    private static func perform(_ handler: VNImageRequestHandler) throws -> DesktopRecognitionResult {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         let supported = try request.supportedRecognitionLanguages()
         request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"].filter { supported.contains($0) }
         request.usesLanguageCorrection = false
-        try VNImageRequestHandler(data: jpeg).perform([request])
+        try handler.perform([request])
         try Task.checkCancellation()
         let lines = (request.results ?? []).compactMap { observation -> DesktopOCRLine? in
             guard let text = observation.topCandidates(1).first?.string else { return nil }
