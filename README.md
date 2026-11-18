@@ -64,6 +64,18 @@ flowchart LR
 
 ## Quick start
 
+### Install a release
+
+Download `Candid-<version>-arm64.dmg` from [Releases](https://github.com/candid-oss/candid/releases) (Apple Silicon, macOS 14+) and drag Candid into Applications. Builds are not signed with an Apple Developer ID, so the first launch is blocked: open **System Settings → Privacy & Security** and click **Open Anyway**. macOS asks for capture permissions again after each update. `SHA256SUMS.txt` lists the checksums.
+
+To look around without touching real data:
+
+```bash
+open -n /Applications/Candid.app --args --mock
+```
+
+### Build from source
+
 **Requirements:** macOS 14+, Apple Silicon recommended, Rust 1.88+, Xcode 26 or later (Swift 6.2+; CI builds with Xcode 26.3).
 
 ```bash

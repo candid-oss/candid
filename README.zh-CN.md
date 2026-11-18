@@ -64,6 +64,18 @@ flowchart LR
 
 ## 快速开始
 
+### 安装发布版
+
+从 [Releases](https://github.com/candid-oss/candid/releases) 下载 `Candid-<版本>-arm64.dmg`（Apple Silicon，macOS 14+），把 Candid 拖进「应用程序」。发布版没有 Apple 开发者签名，第一次打开会被拦下：到「系统设置 → 隐私与安全性」点「仍要打开」。每次更新后 macOS 会重新询问录制权限。校验值见 `SHA256SUMS.txt`。
+
+想先看看又不碰真实数据：
+
+```bash
+open -n /Applications/Candid.app --args --mock
+```
+
+### 从源码构建
+
 **环境**：macOS 14+，推荐 Apple Silicon，Rust 1.88+，Xcode 26 或更新版本（Swift 6.2+；CI 使用 Xcode 26.3 构建）。
 
 ```bash
