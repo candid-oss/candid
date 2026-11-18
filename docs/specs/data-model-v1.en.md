@@ -227,7 +227,8 @@ v0.1.0 is public, so others may already have v8 libraries. Instead of starting a
 | Version | Contents | Status |
 |---|---|---|
 | v9 | Drop screen input revisions that were written and never read; screen inputs no longer store text, which is rebuilt from the paragraph table when needed | Implemented. On a copy of real data: database 1,038 MB → 857 MB; 8,525 frames and 478,589 lines rebuilt identical to the stored text |
-| Next | Integer ids for paragraph families: screen inputs, evidence selectors and evidence embedded in `screen.text` store only ids and ranges | To do, about 200 MB more |
+| v10 | Screen inputs and evidence selectors stop repeating the event id and family hash on every line; selectors become `screen-selector/2`, restored to the old shape when the query tools read them | Implemented. On a copy of real data: v8 → v10 is 1,038 MB → 701 MB, 13 s of upgrade on first open; all 478,589 evidence lines restored identical to the text |
+| Next | Evidence embedded in `screen.text` records (about 100 MB) becomes references too | To do; it is part of the record, so the record fingerprint must be unaffected first |
 | Next | AI session entries: file paths and hashes stored once and referenced by id; then convert old-format session cursors | To do. Moving entries row by row as they are grew the table from 82 MB to 221 MB, so duplication goes first |
 | Next | Retire the old desktop ledger and media library, with their migration code | To do, about 539 MB |
 | Next | Tables and cleanup job for tiers, fidelity, the reduction log and usage accounting | To do |

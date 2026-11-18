@@ -1,6 +1,6 @@
 //! Timeline database v4; v1–v3 roots upgrade transactionally through schema_upgrade.
 
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 10;
 pub const LAYOUT: &str = "timeline-root/1";
 
 pub struct Kind {

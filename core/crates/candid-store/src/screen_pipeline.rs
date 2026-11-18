@@ -142,7 +142,7 @@ impl TimelineStore {
                 let (title,summary,status)=if keep {let e=existing.unwrap();(e.0,e.1,e.2)}else{(Some(title),None,"draft".into())};
                 self.db.execute("UPDATE episodes SET status='superseded' WHERE episode_id=? AND status='draft'",&[text(&ep.id)])?;
                 self.db.execute("INSERT INTO episodes VALUES(?,?,?,?,?,?,'activity',?,'screen-cleanup/1',NULL,'1',NULL,?)",&[text(&ep.id),int(revision),int(ep.start_ms),int(ep.end_ms),crate::db::opt_text(title),crate::db::opt_text(summary),text(status),int(self.clock.now_ms())])?;
-                for f in &ep.frames {self.db.execute("INSERT INTO episode_evidence VALUES(?,?,?,'primary',?)",&[text(&ep.id),int(revision),text(&f.event_id),text(json!({"format":"screen-selector/1","source_revision":f.revision,"lines":ep.lines.iter().filter(|l|l.event_id==f.event_id).collect::<Vec<_>>()} ).to_string())])?;}
+                for f in &ep.frames {self.db.execute("INSERT INTO episode_evidence VALUES(?,?,?,'primary',?)",&[text(&ep.id),int(revision),text(&f.event_id),text(screen_selector(f,&ep.lines).to_string())])?;}
                 let data=json!({"format":"screen-cleanup/1","episode":value,"policies":policies,"digest":digest,"revision":revision});
                 // Schema 9: the text is in the paragraph table already; the input keeps only references.
                 self.automation_put(&format!("screen.input/1:{}",ep.id),&slim_screen_input(data))?;changed+=1;
@@ -161,7 +161,7 @@ impl TimelineStore {
         self.automation_get("screen.scan/1")
     }
     /// The frame text of one `screen.text` / `image.text` event, rebuilt from its paragraphs in character order.
-    fn screen_frame_body(&self, id: &str) -> Result<(String, String)> {
+    pub(crate) fn screen_frame_body(&self, id: &str) -> Result<(String, String)> {
         let chunks=self.db.query("SELECT t.field,t.char_start,c.text FROM event_text t JOIN text_chunks c USING(chunk_id) WHERE t.event_id=? AND t.field IN ('body','selection','ocr') ORDER BY CASE t.field WHEN 'body' THEN 0 WHEN 'ocr' THEN 1 ELSE 2 END,t.ord",&[text(id)],|r|(r.text(0),r.opt_int(1).unwrap_or(0),r.text(2)))?;
         let field = chunks
             .first()
@@ -186,7 +186,16 @@ impl TimelineStore {
     }
     /// The stored input with frame and line text filled back in from the paragraph table.
     fn screen_episode(&self, data: &Value) -> Result<ScreenEpisode> {
-        let mut ep: ScreenEpisode = serde_json::from_value(data["episode"].clone())?;
+        let mut episode = data["episode"].clone();
+        // Schema 10: lines name their frame by index (`f`) instead of repeating the event id.
+        let ids: Vec<Value> = episode["frames"].as_array().into_iter().flatten().map(|f| f["event_id"].clone()).collect();
+        for l in episode["lines"].as_array_mut().into_iter().flatten() {
+            if let Some(i) = l.get("f").and_then(Value::as_u64) {
+                l["event_id"] = ids.get(i as usize).cloned().unwrap_or(Value::Null);
+                if let Some(o) = l.as_object_mut() { o.remove("f"); }
+            }
+        }
+        let mut ep: ScreenEpisode = serde_json::from_value(episode)?;
         let mut bodies: std::collections::HashMap<String, Vec<char>> = std::collections::HashMap::new();
         for f in ep.frames.iter_mut().filter(|f| f.text.is_empty()) {
             let (_, body) = self.screen_frame_body(&f.event_id)?;
@@ -372,7 +381,7 @@ impl TimelineStore {
             .ok_or_else(|| bad("invalid_summary"))?;
         let id = r["job"]["input_ref"].as_str().unwrap();
         let data = self.automation_get(&format!("screen.input/1:{id}"))?;
-        let ep: ScreenEpisode = serde_json::from_value(data["episode"].clone())?;
+        let ep = self.screen_episode(&data)?;
         let citations = output["citations"]
             .as_array()
             .filter(|a| !a.is_empty())
@@ -483,10 +492,45 @@ impl TimelineStore {
 
 /// Drops frame and line text from a stored screen input (schema 9); `screen_episode` rebuilds it.
 pub(crate) fn slim_screen_input(mut data: Value) -> Value {
+    let ids: Vec<Value> = data["episode"]["frames"].as_array().into_iter().flatten().map(|f| f["event_id"].clone()).collect();
     for key in ["frames", "lines"] {
         if let Some(items) = data["episode"][key].as_array_mut() {
-            for item in items { if let Some(o) = item.as_object_mut() { o.remove("text"); } }
+            for item in items {
+                let Some(o) = item.as_object_mut() else { continue };
+                o.remove("text");
+                if key == "lines" {
+                    // Schema 10: the family hash is recomputed on every scan and never read back from storage.
+                    o.remove("family");
+                    if let Some(i) = o.get("event_id").and_then(|e| ids.iter().position(|id| id == e)) {
+                        o.remove("event_id");
+                        o.insert("f".into(), json!(i));
+                    }
+                }
+            }
         }
     }
     data
+}
+
+/// Evidence selector for one frame (schema 10): `[start, end, is_new, weight]` per line. The event, field and text
+/// come from the evidence row and the paragraph table; `hydrate_screen_selector` restores the public shape.
+pub(crate) fn screen_selector(frame: &crate::screen_cleanup::ScreenFrame, lines: &[crate::screen_cleanup::ScreenLine]) -> Value {
+    let lines: Vec<Value> = lines.iter().filter(|l| l.event_id == frame.event_id)
+        .map(|l| json!([l.start, l.end, u8::from(l.is_new), l.weight])).collect();
+    json!({"format":"screen-selector/2","source_revision":frame.revision,"lines":lines})
+}
+
+impl TimelineStore {
+    /// `screen-selector/2` → the `screen-selector/1` shape clients read (lines with event, field and text).
+    pub(crate) fn hydrate_screen_selector(&self, event_id: &str, selector: Value) -> Value {
+        if selector["format"] != "screen-selector/2" { return selector; }
+        let Ok((field, body)) = self.screen_frame_body(event_id) else { return selector };
+        let chars: Vec<char> = body.chars().collect();
+        let lines: Vec<Value> = selector["lines"].as_array().into_iter().flatten().map(|l| {
+            let (start, end) = (l[0].as_u64().unwrap_or(0) as usize, l[1].as_u64().unwrap_or(0) as usize);
+            let text: String = chars.get(start.min(chars.len())..end.min(chars.len())).map(|c| c.iter().collect()).unwrap_or_default();
+            json!({"event_id":event_id,"field":field,"start":start,"end":end,"text":text,"is_new":l[2]==1,"weight":l[3]})
+        }).collect();
+        json!({"format":"screen-selector/1","source_revision":selector["source_revision"],"lines":lines})
+    }
 }

@@ -650,7 +650,7 @@ impl TimelineStore {
                     f.sql()
                 ),
                 &f.params,
-                |r| EpisodeEvidence { event: self.summary(r,ctx), role: r.text(14), selector: r.opt_text(15).and_then(|t| json::parse(&t)) },
+                |r| { let event = self.summary(r,ctx); let selector = r.opt_text(15).and_then(|t| json::parse(&t)).map(|v| self.hydrate_screen_selector(&event.event_id, v)); EpisodeEvidence { event, role: r.text(14), selector } },
             )?;
             let total = self.db.scalar("SELECT COUNT(*) FROM episode_evidence WHERE episode_id=? AND rev=?", &[text(&req.episode_id), int(ep.rev)])?;
             let shown = evidence.len() as i64;

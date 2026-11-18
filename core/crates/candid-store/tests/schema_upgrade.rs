@@ -457,12 +457,13 @@ fn v8_upgrade_stores_large_content_once() {
     assert_eq!(store.identity.schema_version, SCHEMA_VERSION);
     drop(store);
     let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
-    assert_eq!(db.scalar("PRAGMA user_version", &[]).unwrap(), 9);
+    assert_eq!(db.scalar("PRAGMA user_version", &[]).unwrap(), SCHEMA_VERSION);
     assert_eq!(db.scalar("SELECT COUNT(*) FROM store_meta WHERE key LIKE 'screen.revision/%'", &[]).unwrap(), 0);
     let stored = db.first("SELECT value FROM store_meta WHERE key='screen.input/1:screen:x'", &[], |r| r.text(0)).unwrap().unwrap();
     let stored: serde_json::Value = serde_json::from_str(&stored).unwrap();
-    assert!(stored["episode"]["frames"][0].get("text").is_none() && stored["episode"]["lines"][0].get("text").is_none());
-    assert_eq!((stored["digest"].as_str(), stored["episode"]["lines"][0]["end"].as_i64()), (Some("d"), Some(9)));
+    let line = &stored["episode"]["lines"][0];
+    assert!(stored["episode"]["frames"][0].get("text").is_none() && line.get("text").is_none() && line.get("family").is_none() && line.get("event_id").is_none());
+    assert_eq!((stored["digest"].as_str(), line["end"].as_i64(), line["f"].as_i64()), (Some("d"), Some(9), Some(0)));
     drop(db);
     let _ = fs::remove_dir_all(root);
 }

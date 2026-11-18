@@ -32,7 +32,8 @@ pub(crate) fn upgrade(
         result?;
     } else if version != identity.schema_version {
         let marker = db.first("SELECT value FROM store_meta WHERE key='schema.upgrade'", &[], |r| r.text(0))?;
-        let pending = (version == 9 && identity.schema_version <= 8 && marker.as_deref() == Some("8:9"))
+        let pending = (version == 10 && identity.schema_version <= 9 && marker.as_deref() == Some("9:10"))
+            || (version == 9 && identity.schema_version <= 8 && marker.as_deref() == Some("8:9"))
             || (version == 8 && identity.schema_version <= 7 && marker.as_deref() == Some("7:8"))
             || (version == 7 && identity.schema_version <= 6 && marker.as_deref() == Some("6:7"))
             || (version == 6 && identity.schema_version <= 5 && marker.as_deref() == Some("5:6"))
@@ -144,6 +145,7 @@ pub(crate) fn upgrade(
             db.execute("PRAGMA user_version=8", &[])
         })?;
     }
+    let mut vacuum = false;
     if db.scalar("PRAGMA user_version", &[])? == 8 {
         // Data model v1: large content is stored once. Revisions of screen inputs were written and never read;
         // inputs keep references instead of text. Old inline session cursors stay: moved row by row into the entry
@@ -158,7 +160,31 @@ pub(crate) fn upgrade(
             db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','8:9')", &[])?;
             db.execute("PRAGMA user_version=9", &[])
         })?;
-        // Give the freed pages back once; outside the transaction by necessity.
+        vacuum = true;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 9 {
+        // Screen inputs and evidence selectors stop repeating the event id and family hash on every line.
+        db.transaction(|| {
+            let inputs = db.query("SELECT key,value FROM store_meta WHERE key LIKE 'screen.input/%'", &[], |r| (r.text(0), r.text(1)))?;
+            for (key, value) in inputs {
+                let value: serde_json::Value = serde_json::from_str(&value).map_err(|e| TimelineError::InvalidStore(e.to_string()))?;
+                db.execute("UPDATE store_meta SET value=? WHERE key=?", &[text(crate::screen_pipeline::slim_screen_input(value).to_string()), text(&key)])?;
+            }
+            let selectors = db.query("SELECT rowid,selector_json FROM episode_evidence WHERE json_valid(selector_json) AND json_extract(selector_json,'$.format')='screen-selector/1'", &[], |r| (r.int(0), r.text(1)))?;
+            for (rowid, raw) in selectors {
+                let v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| TimelineError::InvalidStore(e.to_string()))?;
+                let lines: Vec<serde_json::Value> = v["lines"].as_array().into_iter().flatten()
+                    .map(|l| serde_json::json!([l["start"], l["end"], u8::from(l["is_new"] == true), l["weight"]])).collect();
+                let compact = serde_json::json!({"format":"screen-selector/2","source_revision":v["source_revision"],"lines":lines});
+                db.execute("UPDATE episode_evidence SET selector_json=? WHERE rowid=?", &[text(compact.to_string()), crate::db::int(rowid)])?;
+            }
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','9:10')", &[])?;
+            db.execute("PRAGMA user_version=10", &[])
+        })?;
+        vacuum = true;
+    }
+    if vacuum {
+        // Give the freed pages back once; outside the transactions by necessity.
         db.script("VACUUM")?;
     }
     if identity.schema_version != schema::SCHEMA_VERSION {

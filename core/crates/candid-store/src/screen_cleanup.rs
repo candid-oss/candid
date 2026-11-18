@@ -27,6 +27,8 @@ pub struct ScreenLine {
     #[serde(default)]
     pub text: String,
     pub field: String,
+    /// Not stored since schema 10 (recomputed on every scan).
+    #[serde(default)]
     pub family: String,
     pub weight: f64,
     pub is_new: bool,
