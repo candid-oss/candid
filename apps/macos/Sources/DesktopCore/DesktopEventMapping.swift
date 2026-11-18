@@ -48,7 +48,8 @@ public enum DesktopEventMapping {
     /// The event for `record`. A screenshot's original is described by `imageHash` and size; its file and the AX
     /// evidence file are staged by the caller (`files` returns the evidence bytes by hash). Blob staging paths are
     /// left empty for the caller to fill.
-    public static func event(for r: DesktopRecord) throws -> (event: IngestEvent, files: [String: Data]) {
+    /// `imageFormat` is the screenshot original's stored format (WebP for new captures).
+    public static func event(for r: DesktopRecord, imageFormat: DesktopImageFormat = .jpeg) throws -> (event: IngestEvent, files: [String: Data]) {
         var event = IngestEvent(source_key: r.id, kind: kind(r.kind), start_ms: milliseconds(r.timestamp))
         var files: [String: Data] = [:]
         var legacy: [String: CoreJSON] = ["run_id": .string(r.runID)]
@@ -95,7 +96,7 @@ public enum DesktopEventMapping {
             if let w = r.imageWidth { payload["pixel_w"] = .int(Int64(w)) }
             if let h = r.imageHeight { payload["pixel_h"] = .int(Int64(h)) }
             guard let hash = r.imageHash else { throw DesktopStoreError.missingImage }
-            event.blobs.append(IngestBlob(staging_path: "", sha256: hash, mime_type: "image/jpeg", pixel_w: r.imageWidth, pixel_h: r.imageHeight))
+            event.blobs.append(IngestBlob(staging_path: "", sha256: hash, mime_type: imageFormat.mimeType, pixel_w: r.imageWidth, pixel_h: r.imageHeight))
             if let evidence = r.context?.axEvidence {
                 let data = try evidenceData(evidence)
                 let sha = sha256(data)

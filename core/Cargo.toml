@@ -29,6 +29,8 @@ unicode-normalization = "0.1"
 getrandom = "0.2"
 base64 = "0.22"
 libc = "0.2"
+# Screenshot originals as WebP (data model v1 §9.1); vendored libwebp, statically linked, BSD-3-Clause.
+libwebp-sys = { version = "0.14.4", default-features = false, features = ["std"] }
 
 [profile.release]
 lto = "thin"

@@ -59,7 +59,22 @@ impl TimelineStore {
                 .env("LC_ALL", "C")
                 .output()?;
             if output.status.success() {
-                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                let info = String::from_utf8_lossy(&output.stdout);
+                // AAC (recordings compacted after processing) reports exact frames, priming and padding excluded, so
+                // sample coordinates stay as precise as with the original WAV.
+                let frames = info.lines().find_map(|l| {
+                    l.trim().strip_prefix("audio ")?.split_once(" valid frames")?.0.trim().parse::<u64>().ok()
+                });
+                let rate = info.lines().find_map(|l| {
+                    let format = l.trim().strip_prefix("Data format:")?;
+                    format.split(',').find(|p| p.trim().ends_with("Hz"))?.trim().trim_end_matches("Hz").trim().parse::<u32>().ok()
+                });
+                if let (Some(frames), Some(rate)) = (frames, rate) {
+                    if frames > 0 && rate > 0 {
+                        return Ok((frames as f64 / rate as f64, Some((rate, frames))));
+                    }
+                }
+                for line in info.lines() {
                     if let Some(value) = line.trim().strip_prefix("estimated duration:") {
                         if let Some(duration) = value
                             .split_whitespace()

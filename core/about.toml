@@ -5,3 +5,13 @@ accepted = [
 ]
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
+
+# libwebp-sys declares MIT for its Rust bindings; the libwebp C library it compiles in (screenshot WebP, data model
+# v1 §9.1) is BSD-3-Clause, so both notices are shipped.
+[libwebp-sys.clarify]
+license = "MIT AND BSD-3-Clause"
+
+[[libwebp-sys.clarify.files]]
+path = "vendor/COPYING"
+license = "BSD-3-Clause"
+checksum = "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf"

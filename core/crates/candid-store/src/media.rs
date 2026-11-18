@@ -45,6 +45,8 @@ fn mime(path: &Path, kind: &str) -> Result<String> {
             Some("image/png")
         } else if h.starts_with(b"\xff\xd8\xff") {
             Some("image/jpeg")
+        } else if crate::webp::is_webp(&h) {
+            Some("image/webp")
         } else {
             None
         }
@@ -669,7 +671,8 @@ impl TimelineStore {
             )?;
             if let Some((hash, m)) = old {
                 let m: Value = serde_json::from_str(&m)?;
-                if hash != digest
+                // A part compacted to AAC after processing still answers a retried upload of its original WAV.
+                if hash != digest && m["original_digest"].as_str() != Some(digest.as_str())
                     || m["filename"] != v["filename"]
                     || m["source"] != v["source"]
                     || m["kind"] != v["kind"]
@@ -693,7 +696,11 @@ impl TimelineStore {
                 fs::rename(&temp, &destination)?;
                 fs::File::open(&dir)?.sync_all()?;
             }
-            let item = json!({"id":id,"filename":name,"kind":kind,"source":source,"occurred_at":v["occurred_at"],"imported_at":chrono::Utc::now().to_rfc3339(),"processing_status":"idle","processing_mode":null,"error":null,"segments":[] ,"mime_type":kind_mime});
+            let mut item = json!({"id":id,"filename":name,"kind":kind,"source":source,"occurred_at":v["occurred_at"],"imported_at":chrono::Utc::now().to_rfc3339(),"processing_status":"idle","processing_mode":null,"error":null,"segments":[] ,"mime_type":kind_mime});
+            // New Mac recordings keep their WAV only until processed, then become AAC (data model v1 §9.4).
+            if ["mac_microphone", "mac_system_audio"].contains(&source) && kind_mime == "audio/wav" {
+                item["compact_to"] = json!(crate::media_compaction::COMPACT_AUDIO_MIME);
+            }
             self.db.transaction(|| {
                 self.db.execute(
                     "INSERT INTO media_objects VALUES(?,?,?,?,?)",
@@ -752,7 +759,19 @@ impl TimelineStore {
         {
             return Err(bad("样本范围无效"));
         }
-        // WAV part coordinates must agree with original PCM frame count and sample rate.
+        let meta = json!({"index":index,"sample_start":start,"sample_count":count,"sample_rate":rate,"started_at":at});
+        if let Some((owner, old)) = self.db.first(
+            "SELECT recording_id,metadata FROM media_parts WHERE id=?",
+            &[text(id)],
+            |r| (r.text(0), r.text(1)),
+        )? {
+            if owner != rid || serde_json::from_str::<Value>(&old)? != meta {
+                return Err(bad("分段归属冲突"));
+            }
+            return Ok(());
+        }
+        // A new link: WAV part coordinates must agree with the original PCM frame count and sample rate. (An existing
+        // link returns above, so a part whose WAV was later compacted to AAC still re-links.)
         let bytes = fs::read(self.media_path(id)?)?;
         if !bytes.starts_with(b"RIFF") || bytes.get(8..12) != Some(b"WAVE") {
             return Err(bad("录音分段需要 WAV"));
@@ -779,17 +798,6 @@ impl TimelineStore {
         }
         if actual_rate != rate || align == 0 || data / align != count {
             return Err(bad("样本范围与原件不符"));
-        }
-        let meta = json!({"index":index,"sample_start":start,"sample_count":count,"sample_rate":rate,"started_at":at});
-        if let Some((owner, old)) = self.db.first(
-            "SELECT recording_id,metadata FROM media_parts WHERE id=?",
-            &[text(id)],
-            |r| (r.text(0), r.text(1)),
-        )? {
-            if owner != rid || serde_json::from_str::<Value>(&old)? != meta {
-                return Err(bad("分段归属冲突"));
-            }
-            return Ok(());
         }
         for sid in self.media_part_ids(rid)? {
             let other = self.media_part(&sid)?;

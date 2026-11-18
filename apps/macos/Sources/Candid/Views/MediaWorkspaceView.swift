@@ -61,7 +61,7 @@ struct MediaWorkspaceView: View {
         .task(id: store.records.first?.id) {
             if store.selectedID == nil, store.selectedRecordingID == nil, store.draft == nil, let newest = store.records.max(by: { $0.displayedDate < $1.displayedDate }) { store.selectedID = newest.id }
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.audio, .png, .jpeg]) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.audio, .png, .jpeg, .webP]) { result in
             switch result {
             case .success(let url): Task { await store.importFile(url) }
             case .failure(let error): store.error = error.localizedDescription

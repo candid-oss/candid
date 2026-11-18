@@ -8,7 +8,7 @@ use candid_service::{McpShell, RunDirectory, ServiceClient, VERSION};
 use candid_store::json;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -21,6 +21,8 @@ const USAGE: &str = "用法:
   candid serve --root <数据根目录>     不带界面运行时间线服务（回环 HTTP，写 endpoint.json 与 cli.token）
         [--port 0] [--run-dir 目录] [--ledger 桌面账本目录] [--hub Hub目录] [--sync-interval 30] [--workers 2]
         [--socket 本地通道路径] [--parent-pid App进程号]   作为 App 的辅助进程运行时使用
+  candid encode-webp --width W --height H [--stride 每行字节] [--quality 60]
+                                     从标准输入读 BGRA 像素，向标准输出写 WebP（App 截图用）
 
 例子:
   candid overview --start today
@@ -145,6 +147,45 @@ fn serve(args: &[String]) {
     service.stop();
 }
 
+/// `encode-webp`: raw BGRA on stdin, WebP on stdout. The App calls it per screenshot (data model v1 §9.1); it opens
+/// nothing else and needs no running service.
+fn encode_webp(args: &[String]) {
+    let (mut width, mut height, mut stride, mut quality) = (0u32, 0u32, None, candid_store::webp::DEFAULT_QUALITY);
+    let mut rest = args.iter();
+    while let Some(flag) = rest.next() {
+        let value = rest.next().unwrap_or_else(|| fail(&format!("{flag} 缺少值"), 2));
+        let number = || value.parse::<u64>().unwrap_or_else(|_| fail(&format!("{flag} 需要整数"), 2));
+        match flag.as_str() {
+            "--width" => width = number().min(u32::MAX as u64) as u32,
+            "--height" => height = number().min(u32::MAX as u64) as u32,
+            "--stride" => stride = Some(number() as usize),
+            "--quality" => quality = value.parse().unwrap_or_else(|_| fail("--quality 需要数字", 2)),
+            other => fail(&format!("encode-webp 没有参数 {other}"), 2),
+        }
+    }
+    let stride = stride.unwrap_or(width as usize * 4);
+    let limit = stride.saturating_mul(height as usize);
+    if limit == 0 || limit > 1 << 30 {
+        fail("图片尺寸无效", 2);
+    }
+    let mut pixels = Vec::with_capacity(limit);
+    if std::io::stdin().lock().take(limit as u64 + 1).read_to_end(&mut pixels).is_err() {
+        fail("读取像素失败", 1);
+    }
+    if pixels.len() > limit {
+        fail("像素数据多于图片尺寸", 2);
+    }
+    match candid_store::webp::encode_bgra(&pixels, width, height, stride, quality) {
+        Ok(out) => {
+            let mut stdout = std::io::stdout().lock();
+            if stdout.write_all(&out).and_then(|_| stdout.flush()).is_err() {
+                fail("写出 WebP 失败", 1);
+            }
+        }
+        Err(e) => fail(&e, 1),
+    }
+}
+
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let Some(command) = argv.first() else {
@@ -166,6 +207,7 @@ fn main() {
             shell.run(stdin.lock(), std::io::stdout());
         }
         "serve" => serve(&argv[1..]),
+        "encode-webp" => encode_webp(&argv[1..]),
         name => {
             let Some(tool) = catalog::tool(name) else { fail(&format!("没有这个工具：{name}\n\n{USAGE}"), 2) };
             let body = arguments(&tool, &argv[1..]);

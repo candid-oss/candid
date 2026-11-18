@@ -26,6 +26,8 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub mod workflows;
 
 mod audio_chunks;
+/// WAV → AAC for processed recordings (data model v1 §9.4).
+pub mod audio_compaction;
 mod scheduling;
 
 pub mod voiceprints;

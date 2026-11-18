@@ -56,6 +56,7 @@ public protocol DesktopCapturing: AnyObject {
     @discardableResult func requestAccessibilityPermission() -> Bool
     func setImageOptions(_ options: DesktopImageOptions)
     func setImageEncodingReuseEnabled(_ enabled: Bool)
+    func setRawFrameDelivery(_ enabled: Bool)
     func cancelPendingCapture()
     func captureFrontmost(allowedBundleIDs: Set<String>, windowCompatibilityBundleIDs: Set<String>,
                           axTextBundleIDs: Set<String>, includeAXFocus: Bool) async throws -> CapturedWindow
@@ -67,4 +68,5 @@ extension DesktopCaptureProvider: DesktopCapturing {}
 extension DesktopCapturing {
     public func setImageOptions(_ options: DesktopImageOptions) {}
     public func setImageEncodingReuseEnabled(_ enabled: Bool) {}
+    public func setRawFrameDelivery(_ enabled: Bool) {}
 }

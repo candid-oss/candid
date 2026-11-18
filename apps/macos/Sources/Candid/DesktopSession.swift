@@ -1097,6 +1097,7 @@ final class DesktopSession {
             // Changed content/manual frames take the original direct encoder. Stable automatic frames may reuse it.
             let reusable = source.flatMap { recentImages[$0] }.map { $0.contentSignature == parent.map(DesktopContentSignature.make) } ?? false
             capture.setImageEncodingReuseEnabled(reusable)
+            capture.setRawFrameDelivery(recognition.wantsRawFrames)
             let frame = try await capture.captureFrontmost(allowedBundleIDs: effectiveAllowed,
                 windowCompatibilityBundleIDs: compatibility, axTextBundleIDs: axScope,
                 includeAXFocus: preferences.contentOptions.focusEnabled && desiredPreferences.contentOptions.focusEnabled)
@@ -1131,6 +1132,7 @@ final class DesktopSession {
                 recentImages[source] = RecentImage(digest: digest, contentSignature: parent.map(DesktopContentSignature.make))
             }
             rememberRecord(savedImage)
+            if let raw = frame.frame { recognition.recognizeRawFrame(raw, screenshotID: savedImage.id) }
             recognition.wake()
             samplingDiagnostics.imageSaved += 1
             consecutiveFailures = 0; lastSaved = Date(); statusDetail = L("截图已保存")
