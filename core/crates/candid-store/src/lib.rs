@@ -69,6 +69,7 @@ pub mod durable;
 pub mod media;
 pub mod webp;
 pub mod media_compaction;
+pub mod library_conversion;
 
 mod media_projection;
 
