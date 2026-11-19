@@ -11,6 +11,15 @@ from fastapi.testclient import TestClient
 from asr.app import create_app
 from asr.runtime import AudioError, MODEL_ID, Runtime, decode_audio
 
+try:
+    from importlib.metadata import version as _version
+
+    _version("mlx-audio")
+    HAS_MLX = True
+except Exception:  # Linux CI installs everything but the Apple-only MLX packages.
+    HAS_MLX = False
+needs_mlx = pytest.mark.skipif(not HAS_MLX, reason="needs the Apple-only mlx-audio package")
+
 
 def wav(seconds=0.1):
     output = io.BytesIO()
@@ -78,6 +87,7 @@ def test_duration_and_nonfinite_rejected():
         decode_audio(output.getvalue())
 
 
+@needs_mlx
 def test_runtime_lock_released_after_model_failure():
     runtime = Runtime()
     class Model:
@@ -106,6 +116,7 @@ def test_runtime_lock_released_after_model_failure():
         runtime.lock.release()
 
 
+@needs_mlx
 def test_mlx_resamples_and_preserves_language_and_source():
     runtime = Runtime()
     class Model:

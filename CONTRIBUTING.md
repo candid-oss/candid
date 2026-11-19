@@ -23,6 +23,10 @@ Thanks for helping. Candid handles people's most private data, so changes are he
 
 Optional public speech samples for the core's audio tests: `sh services/voice/scripts/fetch_samples.sh`.
 
+CI on pushes and pull requests runs the basic checks only: Rust core, voice service (on Linux, without MLX), licenses
+and a secret scan. The macOS app suite does not run there; run `apps/macos/script/test.sh` before a PR that touches
+`apps/macos`, or start it on GitHub with Actions → CI → Run workflow.
+
 ## Pull requests
 
 - Keep a PR to one topic, and describe what you changed and how you verified it.

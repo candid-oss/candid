@@ -1,9 +1,18 @@
 name: CI
 
+# Basic checks on every push and pull request: fast, and only one macOS job (Rust core, ~3 minutes; its tests use
+# afconvert). The full macOS app suite takes long, waits for scarce macOS runners and has been flaky under load, so it
+# runs only when started by hand (Actions → CI → Run workflow). Run it locally with apps/macos/script/test.sh.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: Also run the full macOS app tests
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -16,12 +25,9 @@ jobs:
   core:
     name: Rust core
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -44,9 +50,10 @@ jobs:
           command: check licenses bans sources
 
   macos:
-    name: macOS app
+    name: macOS app (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: maxim-lobanov/setup-xcode@v1
@@ -66,17 +73,19 @@ jobs:
 
   voice:
     name: Voice service
-    runs-on: macos-15
-    timeout-minutes: 20
+    # Linux, without the Apple-only MLX packages: the tests use synthetic models, and the two that need MLX skip.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: Test
         run: |
-          uv venv --python 3.12 .venv-asr-mlx
-          uv pip sync --python .venv-asr-mlx/bin/python services/voice/asr/requirements-speaker.lock.txt
-          uv pip install --python .venv-asr-mlx/bin/python pytest httpx
-          .venv-asr-mlx/bin/python -m pytest -q services/voice/tests
+          grep -v '^mlx' services/voice/asr/requirements-speaker.lock.txt > /tmp/voice-linux.txt
+          uv venv --python 3.12 .venv
+          uv pip sync --python .venv/bin/python /tmp/voice-linux.txt
+          uv pip install --python .venv/bin/python pytest httpx
+          .venv/bin/python -m pytest -q services/voice/tests
 
   secrets:
     name: Secret scan
