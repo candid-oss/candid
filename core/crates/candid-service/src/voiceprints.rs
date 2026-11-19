@@ -6,7 +6,8 @@ fn remote(p: &Value, action: &str, v: &Value, audio: Option<Vec<u8>>) -> Result<
     let client = reqwest::blocking::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(120))
+        // One recording window is several minutes of audio in one model call.
+        .timeout(Duration::from_secs(if action == "window" { 600 } else { 120 }))
         .build()
         .map_err(|_| "无法连接本机模型")?;
     let base = p["base_url"]
@@ -15,7 +16,7 @@ fn remote(p: &Value, action: &str, v: &Value, audio: Option<Vec<u8>>) -> Result<
         .trim_end_matches('/');
     let url = format!(
         "{base}/voiceprints{}",
-        if action == "analyze" { "/analyze" } else if action == "reconcile_recording" {"/reconcile"} else { "" }
+        match action { "analyze" => "/analyze", "reconcile_recording" => "/reconcile", "window" => "/window", "stitch" => "/stitch", _ => "" }
     );
     let mut req = if action == "list" {
         client.get(url)
@@ -26,10 +27,14 @@ fn remote(p: &Value, action: &str, v: &Value, audio: Option<Vec<u8>>) -> Result<
         req = req.bearer_auth(crate::workflows::secret(reference).ok_or("模型凭据尚未授权")?);
     }
     if let Some(bytes) = audio {
-        req = req.multipart(reqwest::blocking::multipart::Form::new().part(
+        let mut form = reqwest::blocking::multipart::Form::new().part(
             "file",
             reqwest::blocking::multipart::Part::bytes(bytes).file_name("selection.wav"),
-        ));
+        );
+        if action == "window" {
+            form = form.text("meta", v.to_string());
+        }
+        req = req.multipart(form);
     } else if action != "list" {
         req = req.json(v);
     }
@@ -37,6 +42,7 @@ fn remote(p: &Value, action: &str, v: &Value, audio: Option<Vec<u8>>) -> Result<
     if !response.status().is_success() {
         return Err(match response.status().as_u16() {
             429 => "模型正在处理其他请求，请稍后重试",
+            422 if action == "window" => "window_too_dense",
             409 => "名称已存在，请改名或选择合并",
             400 => "分析已失效或输入无效，请重新核对",
             _ => "声纹服务未完成操作，请重试",
@@ -440,6 +446,107 @@ fn require_withdrawal(v: &Value) -> Result<(), String> {
     }
 }
 
+
+/// Speaker grouping for one recording: whole-recording windows when the voice service supports them,
+/// otherwise the older clustering of per-file speakers.
+pub fn reconcile_recording_job(store:&SharedStore,r:&Value)->Result<Value,String> {
+    let windows=remote(&r["provider"],"list",&Value::Null,None).ok()
+        .is_some_and(|v|v["capabilities"].as_array().is_some_and(|c|c.iter().any(|x|x=="recording_windows")));
+    if windows {recording_windows(store,r)} else {reconcile_recording(r)}
+}
+
+pub const WINDOW_SECONDS: f64 = 600.0;
+pub const WINDOW_OVERLAP_SECONDS: f64 = 60.0;
+/// A short tail joins the window before it instead of becoming a window of its own (at most 12 minutes).
+const WINDOW_TAIL_SECONDS: f64 = 120.0;
+const WINDOW_MIN_SECONDS: f64 = 120.0;
+
+/// The next window of a recording `total` seconds long, given where the previous one ended.
+pub fn next_window(previous_end: Option<f64>, total: f64, size: f64) -> Option<(f64, f64)> {
+    let start = match previous_end {
+        None => 0.0,
+        Some(end) if end >= total - 1e-6 => return None,
+        Some(end) => (end - WINDOW_OVERLAP_SECONDS).max(0.0),
+    };
+    let end = if total - start <= size + WINDOW_TAIL_SECONDS.min(size / 2.0) { total } else { start + size };
+    Some((start, end))
+}
+
+/// The recording's audio between two times as one 16 kHz mono WAV; gaps between files are silence.
+fn window_audio(files: &[(crate::audio_chunks::AudioChunks, f64)], start: f64, end: f64) -> Result<Vec<u8>, String> {
+    let frames = ((end - start) * 16000.0).round() as usize;
+    let mut pcm = vec![0u8; frames * 2];
+    for (plan, offset) in files {
+        let first = ((start - offset) * 16000.0).round().max(0.0) as u64;
+        let last = (((end - offset) * 16000.0).round().max(0.0) as u64).min(plan.frames);
+        if first >= last { continue; }
+        let bytes = plan.bytes(first, last - first)?;
+        let data = &bytes[bytes.len() - (last - first) as usize * 2..];
+        let at = (((offset + first as f64 / 16000.0) - start) * 16000.0).round().max(0.0) as usize * 2;
+        let n = data.len().min(pcm.len().saturating_sub(at));
+        pcm[at..at + n].copy_from_slice(&data[..n]);
+    }
+    let mut wav = b"RIFF".to_vec();
+    wav.extend((36u32 + pcm.len() as u32).to_le_bytes());
+    wav.extend(b"WAVEfmt ");
+    wav.extend(16u32.to_le_bytes());
+    wav.extend([1, 0, 1, 0]);
+    wav.extend(16000u32.to_le_bytes());
+    wav.extend(32000u32.to_le_bytes());
+    wav.extend([2, 0, 16, 0]);
+    wav.extend(b"data");
+    wav.extend((pcm.len() as u32).to_le_bytes());
+    wav.extend(pcm);
+    Ok(wav)
+}
+
+/// Whole-recording speakers in windows of several minutes. Each finished window is saved in the job's
+/// checkpoint, so stopping the app or cancelling loses at most the window in progress, and a window the
+/// model cannot fit is retried at half the length.
+fn recording_windows(store:&SharedStore,r:&Value)->Result<Value,String> {
+    let input=&r["input"];
+    let job=&r["job"];
+    let mut files=Vec::new();
+    for file in input["files"].as_array().ok_or("missing_source")? {
+        let plan=crate::audio_chunks::AudioChunks::for_voice(std::path::Path::new(file["path"].as_str().ok_or("missing_source")?))?;
+        files.push((plan,file["offset"].as_f64().unwrap_or(0.)));
+    }
+    let total=files.iter().map(|(p,o)|o+p.frames as f64/16000.).fold(0.,f64::max);
+    if total<=0. {return Err("missing_source".into());}
+    let identity=json!({"format":"speaker-windows/1","revision":input["revision"],"config_revision":r["config_revision"],"total":total});
+    let mut state=job["checkpoint"]["speaker_windows"].clone();
+    if state["identity"]!=identity {state=json!({"identity":identity,"size":WINDOW_SECONDS,"windows":[]});}
+    loop {
+        let previous=state["windows"].as_array().and_then(|w|w.last()).and_then(|w|w["end"].as_f64());
+        let size=state["size"].as_f64().unwrap_or(WINDOW_SECONDS);
+        let Some((start,end))=next_window(previous,total,size) else {break};
+        {
+            let s=lock(store);
+            s.workflow_reply_allowed(r).map_err(|e|e.message())?;
+            s.job_command(&json!({"action":"heartbeat","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"lease_ms":600000})).map_err(|e|e.message())?;
+            let _=s.media_job_progress(job,&json!({"stage":"speaker_grouping","completed_seconds":start,"total_seconds":total,"cancellation_supported":true}));
+        }
+        let index=state["windows"].as_array().map_or(0,|w|w.len());
+        let meta=json!({"scope":input["scope"],"index":index});
+        match remote(&r["provider"],"window",&meta,Some(window_audio(&files,start,end)?)) {
+            Ok(result) => {
+                state["windows"].as_array_mut().ok_or("invalid_checkpoint")?.push(json!({"start":start,"end":end,"result":result}));
+            }
+            Err(e) if e=="window_too_dense" && size>WINDOW_MIN_SECONDS => {state["size"]=json!((size/2.).max(WINDOW_MIN_SECONDS));}
+            Err(e) => return Err(e),
+        }
+        let s=lock(store);
+        let mut checkpoint=s.job_command(&json!({"action":"get","id":job["id"]})).map_err(|e|e.message())?["checkpoint"].clone();
+        if !checkpoint.is_object() {checkpoint=json!({});}
+        checkpoint["speaker_windows"]=state.clone();
+        s.job_command(&json!({"action":"checkpoint","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"checkpoint":checkpoint})).map_err(|e|e.message())?;
+    }
+    lock(store).workflow_reply_allowed(r).map_err(|e|e.message())?;
+    let entries:Vec<Value>=input["entries"].as_array().into_iter().flatten().map(|e|json!({"interval":e["interval"],"correction_key":e["correction_key"],"protected":e["protected"]})).collect();
+    let mut out=remote(&r["provider"],"stitch",&json!({"scope":input["scope"],"revision":input["revision"],"windows":state["windows"],"entries":entries}),None)?;
+    out["policy"]=input["policy"].clone();
+    Ok(out)
+}
 
 /// The model service sees bounded clean snippets and opaque source groups, never paths or transcript text.
 pub fn reconcile_recording(r:&Value)->Result<Value,String> {

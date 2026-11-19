@@ -17,6 +17,8 @@ private final class SyntheticMail {
         root = parent.appendingPathComponent("Mail", isDirectory: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("V10/MailData"), withIntermediateDirectories: true)
         #expect(sqlite3_open(root.appendingPathComponent("V10/MailData/Envelope Index").path, &db) == SQLITE_OK)
+        // The core's mail sync may be reading the index while a test edits it; wait instead of failing with SQLITE_BUSY.
+        sqlite3_busy_timeout(db, 10_000)
         exec("""
         CREATE TABLE mailboxes(ROWID INTEGER PRIMARY KEY, url TEXT, total_count INTEGER);
         CREATE TABLE subjects(ROWID INTEGER PRIMARY KEY, subject TEXT);

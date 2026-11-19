@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from fastapi import File, HTTPException, Request, UploadFile
+from fastapi import File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, StrictBool
 from starlette.concurrency import run_in_threadpool
 
@@ -32,7 +32,21 @@ class LibraryCommand(BaseModel):
     refs: list[str] | None = None
 
 
-def install_voiceprint_api(app, gate, *, path=None, analyzer=None):
+_models = None
+
+
+def window_models():
+    """Models kept loaded between windows of one recording; a recording is many calls in a row."""
+    global _models
+    if _models is None:
+        from .speaker_models import Models
+        models = Models()
+        models.load()
+        _models = models
+    return _models
+
+
+def install_voiceprint_api(app, gate, *, path=None, analyzer=None, models=None):
     def store():
         from .speaker_store import SpeakerStore
         location = Path(path) if path else library_path()
@@ -67,7 +81,8 @@ def install_voiceprint_api(app, gate, *, path=None, analyzer=None):
     async def people(request: Request):
         permitted(request)
         try:
-            return {"format": "candid-voiceprints/1", "capabilities": ["template_withdrawal", "recording_reconciliation"],
+            return {"format": "candid-voiceprints/1",
+                    "capabilities": ["template_withdrawal", "recording_reconciliation", "recording_windows"],
                     "people": await run_in_threadpool(lambda: store().people())}
         except Exception as exc:
             raise HTTPException(503, "本机声纹库暂时不可用") from exc
@@ -116,6 +131,66 @@ def install_voiceprint_api(app, gate, *, path=None, analyzer=None):
         except Exception as exc:
             raise HTTPException(503, "说话人整理暂时不可用，可重试") from exc
 
+    @app.post("/v1/voiceprints/window")
+    async def recording_window(request: Request, file: UploadFile = File(...), meta: str = Form(...)):
+        """One window of a recording: transcript with local speaker labels and opaque voice references."""
+        try:
+            permitted(request)
+            data = await file.read(64 * 1024 * 1024 + 1)
+            if not data or len(data) > 64 * 1024 * 1024:
+                raise HTTPException(413, "窗口音频必须非空且不超过64MiB")
+            if gate.locked():
+                raise HTTPException(429, "语音服务正在处理其他请求", headers={"Retry-After": "5"})
+            import json
+            from .recording_windows import read_window, recognize_window
+            from .speaker_models import TokenLimit
+            from .speaker_store import VoiceRefs
+            info = json.loads(meta)
+            if not isinstance(info, dict):
+                raise ValueError("Invalid window metadata")
+            audio = read_window(data)
+            async with gate:
+                library = store()
+                engine = models or await run_in_threadpool(window_models)
+                try:
+                    result = await run_in_threadpool(recognize_window, audio, engine, VoiceRefs(library.path.parent),
+                                                     info.get("scope"), info.get("index"))
+                except TokenLimit as exc:
+                    raise HTTPException(422, "window_too_dense") from exc
+                return result
+        except HTTPException:
+            raise
+        except (ValueError, TypeError, KeyError) as exc:
+            raise HTTPException(400, "窗口音频或参数无效") from exc
+        except Exception as exc:
+            raise HTTPException(503, "录音识别暂时不可用，可重试") from exc
+        finally:
+            await file.close()
+
+    @app.post("/v1/voiceprints/stitch")
+    async def recording_stitch(request: Request):
+        """Join all windows of a recording into one set of speakers and name them from the library."""
+        permitted(request)
+        if gate.locked():
+            raise HTTPException(429, "语音服务正在处理其他请求", headers={"Retry-After": "5"})
+        body = await request.body()
+        if len(body) > 32 * 1024 * 1024:
+            raise HTTPException(413, "录音结果过大")
+        try:
+            import json
+            from .recording_windows import stitch
+            from .speaker_store import VoiceRefs
+            value = json.loads(body)
+            async with gate:
+                library = store()
+                return await run_in_threadpool(stitch, value, library, VoiceRefs(library.path.parent))
+        except (ValueError, TypeError, KeyError) as exc:
+            raise HTTPException(400, "录音拼接输入无效") from exc
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, "录音拼接暂时不可用，可重试") from exc
+
     @app.post("/v1/voiceprints")
     async def command(request: Request, value: LibraryCommand):
         permitted(request)
@@ -144,7 +219,8 @@ def install_voiceprint_api(app, gate, *, path=None, analyzer=None):
                 if value.action == "forget_refs":
                     return saved.forget(refs)
                 # The library's own matcher, so names, thresholds and margins agree with new transcripts.
-                return {ref: match_of(library.match(vector)) for ref, vector in saved.vectors(refs).items()}
+                return {ref: match_of(library.match(vector, seconds=seconds))
+                        for ref, (vector, seconds) in saved.entries(refs).items()}
             else:
                 if library.cached(value.analysis_id):
                     library.forget(value.analysis_id)

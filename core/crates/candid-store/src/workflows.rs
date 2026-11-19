@@ -648,9 +648,13 @@ impl TimelineStore {
         if sha256_hex(&serde_json::to_vec(&self.model_config()?)?) != r["config_revision"] {
             return Err(bad("configuration_changed"));
         }
-        if r["speech"] != true
-            && crate::speakers::segments_revision(&item["segments"]) != r["source_revision"]
-        {
+        // Speaker grouping depends on the per-file transcripts, not on the transcript it projects itself.
+        let revision = if r["reconcile_speakers"] == true {
+            self.recording_speaker_input(job["input_ref"].as_str().unwrap_or(""))?["revision"].clone()
+        } else {
+            json!(crate::speakers::segments_revision(&item["segments"]))
+        };
+        if r["speech"] != true && revision != r["source_revision"] {
             return Err(bad("source_changed"));
         }
         self.workflow_feature_reply_allowed(r, &item)?;

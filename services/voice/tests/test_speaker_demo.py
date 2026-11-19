@@ -26,10 +26,11 @@ class FakeModels:
         self.calls += 1
         if self.broken:
             return [{"start": 0, "end": 99, "speaker_id": "S01", "text": "invalid"}]
-        return [{"start": 0, "end": 3, "speaker_id": "S01", "text": "[S01] hello"},
-                {"start": 3, "end": 5, "speaker_id": "S02", "text": "[S02] hi"},
-                {"start": 5, "end": 6, "speaker_id": "S01", "text": "[S01] yes"},
-                {"start": 6, "end": 8, "speaker_id": "S02", "text": "[S02] bye"}]
+        # Speaker 1 talks for 9 s, enough speech for an automatic name.
+        return [{"start": 0, "end": 6, "speaker_id": "S01", "text": "[S01] hello"},
+                {"start": 6, "end": 9, "speaker_id": "S02", "text": "[S02] hi"},
+                {"start": 9, "end": 12, "speaker_id": "S01", "text": "[S01] yes"},
+                {"start": 12, "end": 14, "speaker_id": "S02", "text": "[S02] bye"}]
 
     def embedding(self, audio):
         return np.array([1., 0.]) if audio[0] > 0 else np.array([0., 1.])
@@ -37,9 +38,9 @@ class FakeModels:
 
 @pytest.fixture
 def fixture(tmp_path):
-    audio = np.full(16000 * 8, .1)
-    audio[3 * 16000:5 * 16000] = -.1
-    audio[6 * 16000:] = -.1
+    audio = np.full(16000 * 14, .1)
+    audio[6 * 16000:9 * 16000] = -.1
+    audio[12 * 16000:] = -.1
     path = tmp_path / "audio.wav"
     sf.write(path, audio, 16000)
     store = SpeakerStore(tmp_path / "library")

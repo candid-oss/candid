@@ -264,6 +264,14 @@ impl Core {
         self.status.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
 
+    /// Records the event count while the caller still holds the store, so a slow pass that counted earlier cannot
+    /// overwrite a newer count (a mirroring pass releases the store while mail syncs; an ingest may land meanwhile).
+    fn record_event_count(&self, store: &TimelineStore) {
+        if let Ok(n) = store.event_count() {
+            self.status.lock().unwrap_or_else(|p| p.into_inner()).events = n;
+        }
+    }
+
     pub fn update_status(&self, change: impl FnOnce(&mut SyncStatus)) {
         change(&mut self.status.lock().unwrap_or_else(|p| p.into_inner()));
         self.feed.publish("status");
@@ -351,10 +359,9 @@ impl Core {
             }
         }
         let v = self.check_ledger(&ledger, true);
-        let events = lock(&self.store).table_counts().ok().and_then(|c| c.get("events").copied()).unwrap_or(0);
+        self.record_event_count(&lock(&self.store));
         self.update_status(|s| {
             s.syncing = false;
-            s.events = events;
             s.verification = Some(v.clone());
         });
         release_memory();
@@ -408,7 +415,7 @@ impl Core {
         });
         let mut problems = Vec::new();
         let mut changes = Vec::new();
-        let (empty_before, events) = {
+        let empty_before = {
             let store = lock(&self.store);
             let before = store.event_count().unwrap_or(0);
             let mirror_ledger = !store.desktop_direct().unwrap_or(false);
@@ -436,8 +443,7 @@ impl Core {
                 }
                 Err(e) => problems.push(format!("AI 会话：{}", e.code())),
             }
-            let after = store.event_count().unwrap_or(before);
-            (before == 0, after)
+            before == 0
         };
         // Mail (and browser history, import off) read without the store lock; each source commits in one batch.
         let scratch = lock(&self.store).staging_directory();
@@ -447,10 +453,9 @@ impl Core {
             changes.push(format!("邮件 +{i} 修订 {r} 删除 {d}"));
         }
         problems.extend(connectors.new_problems());
-        let events = if connectors.changed() { lock(&self.store).event_count().unwrap_or(events) } else { events };
+        self.record_event_count(&lock(&self.store));
         let changed = !changes.is_empty();
         self.update_status(|s| {
-            s.events = events;
             s.last_sync_ms = Some(now_ms());
             if changed {
                 s.last_change = Some(changes.join("，"));
@@ -698,21 +703,22 @@ impl Core {
                     Ok(b) => b,
                     Err(e) => return e,
                 };
-                let (result, events) = {
+                let result = {
                     let store = lock(&self.store);
                     let desktop = store.sources().map(|s| s.iter().any(|s| s.source_id == batch.source_id && s.kind == "mac.desktop")).unwrap_or(false);
                     if desktop && !store.desktop_direct().unwrap_or(false) {
                         return HttpResponse::error(409, "cutover_pending", "桌面采集尚未切换到直写，请先完成切换。");
                     }
                     let result = store.ingest(&batch);
-                    (result, store.table_counts().ok().and_then(|c| c.get("events").copied()))
+                    if result.as_ref().is_ok_and(|r| r.inserted + r.tombstoned > 0) {
+                        self.record_event_count(&store);
+                    }
+                    result
                 };
                 match result {
                     Ok(r) => {
                         if r.inserted + r.tombstoned + r.threads_inserted + r.threads_updated > 0 {
-                            if let Some(n) = events {
-                                self.update_status(|s| s.events = n);
-                            }
+                            self.feed.publish("status");
                             self.feed.publish("data");
                         }
                         ok_json(&serde_json::to_value(r).unwrap_or(Value::Null))
@@ -807,10 +813,8 @@ impl Core {
         match outcome {
             Ok(n) => {
                 if n > 0 {
-                    let events = lock(&self.store).table_counts().ok().and_then(|c| c.get("events").copied());
-                    if let Some(events) = events {
-                        self.update_status(|s| s.events = events);
-                    }
+                    self.record_event_count(&lock(&self.store));
+                    self.feed.publish("status");
                     self.feed.publish("data");
                 }
                 ok_json(&json!({"deleted": n}))

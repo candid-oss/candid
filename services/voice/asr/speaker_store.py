@@ -12,6 +12,18 @@ import numpy as np
 from .speaker_models import VOICE_ID, VOICE_REV, unit
 
 
+# Matching policy measured on real recordings (cosine, CAM++): with 8 s or more of a speaker's pooled
+# speech, the same person scores 0.75–0.96 and different people stay below about 0.56; with 3 s or less
+# the two overlap. A name is therefore applied automatically only with enough speech, a short speaker
+# can at most be offered as 「可能是」, and under 3 s there is no verdict at all.
+AUTO_THRESHOLD = 0.62
+AUTO_SECONDS = 8.0
+MAYBE_SECONDS = 3.0
+MATCH_MARGIN = 0.05
+# Vectors stored before speech length was recorded were means of short clips: keep the stricter bar.
+LEGACY_THRESHOLD = 0.70
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -166,13 +178,23 @@ class SpeakerStore:
             if not db.execute("DELETE FROM analyses WHERE id=?", (analysis_id,)).rowcount:
                 raise ValueError("Analysis not found")
 
-    def match(self, vector, threshold=0.65, margin=0.05):
-        if not -1 <= threshold <= 1 or not 0 <= margin <= 2:
+    def match(self, vector, threshold=None, margin=MATCH_MARGIN, seconds=None):
+        """Closest library person. `seconds` is how much speech the vector was computed from; without it
+        the vector is treated as a legacy short-clip mean and judged with the stricter threshold."""
+        if threshold is not None and not -1 <= threshold <= 1 or not 0 <= margin <= 2:
             raise ValueError("Invalid cosine threshold or margin")
-        unknown = {"status": "unknown", "person_id": None, "name": None,
-                   "score": None, "margin": None, "reason": "no_usable_voiceprint", "candidates": []}
+        if seconds is not None and (type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0):
+            raise ValueError("Invalid speech length")
+        if threshold is None:
+            threshold = LEGACY_THRESHOLD if seconds is None else AUTO_THRESHOLD
+        unknown = {"status": "unknown", "person_id": None, "name": None, "score": None, "margin": None,
+                   "threshold": threshold, "seconds": seconds, "allow_auto": False,
+                   "reason": "no_usable_voiceprint", "candidates": []}
         if vector is None:
             return unknown
+        if seconds is not None and seconds < MAYBE_SECONDS:
+            unit(vector)
+            return {**unknown, "reason": "too_little_speech"}
         vector = unit(vector)
         with self.db() as db:
             rows = db.execute("""SELECT p.id,p.name,s.vector FROM samples s JOIN people p ON s.person_id=p.id
@@ -193,11 +215,15 @@ class SpeakerStore:
             return {**unknown, "reason": "empty_library"}
         first = candidates[0]
         gap = first["score"] - candidates[1]["score"] if len(candidates) > 1 else None
-        accepted = first["score"] >= threshold and (gap is None or gap >= margin)
+        long_enough = seconds is None or seconds >= AUTO_SECONDS
+        accepted = first["score"] >= threshold and (gap is None or gap >= margin) and long_enough
+        reason = ("threshold_passed" if accepted else
+                  "needs_more_speech" if first["score"] >= threshold and (gap is None or gap >= margin)
+                  else "below_threshold_or_ambiguous")
         return {"status": "matched" if accepted else "unknown",
                 "person_id": first["person_id"] if accepted else None,
                 "name": first["name"] if accepted else None, "score": first["score"], "margin": gap,
-                "reason": "threshold_passed" if accepted else "below_threshold_or_ambiguous",
+                "threshold": threshold, "seconds": seconds, "allow_auto": accepted, "reason": reason,
                 "candidates": candidates[:3]}
 
 
@@ -214,23 +240,31 @@ class VoiceRefs:
             db.execute("""CREATE TABLE IF NOT EXISTS refs (
                 ref TEXT PRIMARY KEY, vector TEXT NOT NULL, model_id TEXT NOT NULL,
                 model_revision TEXT NOT NULL, created_at TEXT NOT NULL)""")
+            # Speech length behind each vector; NULL for references written before it was recorded.
+            if "seconds" not in {row[1] for row in db.execute("PRAGMA table_info(refs)")}:
+                db.execute("ALTER TABLE refs ADD COLUMN seconds REAL")
 
     @contextmanager
     def db(self):
         with sqlite3.connect(self.path, timeout=30) as db:
             yield db
 
-    def put(self, ref, vector):
+    def put(self, ref, vector, seconds=None):
         with self.db() as db:
-            db.execute("INSERT OR REPLACE INTO refs VALUES(?,?,?,?,?)",
-                       (ref, json.dumps(unit(vector).tolist()), VOICE_ID, VOICE_REV, now()))
+            db.execute("INSERT OR REPLACE INTO refs(ref,vector,model_id,model_revision,created_at,seconds) VALUES(?,?,?,?,?,?)",
+                       (ref, json.dumps(unit(vector).tolist()), VOICE_ID, VOICE_REV, now(),
+                        None if seconds is None else float(seconds)))
 
-    def vectors(self, refs):
+    def entries(self, refs):
+        """{ref: (vector, seconds)} for references made with the current voice model."""
         refs = list(refs)
         with self.db() as db:
-            rows = db.execute(f"SELECT ref,vector FROM refs WHERE model_id=? AND model_revision=? AND ref IN ({','.join('?' * len(refs))})",
+            rows = db.execute(f"SELECT ref,vector,seconds FROM refs WHERE model_id=? AND model_revision=? AND ref IN ({','.join('?' * len(refs))})",
                               (VOICE_ID, VOICE_REV, *refs)).fetchall() if refs else []
-        return {ref: json.loads(vector) for ref, vector in rows}
+        return {ref: (json.loads(vector), seconds) for ref, vector, seconds in rows}
+
+    def vectors(self, refs):
+        return {ref: vector for ref, (vector, _) in self.entries(refs).items()}
 
     def forget(self, refs):
         refs = list(refs)
