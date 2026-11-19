@@ -133,6 +133,7 @@ pub struct Service {
     stop: Arc<AtomicBool>,
     sync: Option<JoinHandle<()>>,
     workflows: Option<JoinHandle<()>>,
+    convert: Option<JoinHandle<()>>,
 }
 
 fn utc_seconds_now() -> String {
@@ -264,7 +265,8 @@ impl Service {
                 if !workflow_stop.load(Ordering::SeqCst) { std::thread::park_timeout(Duration::from_secs(2)); }
             }
         }).map_err(|e| failed(e.to_string()))?);
-        Ok(Service { workflows, store: shared, endpoint, core, run_dir: opts.run_dir.clone(), server, local, stop, sync })
+        let convert = crate::library_conversion::start(shared.clone(), stop.clone()).ok();
+        Ok(Service { workflows, convert, store: shared, endpoint, core, run_dir: opts.run_dir.clone(), server, local, stop, sync })
     }
 
     pub fn port(&self) -> u16 {
@@ -281,6 +283,10 @@ impl Service {
             let _ = s.join();
         }
         if let Some(w)=self.workflows.take(){let _=w.join();}
+        if let Some(c) = self.convert.take() {
+            c.thread().unpark();
+            let _ = c.join();
+        }
         self.core.feed.close_all();
         if let Some(mut l) = self.local.take() {
             l.stop();
