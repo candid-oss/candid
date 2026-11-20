@@ -485,7 +485,8 @@ impl TimelineStore {
                 let path = self.root.join(&rel).display().to_string();
                 if role == "original" {
                     entry.0 = Some((sha, path));
-                } else if role == "derived" && mime == "application/json" {
+                } else if role == "derived" && (mime == crate::json_blobs::JSON_MIME || mime == crate::json_blobs::DEFLATE_JSON_MIME) {
+                    // Compressed AX evidence keeps its `.json.deflate` suffix; the App inflates it.
                     entry.1 = Some(path);
                 }
             }

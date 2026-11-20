@@ -19,6 +19,9 @@ fn main() {
         total += n;
         if !more { break; }
     }
+    let json_start = Instant::now();
+    let json = candid_service::json_compaction::run_all(&shared).unwrap();
+    println!("derived JSON: {} converted, {} skipped, {} MB -> {} MB in {:.0} s", json.converted, json.skipped, json.bytes_before / 1_000_000, json.bytes_after / 1_000_000, json_start.elapsed().as_secs_f64());
     let s = shared.lock().unwrap();
     let wav = s.queue_legacy_wav_compaction().unwrap();
     println!("workers {workers}; converted {total} of {} JPEG ({} MB) in {:.0} s", before.0, before.1 / 1_000_000, start.elapsed().as_secs_f64());

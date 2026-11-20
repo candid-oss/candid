@@ -4,6 +4,7 @@ use crate::chunk::{TextChunk, TextChunker};
 use crate::db::{boolean, int, opt_int, opt_text, text, RowExt, P};
 use crate::ids::{sha256_hex, sha256_hex_file, uuid_v7};
 use crate::json;
+use crate::json_blobs;
 use crate::schema;
 use crate::store::{mkdir_private, standardize, TimelineStore};
 use crate::types::{IngestBatch, IngestBlob, IngestEvent, IngestTextPart, SourcePolicy};
@@ -57,6 +58,8 @@ pub(crate) struct PreparedBlob {
     mime: String,
     staging: PathBuf,
     byte_count: i64,
+    /// Bytes to store instead of the staging file (derived JSON compressed at ingest, `json_blobs`).
+    packed: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]
@@ -249,7 +252,22 @@ impl TimelineStore {
                 }
                 let size = fs::metadata(&path).map(|m| m.len() as i64).unwrap_or(0);
                 let mime = b.mime_type.clone().unwrap_or_else(|| guess_mime(&ext_of(&path)).to_string());
-                blobs.push(PreparedBlob { blob: b.clone(), mime, staging: path, byte_count: size });
+                if json_blobs::compresses(&b.role, &mime) {
+                    // Stored compressed: the blob's identity becomes the hash of the stored bytes.
+                    let packed = json_blobs::compress_json(&fs::read(&path)?);
+                    let mut blob = b.clone();
+                    blob.sha256 = sha256_hex(&packed);
+                    blob.mime_type = Some(json_blobs::DEFLATE_JSON_MIME.into());
+                    blobs.push(PreparedBlob {
+                        blob,
+                        mime: json_blobs::DEFLATE_JSON_MIME.into(),
+                        staging: path,
+                        byte_count: packed.len() as i64,
+                        packed: Some(packed),
+                    });
+                    continue;
+                }
+                blobs.push(PreparedBlob { blob: b.clone(), mime, staging: path, byte_count: size, packed: None });
             }
         } else {
             for b in &e.blobs {
@@ -529,7 +547,11 @@ impl TimelineStore {
         let mut created = false;
         if self.db.scalar("SELECT COUNT(*) FROM blobs WHERE sha256=?", &[text(sha)])? == 0 {
             let ext = safe_extension(&ext_of(&b.staging));
-            let rel = format!("blobs/sha256/{}/{}{}", &sha[..2], sha, if ext.is_empty() { String::new() } else { format!(".{ext}") });
+            let rel = if b.packed.is_some() {
+                json_blobs::blob_rel_path(sha)
+            } else {
+                format!("blobs/sha256/{}/{}{}", &sha[..2], sha, if ext.is_empty() { String::new() } else { format!(".{ext}") })
+            };
             let dest = self.root.join(&rel);
             if let Some(dir) = dest.parent() {
                 mkdir_private(dir)?;
@@ -537,15 +559,21 @@ impl TimelineStore {
             if dest.exists() {
                 fs::remove_file(&dest)?; // leftover from a crashed attempt, never referenced
             }
-            fs::rename(&b.staging, &dest)?;
-            created_files.push(dest.clone());
-            let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
-            if let Ok(f) = fs::OpenOptions::new().write(true).open(&dest) {
-                // Plain fsync, as Swift's FileHandle.synchronize(): std's sync_all is F_FULLFSYNC on Apple platforms,
-                // a full device flush per blob that made the first import twice as slow.
-                use std::os::unix::io::AsRawFd;
-                // SAFETY: fsync on a descriptor owned by `f`.
-                unsafe { libc::fsync(f.as_raw_fd()) };
+            if let Some(packed) = &b.packed {
+                // Written private and fsynced; the staging file goes with the batch's leftovers.
+                json_blobs::write_blob_file(&dest, packed)?;
+                created_files.push(dest.clone());
+            } else {
+                fs::rename(&b.staging, &dest)?;
+                created_files.push(dest.clone());
+                let _ = fs::set_permissions(&dest, fs::Permissions::from_mode(0o600));
+                if let Ok(f) = fs::OpenOptions::new().write(true).open(&dest) {
+                    // Plain fsync, as Swift's FileHandle.synchronize(): std's sync_all is F_FULLFSYNC on Apple platforms,
+                    // a full device flush per blob that made the first import twice as slow.
+                    use std::os::unix::io::AsRawFd;
+                    // SAFETY: fsync on a descriptor owned by `f`.
+                    unsafe { libc::fsync(f.as_raw_fd()) };
+                }
             }
             if let Some(hook) = &self.hooks.ingest {
                 hook("afterBlobMove")?;

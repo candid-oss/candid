@@ -786,18 +786,25 @@ impl TimelineStore {
             };
             let budget = ctx.scope.max_result_bytes / 2; // base64 inflates by 4/3 and the envelope needs room
             let mut data = None;
+            let (mut served_mime, mut served_bytes) = (b.1.clone(), b.2);
             if b.2 <= budget * 3 / 4 {
                 let bytes = std::fs::read(self.root.join(&b.3)).map_err(TimelineError::from)?;
                 if sha256_hex(&bytes) != b.0 {
                     return Err(TimelineError::BlobMismatch("原件 hash 与记录不一致".into()).into());
                 }
-                data = Some(base64::engine::general_purpose::STANDARD.encode(bytes));
+                // Compressed JSON is served as the JSON it stands for.
+                let (bytes, mime) = crate::json_blobs::logical_bytes(bytes, &b.1).map_err(TimelineError::from)?;
+                if bytes.len() as i64 <= budget * 3 / 4 {
+                    served_mime = mime;
+                    served_bytes = bytes.len() as i64;
+                    data = Some(base64::engine::general_purpose::STANDARD.encode(bytes));
+                }
             }
             Ok(MediaResponse {
                 event_id: req.event_id.clone(),
                 sha256: b.0,
-                mime_type: b.1,
-                byte_count: b.2,
+                mime_type: served_mime,
+                byte_count: served_bytes,
                 variant_served: served,
                 too_large: data.is_none(),
                 base64: data,

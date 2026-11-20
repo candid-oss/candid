@@ -147,6 +147,10 @@ pub(crate) fn mkdir_private(path: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Bytes a WAL file keeps after a checkpoint resets it. Without a limit SQLite reuses the file at the largest size
+/// it ever reached (a single upgrade transaction once left it at ~800 MB).
+const WAL_SIZE_LIMIT: i64 = 64 * 1024 * 1024;
+
 fn iso_utc_seconds(ms: i64) -> String {
     use chrono::TimeZone;
     chrono::Utc.timestamp_millis_opt(ms).single().unwrap_or_default().format("%Y-%m-%dT%H:%M:%SZ").to_string()
@@ -188,6 +192,8 @@ impl TimelineStore {
                 return Err(TimelineError::NewerSchema { found: identity.schema_version, supported: SCHEMA_VERSION });
             }
             db = Db::open(&db_path, false, false)?;
+            // Set before the upgrade chain, whose large transactions are what grow the WAL.
+            db.execute(&format!("PRAGMA journal_size_limit={WAL_SIZE_LIMIT}"), &[])?;
             let version = db.scalar("PRAGMA user_version", &[])?;
             if version > SCHEMA_VERSION {
                 return Err(TimelineError::NewerSchema { found: version, supported: SCHEMA_VERSION });
@@ -211,6 +217,7 @@ impl TimelineStore {
             fs::rename(&temp, &store_json)?;
         }
         db.execute("PRAGMA journal_mode=WAL", &[])?;
+        db.execute(&format!("PRAGMA journal_size_limit={WAL_SIZE_LIMIT}"), &[])?;
         db.execute("PRAGMA synchronous=FULL", &[])?;
         db.execute("PRAGMA foreign_keys=ON", &[])?;
         db.execute("PRAGMA busy_timeout=5000", &[])?;
@@ -237,7 +244,16 @@ impl TimelineStore {
         };
         // Pre-v5 workflow drafts move into the derived tables once; a failure rolls back and retries next open.
         let _ = store.migrate_workflow_drafts();
+        // A WAL left large by an earlier run (or by the upgrade above) is given back once at open.
+        store.truncate_wal();
         Ok(store)
+    }
+
+    /// Copies the WAL into the database and truncates it to zero bytes, after a batch that wrote a lot (an upgrade,
+    /// a large deletion or cleanup). Best effort: with a reader in the middle of a transaction it does nothing, and
+    /// `journal_size_limit` still caps what the WAL keeps after the next ordinary checkpoint.
+    pub fn truncate_wal(&self) {
+        let _ = self.db.execute("PRAGMA wal_checkpoint(TRUNCATE)", &[]);
     }
 
     /// Releases the writer lock. The store should be dropped afterwards.
