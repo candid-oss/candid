@@ -39,7 +39,9 @@ final class MediaWorkspaceStore {
     var callRecordingReminders: Bool = true { didSet { saveAudioPreferences() } }
     var autoStopCallRecording = true { didSet { saveAudioPreferences() } }
     private(set) var callRecordingTarget: CallAudioProcess?
-    var recordingSegmentSeconds = 30
+    /// Parts are written progressively (fragmented AAC), so their length only bounds one upload and one quick
+    /// transcription; ten minutes matches the whole-recording speaker windows. The user never sees parts.
+    var recordingSegmentSeconds = 600
     private(set) var savedRecordingSegments = 0
     var recordingFinishing = false
     var recordingNotice: String?

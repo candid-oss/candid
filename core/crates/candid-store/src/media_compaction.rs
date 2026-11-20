@@ -33,8 +33,8 @@ fn bad(s: &str) -> TimelineError {
 }
 
 impl TimelineStore {
-    /// Parts whose processing is over: the recording is no longer running, no job for the part or its recording is
-    /// queued or running, and nothing about them changed for `grace_ms` (so a follow-up step, such as speakers after
+    /// Parts whose processing is over: the recording is no longer running, no job that reads its audio (transcription,
+    /// speakers) is queued or running — a title or summary job reads text only and may wait indefinitely — and nothing about them changed for `grace_ms` (so a follow-up step, such as speakers after
     /// the last transcript, has been scheduled if it is going to be).
     pub fn media_compaction_candidates(&self, grace_ms: i64, limit: usize) -> Result<Vec<CompactionCandidate>> {
         let now = self.clock.now_ms();
@@ -66,7 +66,7 @@ impl TimelineStore {
             let (pending, last_job) = self
                 .db
                 .first(
-                    "SELECT COUNT(CASE WHEN state IN ('queued','running') THEN 1 END),COALESCE(MAX(updated_ms),0) FROM jobs WHERE input_ref IN (?,?)",
+                    "SELECT COUNT(CASE WHEN state IN ('queued','running') AND kind IN ('speech.recognize','workflow.speakers') THEN 1 END),COALESCE(MAX(updated_ms),0) FROM jobs WHERE input_ref IN (?,?)",
                     &[text(&id), text(&rid)],
                     |r| (r.int(0), r.int(1)),
                 )?
@@ -124,7 +124,7 @@ impl TimelineStore {
                 .first("SELECT recording_id FROM media_parts WHERE id=?", &[text(&candidate.id)], |r| r.text(0))?
                 .unwrap_or_else(|| candidate.id.clone());
             let busy = self.db.scalar(
-                "SELECT COUNT(*) FROM jobs WHERE input_ref IN (?,?) AND state IN ('queued','running')",
+                "SELECT COUNT(*) FROM jobs WHERE input_ref IN (?,?) AND state IN ('queued','running') AND kind IN ('speech.recognize','workflow.speakers')",
                 &[text(&candidate.id), text(&rid)],
             )? > 0;
             if !still || busy {

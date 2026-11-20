@@ -44,11 +44,11 @@ extension MediaWorkspaceStore {
             for segment in inventory.pending {
                 // Revalidate immediately before upload; changed bytes never reuse an ID.
                 try await Task.detached(priority: .utility) {
-                    let verified = try RecordingJournal.validate(journal.file(segment, ".wav"), sampleRate: segment.sampleRate)
+                    let verified = try RecordingJournal.validate(journal.file(segment, segment.mediaSuffix), sampleRate: segment.sampleRate)
                     guard verified.hash == segment.sha256, verified.frames == segment.sampleCount else { throw RecordingJournalError.invalid }
                 }.value
                 let item: MediaLibraryRecord
-                do { item = try await client.upload(segment.draft, file: journal.file(segment, ".wav")) }
+                do { item = try await client.upload(segment.draft, file: journal.file(segment, segment.mediaSuffix)) }
                 catch MediaWorkspaceError.rejected(409, _) {
                     guard try await client.recordingWasDeleted(segment.recordingID) else { throw MediaWorkspaceError.malformed }
                     // An authenticated, matching tombstone is a terminal acknowledgement.
@@ -85,7 +85,7 @@ extension MediaWorkspaceStore {
 
 extension RecordingSegment {
     var draft: MediaDraft {
-        MediaDraft(id: id, filename: filename, storedName: stem + ".wav", kind: "audio",
+        MediaDraft(id: id, filename: filename, storedName: stem + mediaSuffix, kind: "audio",
                    source: (input ?? .microphone).source, occurredAt: occurredAt, needsReview: false,
                    recording: RecordingUpload(recordingID: recordingID, segmentIndex: index, sampleStart: sampleStart,
                                               sampleCount: sampleCount, sampleRate: sampleRate,

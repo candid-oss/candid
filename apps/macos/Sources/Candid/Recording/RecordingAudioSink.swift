@@ -21,8 +21,8 @@ final class RecordingAudioSink: @unchecked Sendable {
     private var expectedSampleTime: Int64?
     private var state = Status()
 
-    init(journal: RecordingJournal, sampleRate: Int, seconds: Int, startedAt: Date, input: RecordingInput = .microphone) throws {
-        writer = try SegmentedRecordingWriter(journal: journal, sampleRate: sampleRate, seconds: seconds, startedAt: startedAt, input: input)
+    init(journal: RecordingJournal, sampleRate: Int, seconds: Int, startedAt: Date, input: RecordingInput = .microphone, codec: RecordingCodec = .wav) throws {
+        writer = try SegmentedRecordingWriter(journal: journal, sampleRate: sampleRate, seconds: seconds, startedAt: startedAt, input: input, codec: codec)
         recordingID = writer.session.id
         maximumBytes = sampleRate * 2 * 5 // five seconds, then fail visibly instead of dropping samples
     }

@@ -328,3 +328,38 @@ fn anonymous_speaker_labels_remain_scoped_to_each_physical_recording() {
     let item=fx.store.media_item(R).unwrap();assert_eq!(item["segments"][0]["speaker"],"录音段1 · 说话人1");assert_eq!(item["segments"][1]["speaker"],"录音段2 · 说话人1");assert_eq!(item["segments"][1]["start_seconds"],1.);assert_eq!(item["segments"][1]["source_segment_id"],B);assert_eq!(item["title"],"人工标题");assert_eq!(item["notes"],"人工备注");
     assert!(fx.store.media_command(&json!({"action":"content","id":R})).is_ok());
 }
+
+/// Parts recorded straight to AAC (fragmented MP4) link with their exact valid frames, ten minutes long allowed,
+/// and are not marked for compaction (they are already AAC).
+#[cfg(target_os = "macos")]
+#[test]
+fn aac_recording_parts_link_with_exact_frames() {
+    let fx = Fx::make("native-aac-parts");
+    let pcm = fx.root.join("SYNTHETIC-tone.wav");
+    let rate = 16000u32;
+    let samples = rate * 20;
+    let mut b = vec![];
+    b.extend(b"RIFF");
+    b.extend((36 + samples * 2).to_le_bytes());
+    b.extend(b"WAVEfmt ");
+    b.extend(16u32.to_le_bytes());
+    b.extend([1, 0, 1, 0]);
+    b.extend(rate.to_le_bytes());
+    b.extend((rate * 2).to_le_bytes());
+    b.extend([2, 0, 16, 0]);
+    b.extend(b"data");
+    b.extend((samples * 2).to_le_bytes());
+    for i in 0..samples {
+        b.extend(((((i as f64) * 0.17).sin() * 8000.0) as i16).to_le_bytes());
+    }
+    fs::write(&pcm, b).unwrap();
+    let aac = fx.root.join("SYNTHETIC-part.m4a");
+    assert!(std::process::Command::new("/usr/bin/afconvert").args(["-f", "m4af", "-d", "aac", "-b", "48000", "-c", "1"]).arg(&pcm).arg(&aac).status().unwrap().success());
+    let mut v = json!({"action":"import","id":A,"filename":"SYNTHETIC.m4a","kind":"audio","source":"mac_microphone","path":aac,"occurred_at":"2026-11-12T00:00:00Z"});
+    v["recording"] = json!({"recording_id":R,"segment_index":0,"sample_start":0,"sample_count":samples + 1,"sample_rate":rate,"recording_started_at":"2026-11-12T00:00:00Z"});
+    assert!(fx.store.media_command(&v).is_err(), "a wrong frame count is refused");
+    v["recording"]["sample_count"] = json!(samples);
+    let item = fx.store.media_command(&v).unwrap();
+    assert_eq!(item["duration_seconds"], 20.0);
+    assert!(fx.store.media_compaction_candidates(0, 10).unwrap().is_empty(), "AAC parts are not compacted again");
+}

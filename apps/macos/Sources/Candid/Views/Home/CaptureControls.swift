@@ -87,7 +87,7 @@ struct CaptureControls: View {
             .help(media.microphoneQuiet ? L("麦克风几秒没有收到声音。点按停止录音") : L("正在录制%@，点按停止", media.activeRecordingInput.label))
             .transition(.scale(scale: 0.7).combined(with: .opacity))
         } else {
-            ControlIcon(systemImage: media.recordingInput == .microphone ? "mic" : "waveform.badge.mic", help: media.canCapture ? L("开始%@录音，每 %@ 秒自动保存到本机资料库", media.recordingInput.label, media.recordingSegmentSeconds) : L("先保存或丢弃上一份素材"), disabled: !media.canCapture) {
+            ControlIcon(systemImage: media.recordingInput == .microphone ? "mic" : "waveform.badge.mic", help: media.canCapture ? L("开始%@录音，边录边保存到本机", media.recordingInput.label) : L("先保存或丢弃上一份素材"), disabled: !media.canCapture) {
                 Task { await media.startRecording() }
             }
             .transition(.scale(scale: 0.7).combined(with: .opacity))
@@ -126,13 +126,6 @@ struct CaptureControls: View {
                 Toggle(L("通话结束自动停止"), isOn: Binding(get: { media.autoStopCallRecording }, set: { media.autoStopCallRecording = $0 }))
                     .disabled(media.isDemo)
             }
-            HStack {
-                Text(L("录音分段保存")).typography(.secondary).foregroundStyle(.secondary)
-                Spacer()
-                MenuChoice(options: [(30, L("每 30 秒")), (60, L("每 60 秒"))],
-                           selection: Binding(get: { media.recordingSegmentSeconds }, set: { media.recordingSegmentSeconds = $0 }))
-            }
-            .disabled(media.isRecording || media.busy)
             HairlineDivider().padding(.vertical, 6)
             HStack {
                 Text(session.lastSaved.map { L("最近保存 ") + $0.clockText } ?? L("本次还没有保存")).typography(.caption).foregroundStyle(.secondary)
