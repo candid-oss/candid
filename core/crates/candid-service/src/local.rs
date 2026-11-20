@@ -557,11 +557,19 @@ impl Core {
                 ok_json(&result)
             },Err(e)=>store_error(&e)};
         }
-        if ["/local/models", "/local/workflows", "/local/models/authorize", "/local/models/complete"].contains(&path.as_str()) {
+        if ["/local/models", "/local/workflows", "/local/models/authorize", "/local/models/complete", "/local/compose"].contains(&path.as_str()) {
             if method != "POST" {return HttpResponse::error(405,"method","请用 POST。");}
             if !bearer(request).is_empty(){return HttpResponse::error(403,"internal_only","此操作只供 App 使用。");}
             let v:Value=match decode(request,"固定流程"){Ok(v)=>v,Err(e)=>return e};
             if path=="/local/models/authorize" {crate::workflows::authorize(&v);return ok_json(&json!({"authorized":true}));}
+            if path=="/local/compose" {
+                // Draft from the user's history (plan M3): the store builds the request, the call runs unlocked.
+                let prepared=match lock(&self.store).compose_prepare(&v){Ok(p)=>p,Err(e)=>return store_error(&e)};
+                return match crate::workflows::complete(&self.store,&prepared){
+                    Ok(out)=>ok_json(&json!({"draft":out["text"].as_str().unwrap_or("").trim(),"context":prepared["context"],"call_id":out["call_id"]})),
+                    Err(e)=>HttpResponse::error(409,"model_call_failed",&e),
+                };
+            }
             if path=="/local/models/complete" {return match crate::workflows::complete(&self.store,&v){Ok(v)=>ok_json(&v),Err(e)=>HttpResponse::error(409,"model_call_failed",&e)};}
             let result=if path=="/local/models"{lock(&self.store).model_command(&v)}else{lock(&self.store).workflow_command(&v)};
             return match result {Ok(v)=>{self.feed.publish("data");ok_json(&v)},Err(e)=>store_error(&e)};

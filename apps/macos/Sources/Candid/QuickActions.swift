@@ -9,9 +9,9 @@ extension Notification.Name {
 }
 
 enum QuickAction: String, CaseIterable, Codable, Identifiable {
-    case screenshot, marker, recording, note, search
+    case screenshot, marker, recording, note, search, compose
     var id: String { rawValue }
-    var title: String { switch self { case .screenshot: L("截图"); case .marker: L("标记此刻"); case .recording: L("开始或停止录音"); case .note: L("快速记一笔"); case .search: L("搜索") } }
+    var title: String { switch self { case .screenshot: L("截图"); case .marker: L("标记此刻"); case .recording: L("开始或停止录音"); case .note: L("快速记一笔"); case .search: L("搜索"); case .compose: L("帮我写") } }
 }
 
 /// Notes are evidence in the existing core, not a second notes database.

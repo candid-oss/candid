@@ -16,10 +16,18 @@ import SwiftUI
     private var handler: EventHandlerRef?
     private var active = false
     private let defaults: UserDefaults
-    static let keys: [(String, UInt32)] = [("S", 1), ("M", 46), ("R", 15), ("N", 45), ("F", 3), ("1", 18), ("2", 19), ("3", 20), ("4", 21), ("5", 23)]
+    static let keys: [(String, UInt32)] = [("S", 1), ("M", 46), ("R", 15), ("N", 45), ("F", 3), ("J", 38), ("1", 18), ("2", 19), ("3", 20), ("4", 21), ("5", 23)]
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         if let data = defaults.data(forKey: "candid.hotkeys"), let values = try? JSONDecoder().decode([String: Binding].self, from: data) { bindings = values }
+        // 「帮我写」 is only useful from a shortcut, so it starts with one (⇧⌘J); it can be changed or turned off.
+        if !defaults.bool(forKey: "candid.hotkeys.compose.defaulted") {
+            defaults.set(true, forKey: "candid.hotkeys.compose.defaulted")
+            if bindings[QuickAction.compose.rawValue] == nil, !bindings.values.contains(Binding(key: 38, modifiers: UInt32(cmdKey | shiftKey))) {
+                bindings[QuickAction.compose.rawValue] = Binding(key: 38, modifiers: UInt32(cmdKey | shiftKey))
+                defaults.set(try? JSONEncoder().encode(bindings), forKey: "candid.hotkeys")
+            }
+        }
     }
     func start() {
         guard !active else { return }; active = true

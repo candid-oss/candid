@@ -68,6 +68,7 @@ struct HomeRootView: View {
             }
             switch action {
             case .search: requestSearch()
+            case .compose: ComposePanel.shared.show()
             case .note: quickNote.target = nil; showingNote = true; NSApp.activate(ignoringOtherApps: true)
             case .marker: if !session.isDemo { session.addMarker() }
             case .screenshot: if !session.isDemo && media.canCapture { Task { await media.captureRegion() } }

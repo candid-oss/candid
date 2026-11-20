@@ -1,3 +1,4 @@
+import Carbon
 import Foundation
 import Testing
 import CandidClient
@@ -9,7 +10,10 @@ import TimelineConnectors
     let defaults = try #require(UserDefaults(suiteName: name))
     defer { defaults.removePersistentDomain(forName: name) }
     let model = GlobalHotkeys(defaults: defaults)
-    #expect(model.bindings.isEmpty)
+    // Only 「帮我写」 starts with a shortcut (⇧⌘J); turning it off is remembered.
+    #expect(model.bindings == [QuickAction.compose.rawValue: .init(key: 38, modifiers: UInt32(Carbon.cmdKey | Carbon.shiftKey))])
+    model.configure(.compose, key: nil)
+    #expect(GlobalHotkeys(defaults: defaults).bindings.isEmpty)
     model.configure(.marker, key: 46)
     model.configure(.note, key: 46)
     #expect(model.errors[QuickAction.note.rawValue] != nil)

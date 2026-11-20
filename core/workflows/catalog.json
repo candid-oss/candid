@@ -275,6 +275,22 @@
       "role": "agent_chat",
       "settings": "automation",
       "output": "candid-agent-run/1"
+    },
+    {
+      "id": "screen-excerpt",
+      "title": "屏幕对话与摘录",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "截图出现新内容时",
+      "role": "vision",
+      "job_kind": "screen.excerpt",
+      "sources": [
+        "*"
+      ],
+      "default_enabled": false,
+      "default_daily_calls": 300,
+      "allow_remote": false,
+      "notifications": false
     }
   ]
 }

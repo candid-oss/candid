@@ -2054,5 +2054,13 @@
  "：": ": ",
  "：%@": ": %@",
  "：查上次相关的会议、邮件和待办，列出这次要谈的几点。": ": look up the related meetings, mail and to-dos from last time and list the points to discuss this time.",
- "；": "; "
+ "；": "; ",
+ "帮我写": "Write for me",
+ "要写什么？例如：回他周四三点可以，报价晚点发": "What should it say? e.g. tell him Thursday 3pm works, quote to follow",
+ "按回车开始。会参考这段对话和你以前的说法，不会替你发送。": "Press Return. Uses this conversation and how you usually write; nothing is sent for you.",
+ "没写出来：%@": "Couldn't draft it: %@",
+ "参考了：%@": "Based on: %@",
+ "插入": "Insert",
+ "屏幕对话与摘录": "Screen conversations and excerpts",
+ "截图出现新内容时": "When a screenshot shows new content"
 }

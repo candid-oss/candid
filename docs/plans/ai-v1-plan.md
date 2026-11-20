@@ -6,7 +6,13 @@
 
 - **2026-11-20 · AI 可读层骨架（M1 的一部分）**：`conversations` / `messages` / `message_sources` / `excerpts` / `excerpt_sources` 派生表和整理层全文索引（时间线库 v11，`core/crates/candid-store/src/curated.rs`）；邮件和录音转写投影成消息（后台 tick 增量同步）；新工具 `find`、`conversations`、`conversation`、`evidence`，已进 MCP 目录和 Pi，系统提示改为优先读整理层；OCR 行坐标随 `image.text` 入库（payload `boxes`）。在本机真实数据副本上验证：升级 59ms，首次投影 193 条消息 72ms，查询 < 25ms。
   - 已知缺口：录音消息的说话人还是空的（标签存在 `media_recognitions` 的 conversation 结果里，下一步接上）；`ClientScope` 的原始层开关还没加，旧工具暂时照常可用；`excerpts` 还没有写入方（M2）。
-- 下一步：M1 其余部分（模型调用的交互通道和流式输出、提示词文件化、样例回放），然后 M2 截图摘录。
+- **2026-11-20 · 截图摘录与「帮我写」打通（M2、M3 v1）**
+  - 截图 → 关键帧（有 OCR 比行，没有 OCR 比 96×60 灰度缩略图）→ `vision` 摘录（提示词 `core/prompts/screen-excerpt.md`，数据目录 `prompts/` 下同名文件可覆盖）→ **OCR 坐标定左右和顺序** → 与对话末尾对齐、和最近 60 条去重后追加。新功能开关「屏幕对话与摘录」（默认关、每日上限 300），不加模型角色。
+  - 实测结论（本机真实截图副本，gemma-4 本地模型）：不给 OCR 时 4B 模型大量认错字（同一个群三帧三个名字）；给 OCR 后名字稳定。**模型普遍分不清左右**（26B 也一样），左右改由 OCR 坐标判断后私聊 10/10 正确。26B-A4B 每帧约 2.4 秒，抄写明显好于 E4B。结论：OCR 负责认字和位置，VLM 负责结构。
+  - `/local/compose` + 「帮我写」面板（默认 ⇧⌘J）：当前对话最近 30 条 + 你的 8 条历史发言 + 选中文字/输入框草稿 → `agent_chat` 一次调用 → 插入到原输入框，不代发。
+  - 样例回放：`cargo run -p candid-store --example excerpt_replay -- select|ocr|apply|compose …`，只用于真实库的**副本**。
+  - 已知缺口：App 的截图 OCR 默认是手动，需要设为自动才有坐标；关键帧偏多（无 OCR 时约 72%）；VLM 偶尔漏掉一条；经 LM Studio HTTP 发送 WebP 图片尚未实测；录音说话人仍为空；模型调用还没有流式输出。
+- 下一步：日程/提醒/备忘抽取（M4）接到对话消息上；关键帧只对变化区域裁剪送 VLM。
 
 ## 0. 调研结论（2026-11-20，本机最近 7 天数据）
 

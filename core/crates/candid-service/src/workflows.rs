@@ -291,6 +291,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         let s = lock(store);
         let _ = s.workflow_scan();
         let _ = s.curated_sync();
+        if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         let _ = s.automation_scan();
         let jobs = match s.pending_workflow_jobs() {
@@ -300,7 +301,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         let mut prepared = None;
         for j in jobs["jobs"].as_array().into_iter().flatten() {
             let kind = j["kind"].as_str().unwrap_or("");
-            if kind != "speech.recognize" && kind != "screen.summarize" && !kind.starts_with("workflow.") {
+            if kind != "speech.recognize" && kind != "screen.summarize" && kind != "screen.excerpt" && !kind.starts_with("workflow.") {
                 continue;
             }
             if j["state"] == "running" {

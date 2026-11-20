@@ -6,6 +6,7 @@
 
 mod chunk;
 mod clock;
+mod compose;
 mod curated;
 mod db;
 mod delete;
@@ -26,6 +27,7 @@ mod merge;
 mod migration;
 mod query;
 mod schema;
+mod screen_excerpt;
 mod store;
 mod types;
 

@@ -67,6 +67,56 @@ pub fn is_webp(bytes: &[u8]) -> bool {
     bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP"
 }
 
+/// Thumbnail edge sizes for change detection (`luma_thumbnail`).
+pub const THUMB_W: usize = 96;
+pub const THUMB_H: usize = 60;
+
+/// A tiny grayscale thumbnail (`THUMB_W` × `THUMB_H`, box-averaged luma) of a WebP image, for telling whether two
+/// screenshots of a window differ without OCR. `None` when the bytes do not decode.
+pub fn luma_thumbnail(webp: &[u8]) -> Option<Vec<u8>> {
+    let (mut w, mut h, mut stride, mut uv_stride) = (0, 0, 0, 0);
+    let (mut u, mut v) = (std::ptr::null_mut(), std::ptr::null_mut());
+    // SAFETY: libwebp reads `webp` within its length and returns one allocation (Y, then U and V) or null.
+    let y = unsafe { sys::WebPDecodeYUV(webp.as_ptr(), webp.len(), &mut w, &mut h, &mut u, &mut v, &mut stride, &mut uv_stride) };
+    if y.is_null() {
+        return None;
+    }
+    let (w, h, stride) = (w as usize, h as usize, stride as usize);
+    let mut out = None;
+    if w >= THUMB_W && h >= THUMB_H && stride >= w {
+        // SAFETY: the Y plane holds `h` rows of `stride` bytes.
+        let plane = unsafe { std::slice::from_raw_parts(y, stride * (h - 1) + w) };
+        let mut thumb = vec![0u8; THUMB_W * THUMB_H];
+        for ty in 0..THUMB_H {
+            let (y0, y1) = (ty * h / THUMB_H, ((ty + 1) * h / THUMB_H).max(ty * h / THUMB_H + 1));
+            for tx in 0..THUMB_W {
+                let (x0, x1) = (tx * w / THUMB_W, ((tx + 1) * w / THUMB_W).max(tx * w / THUMB_W + 1));
+                // Sample every other pixel each way; plenty for an average.
+                let (mut sum, mut n) = (0u32, 0u32);
+                for yy in (y0..y1).step_by(2) {
+                    for xx in (x0..x1).step_by(2) {
+                        sum += plane[yy * stride + xx] as u32;
+                        n += 1;
+                    }
+                }
+                thumb[ty * THUMB_W + tx] = (sum / n.max(1)) as u8;
+            }
+        }
+        out = Some(thumb);
+    }
+    // SAFETY: `y` came from WebPDecodeYUV and is freed once; U and V live in the same allocation.
+    unsafe { sys::WebPFree(y as *mut _) };
+    out
+}
+
+/// Share of thumbnail cells whose brightness changed noticeably between two `luma_thumbnail`s, 0–1.
+pub fn thumbnail_change(a: &[u8], b: &[u8]) -> f64 {
+    if a.len() != b.len() || a.is_empty() {
+        return 1.0;
+    }
+    a.iter().zip(b).filter(|(x, y)| x.abs_diff(**y) > 12).count() as f64 / a.len() as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -95,6 +145,28 @@ mod tests {
         let (mut ww, mut hh) = (0, 0);
         assert_ne!(unsafe { sys::WebPGetInfo(out.as_ptr(), out.len(), &mut ww, &mut hh) }, 0);
         assert_eq!((ww, hh), (w as i32, h as i32));
+    }
+
+    #[test]
+    fn thumbnails_see_changed_regions() {
+        let (w, h, stride) = (640u32, 400u32, 640 * 4);
+        let base = frame(w, h, stride);
+        let mut changed = base.clone();
+        // Paint a bright block over the lower part, like a new chat bubble.
+        for y in 300..360 {
+            for x in 360..600 {
+                let i = y * stride + x * 4;
+                changed[i..i + 3].copy_from_slice(&[255, 255, 255]);
+            }
+        }
+        let a = luma_thumbnail(&encode_bgra(&base, w, h, stride, DEFAULT_QUALITY).unwrap()).unwrap();
+        let a2 = luma_thumbnail(&encode_bgra(&base, w, h, stride, DEFAULT_QUALITY).unwrap()).unwrap();
+        let b = luma_thumbnail(&encode_bgra(&changed, w, h, stride, DEFAULT_QUALITY).unwrap()).unwrap();
+        assert_eq!(a.len(), THUMB_W * THUMB_H);
+        assert!(thumbnail_change(&a, &a2) < 0.001);
+        let d = thumbnail_change(&a, &b);
+        assert!(d > 0.02 && d < 0.2, "{d}");
+        assert!(luma_thumbnail(b"not webp").is_none());
     }
 
     #[test]
