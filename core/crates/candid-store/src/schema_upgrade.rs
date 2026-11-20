@@ -32,7 +32,8 @@ pub(crate) fn upgrade(
         result?;
     } else if version != identity.schema_version {
         let marker = db.first("SELECT value FROM store_meta WHERE key='schema.upgrade'", &[], |r| r.text(0))?;
-        let pending = (version == 10 && identity.schema_version <= 9 && marker.as_deref() == Some("9:10"))
+        let pending = (version == 11 && identity.schema_version <= 10 && marker.as_deref() == Some("10:11"))
+            || (version == 10 && identity.schema_version <= 9 && marker.as_deref() == Some("9:10"))
             || (version == 9 && identity.schema_version <= 8 && marker.as_deref() == Some("8:9"))
             || (version == 8 && identity.schema_version <= 7 && marker.as_deref() == Some("7:8"))
             || (version == 7 && identity.schema_version <= 6 && marker.as_deref() == Some("6:7"))
@@ -182,6 +183,14 @@ pub(crate) fn upgrade(
             db.execute("PRAGMA user_version=10", &[])
         })?;
         vacuum = true;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 10 {
+        // The AI-readable layer: conversations, messages and excerpts; filled by `curated_sync` from the records.
+        db.transaction(|| {
+            db.script(crate::curated::DDL)?;
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','10:11')", &[])?;
+            db.execute("PRAGMA user_version=11", &[])
+        })?;
     }
     if vacuum {
         // Give the freed pages back once; outside the transactions by necessity.

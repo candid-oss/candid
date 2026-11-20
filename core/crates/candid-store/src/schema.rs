@@ -1,6 +1,6 @@
 //! Timeline database v4; v1–v3 roots upgrade transactionally through schema_upgrade.
 
-pub const SCHEMA_VERSION: i64 = 10;
+pub const SCHEMA_VERSION: i64 = 11;
 pub const LAYOUT: &str = "timeline-root/1";
 
 pub struct Kind {
@@ -372,6 +372,7 @@ pub(crate) fn create(db: &crate::db::Db) -> crate::Result<()> {
         crate::performance::install(db)?;
         crate::performance::install_media_projection(db)?;
         db.script(crate::agents::CHECKPOINT_DDL)?;
+        db.script(crate::curated::DDL)?;
         for k in KINDS {
             db.execute(
                 "INSERT INTO event_kinds(kind,layer,is_span,payload_version,description) VALUES(?,?,?,?,?)",

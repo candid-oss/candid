@@ -64,7 +64,7 @@ function core(path: string, body: unknown, signal?: AbortSignal): Promise<{ stat
 /** Some compatible models emit blank optional values. Normalize reads before Pi validates tool arguments;
  * required identifiers, nonempty cursors and every write argument remain untouched. */
 export function normalizeReadArguments(tool: string, input: string): string {
-  if (!["pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
+  if (!["pv_find", "pv_conversations", "pv_conversation", "pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
   try {
     const value = JSON.parse(input);
     if (!value || Array.isArray(value) || typeof value !== "object") return input;
@@ -102,6 +102,22 @@ const opt = Type.Optional;
 const strs = (description: string) => opt(Type.Array(Type.String(), { description }));
 
 const TOOLS: ToolSpec[] = [
+  {
+    name: "pv_find", core: "find", label: "查找内容",
+    description: `在整理好的内容里搜索：对话消息（聊天、邮件、录音转写，带发送人）和阅读摘录。找具体内容先用它；引用时用结果里的 ref。${time}`,
+    parameters: Type.Object({ q: Type.String(), kind: opt(Type.Union([Type.Literal("message"), Type.Literal("excerpt")])), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+  },
+  {
+    name: "pv_conversations", core: "conversations", label: "对话列表",
+    description: `列出对话（chat 聊天、mail 邮件、meeting 录音），最近的在前，带参与者和最后一条消息。问和谁聊过、和某人的往来时用，who 按人名或标题过滤。${time}`,
+    parameters: Type.Object({ kind: opt(Type.Union([Type.Literal("chat"), Type.Literal("mail"), Type.Literal("meeting")])), who: opt(Type.String()), app: opt(Type.String()), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+  },
+  {
+    name: "pv_conversation", core: "conversation", label: "读一段对话",
+    description: "一段对话的消息（时间、发送人、self 是用户自己），按时间顺序，默认最近 30 条；before 非空时用它往前翻。",
+    parameters: Type.Object({ conversation_id: Type.String(), start: opt(Type.String()), before: opt(Type.String()), limit: opt(Type.Number()) }),
+  },
+  { name: "pv_evidence", core: "evidence", label: "查出处", description: "一条消息或摘录依据的原始记录；只在需要核对出处时用。", parameters: Type.Object({ id: Type.String() }) },
   { name: "pv_status", core: "status", label: "记录状态", description: "查询记录状态与来源连接；用户问采集状态、同步或故障时使用。", parameters: Type.Object({}) },
   {
     name: "pv_overview", core: "overview", label: "时段概况",

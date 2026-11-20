@@ -19,9 +19,9 @@ impl Snapshot {
         db.execute_batch("PRAGMA query_only=ON; BEGIN;")?;
         let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         // v2 adds AI records, v4 mail/browser source kinds, v5 the derived layer (digests, entities), v9–v10 slimmer
-        // stored inputs and selectors; the desktop tables/columns read below are unchanged.
-        if ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].contains(&version) {
-            return Err("离线适配器支持时间线库 v1–v10；未知版本须先更新字段映射，不执行迁移".into());
+        // stored inputs and selectors, v11 the AI-readable layer; the desktop tables/columns read below are unchanged.
+        if !(1..=11).contains(&version) {
+            return Err("离线适配器支持时间线库 v1–v11；未知版本须先更新字段映射，不执行迁移".into());
         }
         let mut data = Dataset {
             format: "candid-measurement/1".into(),

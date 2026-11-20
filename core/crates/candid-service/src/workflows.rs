@@ -290,6 +290,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
     let request = {
         let s = lock(store);
         let _ = s.workflow_scan();
+        let _ = s.curated_sync();
         if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         let _ = s.automation_scan();
         let jobs = match s.pending_workflow_jobs() {

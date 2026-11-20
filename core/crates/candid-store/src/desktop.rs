@@ -143,7 +143,7 @@ pub struct RecognitionResult {
     #[allow(dead_code)]
     #[serde(rename = "usedOCRReference")]
     pub used_ocr_reference: bool,
-    #[allow(dead_code)]
+    /// Line boxes; kept on `image.text` as `boxes` (see `livesync::ocr_boxes`).
     pub ocr_lines: Option<Value>,
 }
 

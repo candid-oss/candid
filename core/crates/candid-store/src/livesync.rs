@@ -209,6 +209,9 @@ impl TimelineStore {
             e.title = shot.3;
             e.parent_key = Some(shot_id.clone());
             e.payload = json!({"image_event_id": shot_event, "method": method, "model_id": result.source, "completed_ms": ms_from_reference(result.completed_at)});
+            if let Some(boxes) = ocr_boxes(&result) {
+                e.payload["boxes"] = boxes;
+            }
             e.text = vec![IngestText::new(method, &result.text)];
             let r = self.ingest(&IngestBatch::events(sid, vec![e]))?;
             report.inserted += r.inserted;
@@ -324,5 +327,37 @@ impl TimelineStore {
             self.set_source_status(&sid, "active", None)?;
         }
         Ok(report)
+    }
+}
+
+/// OCR line boxes `[x, y, width, height]` on a 0–1000 grid, one per line of the result text, so later steps can
+/// split a screenshot into columns and tell sides of a chat apart. Absent when the lines do not match the text.
+fn ocr_boxes(result: &crate::desktop::RecognitionResult) -> Option<Value> {
+    let lines = result.ocr_lines.as_ref()?.as_array()?;
+    if lines.is_empty() || lines.len() != result.text.split('\n').count() {
+        return None;
+    }
+    let boxes: Option<Vec<Value>> = lines
+        .iter()
+        .map(|l| Some(json!([l["x"].as_i64()?, l["y"].as_i64()?, l["width"].as_i64()?, l["height"].as_i64()?])))
+        .collect();
+    boxes.map(Value::Array)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn result(text: &str, lines: Value) -> RecognitionResult {
+        serde_json::from_value(json!({"source": "Apple Vision", "text": text, "completedAt": 0.0, "usedOCRReference": false, "ocrLines": lines})).unwrap()
+    }
+
+    #[test]
+    fn ocr_boxes_follow_the_text_lines() {
+        let r = result("左边\n右边", json!([{"text": "左边", "x": 10, "y": 20, "width": 100, "height": 12}, {"text": "右边", "x": 800, "y": 40, "width": 90, "height": 12}]));
+        assert_eq!(ocr_boxes(&r), Some(json!([[10, 20, 100, 12], [800, 40, 90, 12]])));
+        let mismatched = result("只有一行", json!([{"text": "a", "x": 1, "y": 1, "width": 1, "height": 1}, {"text": "b", "x": 1, "y": 1, "width": 1, "height": 1}]));
+        assert_eq!(ocr_boxes(&mismatched), None);
+        assert_eq!(ocr_boxes(&result("x", Value::Null)), None);
     }
 }
