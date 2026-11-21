@@ -64,11 +64,11 @@ function core(path: string, body: unknown, signal?: AbortSignal): Promise<{ stat
 /** Some compatible models emit blank optional values. Normalize reads before Pi validates tool arguments;
  * required identifiers, nonempty cursors and every write argument remain untouched. */
 export function normalizeReadArguments(tool: string, input: string): string {
-  if (!["pv_day", "pv_find", "pv_person", "pv_conversations", "pv_conversation", "pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
+  if (!["pv_day", "pv_find", "pv_person", "pv_items", "pv_conversations", "pv_conversation", "pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
   try {
     const value = JSON.parse(input);
     if (!value || Array.isArray(value) || typeof value !== "object") return input;
-    for (const key of ["cursor", "date", "start", "end", "level", "group_by", "q", "query", "who", "person", "person_id", "before", "project", "reference", "apps", "kinds", "include"]) {
+    for (const key of ["state", "kind", "owner", "cursor", "date", "start", "end", "level", "group_by", "q", "query", "who", "person", "person_id", "before", "project", "reference", "apps", "kinds", "include"]) {
       if ((typeof value[key] === "string" && !value[key].trim()) || (Array.isArray(value[key]) && value[key].length === 0)) delete value[key];
     }
     return JSON.stringify(value);
@@ -116,6 +116,11 @@ const TOOLS: ToolSpec[] = [
     name: "pv_person", core: "person", label: "人物卡",
     description: `一个人的人物卡：各应用的账号和名字、最近往来消息（before 可往前翻）、未结条目和备忘。问某人是谁、和某人最近聊了什么时用；重名时返回 candidates，用 person_id 指定。${time}`,
     parameters: Type.Object({ who: opt(Type.String()), person_id: opt(Type.String()), before: opt(Type.String()), limit: opt(Type.Number()) }),
+  },
+  {
+    name: "pv_items", core: "items", label: "待办与日程",
+    description: `从聊天、邮件、录音里整理出的日程、提醒和承诺（owner=self 是我答应的，other 是等别人做的），默认只给未结的，按开始时间排列，带对方、时间原话和依据消息。问「我有什么要办的」「某人约了我什么」「最近有哪些日程」时用；已写入日历的条目以日历为准。${time}`,
+    parameters: Type.Object({ state: opt(Type.Union([Type.Literal("open"), Type.Literal("done"), Type.Literal("cancelled"), Type.Literal("expired"), Type.Literal("all")])), kind: opt(Type.Union([Type.Literal("event"), Type.Literal("reminder"), Type.Literal("commitment")])), owner: opt(Type.Union([Type.Literal("self"), Type.Literal("other")])), who: opt(Type.String()), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
   },
   {
     name: "pv_conversations", core: "conversations", label: "对话列表",

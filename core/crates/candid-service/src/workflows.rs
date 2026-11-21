@@ -301,6 +301,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         let _ = s.people_sync();
         if s.people_judge_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
+        if s.items_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         let _ = s.automation_scan();
         // Kinds that hit their daily limit this round; their remaining jobs are skipped without preparing.

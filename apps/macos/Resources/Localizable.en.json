@@ -2066,5 +2066,10 @@
  "没能保存：%@": "Could not save: %@",
  "%@ 和 %@ 可能是同一个人": "%@ and %@ may be the same person",
  "不是同一人": "Not the same person",
- "已自动合并：%@ = %@": "Merged automatically: %@ = %@"
+ "已自动合并：%@ = %@": "Merged automatically: %@ = %@",
+ "备忘": "Memos",
+ "没能加入：%@": "Couldn't add it: %@",
+ "没能处理这条备忘：%@": "Couldn't update this memo: %@",
+ "等对方": "Waiting on them",
+ "记下": "Keep"
 }

@@ -7,6 +7,8 @@
 //! | `today` | open proposals (pending, approved, failed), proposals decided since `since_ms`, commitment candidates, latest day review |
 //! | `proposal` | `approve` / `reject` a proposal, then `executed` (with the system's receipt) or `failed` (with the error) |
 //! | `commitment` | `confirm` (a new confirmed revision plus a `create_reminder` proposal) or `ignore` a commitment candidate |
+//! | `item` | `confirm` (files the calendar or Reminders proposal), `ignore`, `done` or `edit` an item found in conversations |
+//! | `memo` | `confirm` or `ignore` a memo found in conversations |
 //!
 //! Proposal states move `pending → approved → executed | failed`, `failed → approved` (retry) and
 //! `pending | approved | failed → rejected`. Repeating a decision that already holds returns the proposal unchanged.
@@ -35,6 +37,15 @@ impl TimelineStore {
             "today" => self.agenda_today(v["since_ms"].as_i64()),
             "proposal" => self.agenda_proposal(v),
             "commitment" => self.agenda_commitment(v, app_client),
+            "item" => {
+                let out = self.item_decide(v, app_client)?;
+                let proposal = match out["proposal_id"].as_str() {
+                    Some(p) => self.proposal_json(p)?,
+                    None => None,
+                };
+                Ok(json!({"item": out["item"], "proposal": proposal}))
+            }
+            "memo" => self.agenda_memo(v),
             _ => Err(bad("未知操作")),
         }
     }
@@ -110,7 +121,7 @@ impl TimelineStore {
                        "citations": body["citations"].clone()})
             }
         };
-        Ok(json!({"proposals": proposals, "commitments": commitments, "review": review}))
+        Ok(json!({"proposals": proposals, "commitments": commitments, "review": review, "items": self.candidate_items(50)?, "memos": self.pending_memos(30)?}))
     }
 
     fn agenda_proposal(&self, v: &Value) -> Result<Value> {
@@ -153,7 +164,10 @@ impl TimelineStore {
                     self.db.execute(
                         "UPDATE proposals SET status='executed',executed_ms=?,result_json=? WHERE proposal_id=?",
                         &[int(now), text(json!({"receipt": receipt}).to_string()), text(id)],
-                    )?
+                    )?;
+                    // An item's proposal carries it to the calendar or Reminders; its record follows the receipt.
+                    let payload: String = self.db.first("SELECT payload_json FROM proposals WHERE proposal_id=?", &[text(id)], |r| r.text(0))?.unwrap_or_default();
+                    self.items_proposal_executed(&kind, &serde_json::from_str(&payload).unwrap_or(Value::Null), receipt)?;
                 }
                 _ => {
                     let error = v["error"].as_str().unwrap_or("执行失败").chars().take(500).collect::<String>();
@@ -166,6 +180,33 @@ impl TimelineStore {
             self.record_change("proposal", id, "update")
         })?;
         self.proposal_json(id).map(|p| p.unwrap_or(Value::Null))
+    }
+
+    /// 备忘: `confirm` keeps the memo (a new confirmed revision), `ignore` rejects it.
+    fn agenda_memo(&self, v: &Value) -> Result<Value> {
+        let id = v["memory_id"].as_str().ok_or_else(|| bad("缺少 memory_id"))?;
+        let status = match v["decision"].as_str().unwrap_or("") {
+            "confirm" => "confirmed",
+            "ignore" => "rejected",
+            _ => return Err(bad("decision 只能是 confirm 或 ignore")),
+        };
+        let rev = self.memory_latest(id)?;
+        let mut row = self.memory_row(id, rev)?.ok_or_else(|| TimelineError::NotFound("备忘".into()))?;
+        if row.kind != "fact" || self.automation_get(&format!("{}{id}", crate::items::MEMO_PERSON))?.is_null() {
+            return Err(bad("不是对话里的备忘"));
+        }
+        if row.status != status {
+            if row.status != "candidate" {
+                return Err(TimelineError::InvalidInput(format!("备忘当前是 {}，不能再处理", row.status)));
+            }
+            row.status = status.into();
+            self.db.transaction(|| {
+                self.memory_insert(id, rev + 1, &row, Some(rev), &[])?;
+                self.correction("memory", id, if status == "confirmed" { "confirm" } else { "reject" }, &json!({"from_rev": rev}))?;
+                Ok(())
+            })?;
+        }
+        Ok(json!({"memory_id": id, "status": status}))
     }
 
     fn agenda_commitment(&self, v: &Value, app_client: &str) -> Result<Value> {

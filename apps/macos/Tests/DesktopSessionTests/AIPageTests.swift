@@ -330,6 +330,28 @@ final class FakeAgenda: SystemAgenda, @unchecked Sendable {
         // An unknown commitment is reported in place, not thrown.
         await model.addToReminders(AgendaCommitment(memory_id: "missing", text: "x", due: nil, producer: "t", confidence: nil, source: nil))
         #expect(model.problems["commitment:missing"] != nil)
+        // The same for an item and a memo found in conversations; the snapshot carries none for an empty library.
+        await model.add(AgendaItem(item_id: "it-missing", kind: "event", owner: "self", title: "x"))
+        #expect(model.problems["item:it-missing"] != nil)
+        await model.decide(AgendaMemo(memory_id: "mem-missing", text: "x"), keep: true)
+        #expect(model.problems["memo:mem-missing"] != nil)
+        #expect(model.items.isEmpty && model.memos.isEmpty && model.waitingCount == 1)
+    }
+
+    @Test func conversationItemsDecodeAndGroupIntoAgendaAndReminders() throws {
+        let json = """
+        {"proposals":[],"commitments":[],"review":null,
+         "items":[{"item_id":"it-1","kind":"event","owner":"self","title":"和张三见面聊报价","when_text":"周六下午三点","start":"2027-01-16T15:00:00.000+08:00","all_day":false,"person":{"name":"张三","key":"handle:wechat/张三"},"conversation":{"title":"张三","app":"微信"}},
+                  {"item_id":"it-2","kind":"commitment","owner":"other","title":"对方发报价单","when_text":null,"start":null,"person":null}],
+         "memos":[{"memory_id":"mem-1","text":"张三下午三点后才有空","person":{"name":"张三"}}]}
+        """
+        let snapshot = try JSONDecoder().decode(AgendaSnapshot.self, from: Data(json.utf8))
+        #expect(snapshot.items?.map(\.id) == ["it-1", "it-2"] && snapshot.memos?.first?.person?.name == "张三")
+        #expect(snapshot.items?[0].isEvent == true && snapshot.items?[0].origin.hasPrefix("张三 · 周六下午三点") == true)
+        #expect(snapshot.items?[1].origin == "等对方")
+        // Older cores send neither list.
+        let old = try JSONDecoder().decode(AgendaSnapshot.self, from: Data(#"{"proposals":[],"commitments":[]}"#.utf8))
+        #expect(old.items == nil && old.memos == nil)
     }
 
     @Test func deniedCalendarAccessShowsAHintInsteadOfTheList() async {
