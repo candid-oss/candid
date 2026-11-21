@@ -64,11 +64,11 @@ function core(path: string, body: unknown, signal?: AbortSignal): Promise<{ stat
 /** Some compatible models emit blank optional values. Normalize reads before Pi validates tool arguments;
  * required identifiers, nonempty cursors and every write argument remain untouched. */
 export function normalizeReadArguments(tool: string, input: string): string {
-  if (!["pv_find", "pv_conversations", "pv_conversation", "pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
+  if (!["pv_find", "pv_person", "pv_conversations", "pv_conversation", "pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
   try {
     const value = JSON.parse(input);
     if (!value || Array.isArray(value) || typeof value !== "object") return input;
-    for (const key of ["cursor", "start", "end", "level", "group_by", "q", "query", "project", "reference", "apps", "kinds", "include"]) {
+    for (const key of ["cursor", "start", "end", "level", "group_by", "q", "query", "who", "person", "person_id", "before", "project", "reference", "apps", "kinds", "include"]) {
       if ((typeof value[key] === "string" && !value[key].trim()) || (Array.isArray(value[key]) && value[key].length === 0)) delete value[key];
     }
     return JSON.stringify(value);
@@ -105,12 +105,17 @@ const TOOLS: ToolSpec[] = [
   {
     name: "pv_find", core: "find", label: "查找内容",
     description: `在整理好的内容里搜索：对话消息（聊天、邮件、录音转写，带发送人）和阅读摘录。找具体内容先用它；引用时用结果里的 ref。${time}`,
-    parameters: Type.Object({ q: Type.String(), kind: opt(Type.Union([Type.Literal("message"), Type.Literal("excerpt")])), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+    parameters: Type.Object({ q: Type.String(), person: opt(Type.String()), kind: opt(Type.Union([Type.Literal("message"), Type.Literal("excerpt")])), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+  },
+  {
+    name: "pv_person", core: "person", label: "人物卡",
+    description: `一个人的人物卡：各应用的账号和名字、最近往来消息（before 可往前翻）、未结条目和备忘。问某人是谁、和某人最近聊了什么时用；重名时返回 candidates，用 person_id 指定。${time}`,
+    parameters: Type.Object({ who: opt(Type.String()), person_id: opt(Type.String()), before: opt(Type.String()), limit: opt(Type.Number()) }),
   },
   {
     name: "pv_conversations", core: "conversations", label: "对话列表",
     description: `列出对话（chat 聊天、mail 邮件、meeting 录音），最近的在前，带参与者和最后一条消息。问和谁聊过、和某人的往来时用，who 按人名或标题过滤。${time}`,
-    parameters: Type.Object({ kind: opt(Type.Union([Type.Literal("chat"), Type.Literal("mail"), Type.Literal("meeting")])), who: opt(Type.String()), app: opt(Type.String()), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+    parameters: Type.Object({ kind: opt(Type.Union([Type.Literal("chat"), Type.Literal("mail"), Type.Literal("meeting")])), who: opt(Type.String()), person: opt(Type.String()), app: opt(Type.String()), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
   },
   {
     name: "pv_conversation", core: "conversation", label: "读一段对话",

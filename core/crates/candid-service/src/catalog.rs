@@ -27,13 +27,19 @@ pub fn tools() -> Vec<Tool> {
         t(
             "find",
             format!("在整理好的内容里搜索：对话消息（聊天、邮件、录音转写，带发送人）和阅读摘录。比 search 干净，找具体内容时先用它；结果里的 ref 是可引用的记录。{TIME_NOTE}{EVIDENCE_NOTE}"),
-            r#"{"type":"object","properties":{"q":{"type":"string","description":"关键词"},"kind":{"type":"string","enum":["message","excerpt"]},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["q"],"additionalProperties":false}"#,
+            r#"{"type":"object","properties":{"q":{"type":"string","description":"关键词"},"person":{"type":"string","description":"人名、别名或 person_id：只找这个人的消息（含他所有账号）"},"kind":{"type":"string","enum":["message","excerpt"]},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["q"],"additionalProperties":false}"#,
+            false,
+        ),
+        t(
+            "person",
+            format!("一个人的人物卡：他在各应用的账号和名字（别名）、最近往来消息（带 before 可往前翻）、未结条目和备忘。问「某人是谁」「和某人最近聊了什么」时用；名字重名时返回 candidates，用 person_id 指定。{TIME_NOTE}{EVIDENCE_NOTE}"),
+            r#"{"type":"object","properties":{"who":{"type":"string","description":"人名或别名"},"person_id":{"type":"string"},"before":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false}"#,
             false,
         ),
         t(
             "conversations",
             format!("列出对话（chat 聊天、mail 邮件、meeting 录音会议），最近的在前：参与者、消息数、最后一条。问「最近和谁聊过」「和某人的往来」时用，who 按人名或标题过滤。{TIME_NOTE}"),
-            r#"{"type":"object","properties":{"kind":{"type":"string","enum":["chat","mail","meeting"]},"who":{"type":"string","description":"人名或对话标题"},"app":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false}"#,
+            r#"{"type":"object","properties":{"kind":{"type":"string","enum":["chat","mail","meeting"]},"who":{"type":"string","description":"人名或对话标题"},"person":{"type":"string","description":"人名、别名或 person_id：这个人出现过的对话（含他所有账号）"},"app":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false}"#,
             false,
         ),
         t(

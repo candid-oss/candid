@@ -8,6 +8,8 @@ mod chunk;
 mod clock;
 mod compose;
 mod curated;
+mod people;
+pub use people::{PeopleVerdict, PersonCorrectionRequest, SELF_ENTITY};
 mod db;
 mod delete;
 mod derived;
@@ -43,6 +45,7 @@ pub use migration::{KindCount, LedgerCheck, MigrationReport, MigrationVerificati
 pub use query::agent_tools::{AnnotateRequest, CommitmentRequest, MarkReferenceRequest, MemoriesRequest, RunTag, SaveDraftRequest, UndoRequest, AGENT_TOOL_NAMES};
 pub use query::agenda::AGENDA_EXECUTABLE_KINDS;
 pub use query::app::*;
+pub use query::people::PersonRequest;
 pub use query::curated::{ConversationRequest, ConversationsRequest, EvidenceRequest, FindRequest};
 pub use query::dispatch::{ToolCallFailure, APP_TOOL_NAMES, TOOL_NAMES};
 pub use query::types::*;

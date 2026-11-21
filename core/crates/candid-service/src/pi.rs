@@ -28,7 +28,7 @@ const WRITE_FLAGS: [&str; 4] = ["annotate", "reference", "commitment", "draft"];
 /// Proposal kinds the App knows how to execute after approval.
 const DEFAULT_PROPOSE_KINDS: [&str; 7] = candid_store::AGENDA_EXECUTABLE_KINDS;
 /// Query tools Pi may call (the catalog's others stay with external clients: `usage` and `media` are not needed).
-pub const PI_READ_TOOLS: [&str; 15] = ["find", "conversations", "conversation", "evidence", "status", "overview", "search", "timeline", "context", "get_event", "episodes", "episode", "thread", "records", "agent"];
+pub const PI_READ_TOOLS: [&str; 16] = ["find", "person", "conversations", "conversation", "evidence", "status", "overview", "search", "timeline", "context", "get_event", "episodes", "episode", "thread", "records", "agent"];
 
 #[derive(Clone, Debug)]
 struct Budget {
