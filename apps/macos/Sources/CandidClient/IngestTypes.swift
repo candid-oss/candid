@@ -217,7 +217,7 @@ public struct AppRecognition: Codable, Sendable, Equatable {
 
 public struct AppRecognitionInfo: Codable, Sendable, Equatable {
     public var screenshot_event_id: String
-    public var image_hash: String
+    public var image_hash: String?
     public var image_path: String?
     public var ax_evidence_path: String?
     public var results: [AppRecognition]

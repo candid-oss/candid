@@ -207,7 +207,9 @@ pub struct AppRecognition {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AppRecognitionResponse {
     pub screenshot_event_id: String,
-    pub image_hash: String,
+    /// Absent when the screenshot is retained without its original.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_hash: Option<String>,
     /// The screenshot's original and AX evidence, for the recognizer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_path: Option<String>,
@@ -887,7 +889,7 @@ impl TimelineStore {
             .collect())
     }
 
-    fn screenshot_event(&self, record_id: &str) -> Result<Option<(String, String)>> {
+    fn screenshot_event(&self, record_id: &str) -> Result<Option<(String, Option<String>)>> {
         let sources = self.desktop_sources()?;
         if sources.is_empty() {
             return Ok(None);
@@ -896,12 +898,12 @@ impl TimelineStore {
         p.push(text(record_id));
         self.db.first(
             &format!(
-                "SELECT e.event_id,eb.sha256 FROM events e JOIN event_blobs eb ON eb.event_id=e.event_id AND eb.role='original'
+                "SELECT e.event_id,eb.sha256 FROM events e LEFT JOIN event_blobs eb ON eb.event_id=e.event_id AND eb.role='original'
                 WHERE e.source_id IN ({}) AND e.source_key=? AND e.kind='screen.shot'",
                 placeholders(sources.len())
             ),
             &p,
-            |r| (r.text(0), r.text(1)),
+            |r| (r.text(0), r.opt_text(1)),
         )
     }
 

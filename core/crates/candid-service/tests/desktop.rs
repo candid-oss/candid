@@ -248,7 +248,8 @@ fn recognition_runs_are_read_revised_and_found_by_hash() {
     ok(&f.socket, "/local/desktop/cutover", Value::Null);
     let src = desktop_source(&f.socket);
     let image = vec![9u8; 32];
-    let events = vec![context("c1", T, "act-1", "合成", "正文"), screenshot(&f.socket, "s1", T + 10, "c1", "act-1", &image)];
+    let captured = Clock::default().now_ms() - 8 * 86_400_000;
+    let events = vec![context("c1", captured, "act-1", "合成", "正文"), screenshot(&f.socket, "s1", captured + 10, "c1", "act-1", &image)];
     ok(&f.socket, "/local/ingest", json!({"source_id": src, "events": events}));
     let pending = ok(&f.socket, "/v1/app_pending_recognition", json!({"method": "ocr", "since_ms": 0}));
     assert_eq!(pending["screenshot"]["id"], "s1");
@@ -259,15 +260,15 @@ fn recognition_runs_are_read_revised_and_found_by_hash() {
     let run = |completed: i64, body: &str| {
         let result = serde_json::to_vec(&json!({"source": "合成 OCR", "text": body, "completedAt": 0, "usedOCRReference": false})).unwrap();
         let (path, sha) = stage(&f.socket, &format!("app-r{completed}.json"), &result);
-        json!({"source_key": format!("recognition:s1:ocr@{completed}"), "kind": "image.text", "start_ms": T + 10, "parent_key": "s1",
+        json!({"source_key": format!("recognition:s1:ocr@{completed}"), "kind": "image.text", "start_ms": captured + 10, "parent_key": "s1",
             "payload": {"image_event_id": shot_event, "method": "ocr", "model_id": "合成 OCR", "completed_ms": completed, "result_ref": sha},
             "text": [{"field": "ocr", "content": body}],
             "blobs": [{"staging_path": path, "sha256": sha, "role": "derived", "mime_type": "application/json"}]})
     };
-    ok(&f.socket, "/local/ingest", json!({"source_id": src, "events": [run(T + 100, "第一次识别")]}));
+    ok(&f.socket, "/local/ingest", json!({"source_id": src, "events": [run(captured + 100, "第一次识别")]}));
     assert_eq!(ok(&f.socket, "/v1/app_pending_recognition", json!({"method": "ocr", "since_ms": 0}))["screenshot"], Value::Null);
     assert_eq!(ok(&f.socket, "/v1/app_pending_recognition", json!({"method": "vlm", "since_ms": 0}))["screenshot"]["id"], "s1");
-    ok(&f.socket, "/local/ingest", json!({"source_id": src, "events": [run(T + 200, "第二次识别")]}));
+    ok(&f.socket, "/local/ingest", json!({"source_id": src, "events": [run(captured + 200, "第二次识别")]}));
     let info = ok(&f.socket, "/v1/app_recognition", json!({"screenshot_id": "s1"}));
     assert_eq!(info["results"][0]["text"], "第二次识别");
     assert!(std::fs::read(info["results"][0]["result_path"].as_str().unwrap()).is_ok());
@@ -277,6 +278,12 @@ fn recognition_runs_are_read_revised_and_found_by_hash() {
     assert_eq!(ok(&f.socket, "/local/desktop/delete", json!({"event_ids": older, "reason": "superseded"}))["deleted"], 1);
     assert!(ok(&f.socket, "/v1/app_recognition", json!({"screenshot_id": "s1"}))["older"].as_array().unwrap().is_empty());
     assert_eq!(ok(&f.socket, "/v1/app_ocr", json!({"sha256": sha256_hex(&image)}))["result"]["text"], "第二次识别");
+    let freed = ok(&f.socket, "/local/desktop/free-space", json!({"target_bytes": 0}));
+    assert_eq!(freed["screenshots"], 1);
+    let text_only = ok(&f.socket, "/v1/app_recognition", json!({"screenshot_id": "s1"}));
+    assert!(text_only["image_hash"].is_null() && text_only["image_path"].is_null());
+    assert_eq!(text_only["results"][0]["text"], "第二次识别");
+    assert_eq!(ok(&f.socket, "/v1/app_pending_recognition", json!({"method": "vlm", "since_ms": 0}))["screenshot"], Value::Null);
     // The App may delete only its own capture.
     assert_eq!(call(&f.socket, "POST", "/local/desktop/delete", json!({"event_ids": ["x"], "reason": "retention"})).0, 400);
     // Deleting the screenshot by its record ID takes its recognition with it.

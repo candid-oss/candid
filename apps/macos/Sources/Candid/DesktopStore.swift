@@ -306,8 +306,8 @@ import CandidClient
         let info: AppRecognitionInfo
         do { info = try await channel().app("app_recognition", ["screenshot_id": .string(screenshot.id)]) }
         catch CoreError.service(404, _, _) { throw DesktopStoreError.missingImage }
-        guard info.image_hash == screenshot.imageHash, let path = info.image_path,
-              let jpeg = try? Data(contentsOf: URL(fileURLWithPath: path)), DesktopEventMapping.sha256(jpeg) == info.image_hash else {
+        guard let hash = info.image_hash, hash == screenshot.imageHash, let path = info.image_path,
+              let jpeg = try? Data(contentsOf: URL(fileURLWithPath: path)), DesktopEventMapping.sha256(jpeg) == hash else {
             throw DesktopStoreError.missingImage
         }
         let evidence = info.ax_evidence_path.flatMap { DesktopEventMapping.derivedJSON(at: URL(fileURLWithPath: $0)) }
@@ -323,7 +323,7 @@ import CandidClient
         let info: AppRecognitionInfo
         do { info = try await channel.app("app_recognition", ["screenshot_id": .string(screenshot.id)]) }
         catch CoreError.service(404, _, _) { throw DesktopStoreError.deletedRecord }
-        guard info.image_hash == screenshot.imageHash else { throw DesktopStoreError.deletedRecord }
+        guard let hash = info.image_hash, hash == screenshot.imageHash else { throw DesktopStoreError.deletedRecord }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(result)
         guard data.count <= 256 * 1024 else { throw DesktopStoreError.invalidRecord }
