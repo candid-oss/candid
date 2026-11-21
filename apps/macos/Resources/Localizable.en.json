@@ -2068,5 +2068,15 @@
  "没能加入：%@": "Couldn't add it: %@",
  "没能处理这条备忘：%@": "Couldn't update this memo: %@",
  "等对方": "Waiting on them",
- "记下": "Keep"
+ "记下": "Keep",
+ "截图空间已用 %@ / %@，接近上限。超过后最早的截图只留文字（7 天内的不动）。": "Screenshot storage is at %@ of %@, close to the limit. Past it, the oldest screenshots keep only their text (the last 7 days are never touched).",
+ "截图空间已满（%@ / %@），新截图没有保存：可改为只留文字的旧截图（7 天前）不够腾出空间。请提高上限。": "Screenshot storage is full (%@ of %@) and new screenshots are not saved: there are not enough screenshots older than 7 days to keep as text only. Please raise the limit.",
+ "截图空间已满（%@ / %@），正在把最早的截图改为只留文字。": "Screenshot storage is full (%@ of %@); the oldest screenshots are being kept as text only.",
+ "截图空间接近上限": "Screenshot storage nearly full",
+ "截图空间已满，新截图未保存": "Screenshot storage full, new screenshots not saved",
+ "截图空间已满，正在腾出空间": "Screenshot storage full, making room",
+ "已腾出 %@：%@ 张旧截图只留文字（事件、OCR 和辅助功能文字都在）。": "Freed %@: %@ old screenshots now keep only their text (events, OCR and accessibility text stay).",
+ "截图空间已满：%@ 张 7 天前的截图改为只留文字，腾出 %@。": "Screenshot storage was full: %@ screenshots older than 7 days now keep only their text, freeing %@.",
+ "上限提高到 %@": "Raise limit to %@",
+ "超过上限时，7 天前最早的截图只留文字（事件、OCR 和辅助功能文字都在），直到用量回到上限的 90% 以下；仍不够时才停止新增截图。": "Over the limit, the oldest screenshots older than 7 days keep only their text (events, OCR and accessibility text stay) until usage is back under 90% of the limit; new screenshots stop only if that is not enough."
 }

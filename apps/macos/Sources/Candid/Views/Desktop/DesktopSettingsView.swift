@@ -370,14 +370,30 @@ private struct StorageSettings: View {
                     .padding(.bottom, Space.s)
                 }
                 HairlineDivider()
-                SettingRow(title: L("截图空间上限"), detail: L("达到上限后停止新增截图，不提前删除未过期内容。")) {
-                    MenuChoice(options: [1, 2, 5, 10, 20, 50, 100].map { (Int64($0) * 1024 * 1024 * 1024, "\($0) GiB") },
+                SettingRow(title: L("截图空间上限"), detail: L("超过上限时，7 天前最早的截图只留文字（事件、OCR 和辅助功能文字都在），直到用量回到上限的 90% 以下；仍不够时才停止新增截图。")) {
+                    MenuChoice(options: DesktopStorageBudget.limitOptions.map { ($0, "\($0 / (1024 * 1024 * 1024)) GiB") },
                                selection: Binding(get: { session.maximumBytes }, set: { session.setMaximumBytes($0) }))
                 }
                 HairlineDivider()
                 SettingRow(title: L("已用空间"), detail: L("数据卷可用空间不足 2 GiB 时也会停止新截图。")) {
                     Text(ByteCountFormatter.string(fromByteCount: session.statistics.storageBytes, countStyle: .file))
                         .typography(.body, .medium, digits: true)
+                }
+                let budget = session.storageBudget
+                if budget.message != nil || budget.freedSummary != nil {
+                    InlinePanel {
+                        VStack(alignment: .leading, spacing: Space.s) {
+                            if let message = budget.message { InlineMessage(kind: budget.level == .full ? .error : .warning, text: message) }
+                            if let freed = budget.freedSummary { InlineMessage(kind: .note, text: freed) }
+                            if budget.message != nil, let next = budget.raisedLimit {
+                                HStack(spacing: Space.xxs) {
+                                    Spacer()
+                                    PrimaryButton(title: L("上限提高到 %@", ByteCountFormatter.string(fromByteCount: next, countStyle: .file))) { session.raiseStorageLimit() }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.bottom, Space.s)
                 }
             }
             .disabled(session.isDemo)

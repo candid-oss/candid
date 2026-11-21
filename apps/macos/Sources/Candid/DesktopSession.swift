@@ -49,6 +49,15 @@ final class DesktopSession {
     private(set) var imageOptions = DesktopImageOptions()
     private(set) var retentionDays = 7
     private(set) var maximumBytes: Int64 = 5 * 1024 * 1024 * 1024
+    /// A screenshot was refused for the storage limit and freeing space did not make room; cleared by the next save
+    /// or a new limit.
+    private(set) var storageLimitRefused = false
+    @ObservationIgnored private var lastSpaceFreeAttempt: Date?
+    /// How full the screenshot storage limit is, for the status line, the menu bar and the settings page.
+    var storageBudget: DesktopStorageBudget {
+        DesktopStorageBudget(usedBytes: statistics.storageBytes, limitBytes: maximumBytes, refused: storageLimitRefused,
+                             freedBytes: statistics.freedBytes, freedScreenshots: statistics.freedScreenshots)
+    }
     private(set) var scanningApplications = false
     @ObservationIgnored private var catalogTask: Task<Void, Never>?
     private(set) var samplingOptions = DesktopSamplingOptions()
@@ -450,6 +459,32 @@ final class DesktopSession {
     func setMaximumBytes(_ bytes: Int64) {
         guard !isDemo, storageReady, (1024 * 1024 * 1024...100 * 1024 * 1024 * 1024).contains(bytes) else { return }
         invalidateCapture(); desiredPreferences.maximumBytes = bytes; savePreferences()
+        storageLimitRefused = false; lastSpaceFreeAttempt = nil
+    }
+    /// Raises the screenshot storage limit to the next choice the settings offer.
+    func raiseStorageLimit() {
+        guard let next = storageBudget.raisedLimit else { return }
+        setMaximumBytes(next)
+    }
+    /// Over the limit, the core keeps only the text of the oldest screenshots (over 7 days old) until the library is
+    /// back under ~90% of it. Returns what the limit counts afterwards (library originals and the outbox).
+    private func freeScreenshotSpace(store: DesktopStore, limit: Int64) async -> Int64 {
+        let outbox = await store.outbox.bytes
+        // At most once a minute: when only recent screenshots are left, every refused capture would ask again.
+        if let last = lastSpaceFreeAttempt, Date().timeIntervalSince(last) < 60 { return statistics.storageBytes + outbox }
+        lastSpaceFreeAttempt = Date()
+        do {
+            let report = try await store.freeScreenshotSpace(targetBytes: DesktopStorageBudget.target(limit: limit) - outbox)
+            statistics.storageBytes = report.storage_bytes
+            statistics.freedBytes = report.total_freed_bytes; statistics.freedScreenshots = report.total_screenshots
+            if report.screenshots > 0 {
+                notice = L("截图空间已满：%@ 张 7 天前的截图改为只留文字，腾出 %@。", report.screenshots,
+                           ByteCountFormatter.string(fromByteCount: report.freed_bytes, countStyle: .file))
+            }
+            return report.storage_bytes + outbox
+        } catch {
+            return statistics.storageBytes + outbox
+        }
     }
     struct InputWindow: Identifiable {
         var id: String { record.id }
@@ -1122,8 +1157,11 @@ final class DesktopSession {
             imageContext.axEvidence = frame.axEvidence
             let record = DesktopRecord(timestamp: frame.capturedAt, kind: .screenshot, appName: frame.application.name, bundleID: frame.application.bundleID, windowTitle: frame.title, detail: automatic ? (parent?.trigger == "timer" ? L("定时触发") : L("事件触发")) : L("用户手动触发"), imageWidth: frame.width, imageHeight: frame.height, parentID: parent?.id, runID: runID, trigger: automatic ? parent?.trigger : "manual", context: scopedContext(imageContext, bundle: frame.application.bundleID), activityID: parent?.activityID)
             // The configured storage limit counts the library's desktop originals and what still waits in the outbox.
-            let used = statistics.storageBytes + (await store.outbox.bytes)
-            guard used + Int64(frame.data.count) <= preferences.maximumBytes else { throw DesktopStoreError.quotaExceeded }
+            var used = statistics.storageBytes + (await store.outbox.bytes)
+            if used + Int64(frame.data.count) > preferences.maximumBytes {
+                used = await freeScreenshotSpace(store: store, limit: preferences.maximumBytes)
+            }
+            guard used + Int64(frame.data.count) <= preferences.maximumBytes else { storageLimitRefused = true; throw DesktopStoreError.quotaExceeded }
             let savedImage = try await store.storeScreenshot(record: publicationRecord(record), data: frame.data, gate: gate, epoch: epoch)
             if let source, let digest {
                 if recentImages[source] == nil, recentImages.count >= 128, let evicted = recentImages.keys.first {
@@ -1135,7 +1173,7 @@ final class DesktopSession {
             if let raw = frame.frame { recognition.recognizeRawFrame(raw, screenshotID: savedImage.id) }
             recognition.wake()
             samplingDiagnostics.imageSaved += 1
-            consecutiveFailures = 0; lastSaved = Date(); statusDetail = L("截图已保存")
+            consecutiveFailures = 0; lastSaved = Date(); statusDetail = L("截图已保存"); storageLimitRefused = false
             if let parent { setCaptureMessage(parent.id, nil) }
             return .complete
         } catch is CaptureAdmissionError { return .complete }

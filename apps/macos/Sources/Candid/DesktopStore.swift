@@ -228,7 +228,14 @@ import CandidClient
     }
 
     static func statistics(_ s: AppStats) -> DesktopStatistics {
-        DesktopStatistics(recordCount: s.record_count, screenshotCount: s.screenshot_count, storageBytes: s.storage_bytes)
+        DesktopStatistics(recordCount: s.record_count, screenshotCount: s.screenshot_count, storageBytes: s.storage_bytes,
+                          freedBytes: s.freed_bytes ?? 0, freedScreenshots: s.freed_screenshots ?? 0)
+    }
+
+    /// Over the storage limit: the oldest screenshots (over 7 days old) keep only their text until the library's
+    /// originals use at most `targetBytes`.
+    func freeScreenshotSpace(targetBytes: Int64) async throws -> ScreenshotSpaceReport {
+        try await channel().freeScreenshotSpace(targetBytes: max(0, targetBytes))
     }
 
     /// One activity with a page of observations (`before`/`after`/`around` an observation, or the newest page).
