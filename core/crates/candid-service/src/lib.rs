@@ -10,6 +10,7 @@ pub mod local;
 pub mod mcp;
 pub mod pi;
 pub mod proxy;
+pub mod retry;
 pub mod router;
 pub mod serve;
 

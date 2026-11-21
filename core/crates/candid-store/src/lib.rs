@@ -32,6 +32,7 @@ mod migration;
 mod query;
 mod schema;
 mod screen_excerpt;
+pub mod job_priority;
 mod store;
 mod types;
 

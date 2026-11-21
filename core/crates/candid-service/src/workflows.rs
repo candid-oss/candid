@@ -6,18 +6,25 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, Instant},
 };
-static EXECUTIONS: OnceLock<Mutex<std::collections::HashSet<usize>>> = OnceLock::new();
-struct Execution(usize);
+/// Model calls run in two lanes that never wait for each other. The interactive lane (`complete()`, compose,
+/// Pi) is for something a person is waiting on; the background lane is the serial job worker.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) enum Lane {
+    Interactive,
+    Background,
+}
+static EXECUTIONS: OnceLock<Mutex<std::collections::HashSet<(usize, Lane)>>> = OnceLock::new();
+struct Execution(usize, Lane);
 impl Execution {
-    fn acquire(store: &SharedStore) -> Option<Self> {
+    fn acquire(store: &SharedStore, lane: Lane) -> Option<Self> {
         let id = std::sync::Arc::as_ptr(store) as usize;
         if EXECUTIONS
             .get_or_init(Default::default)
             .lock()
             .unwrap()
-            .insert(id)
+            .insert((id, lane))
         {
-            Some(Self(id))
+            Some(Self(id, lane))
         } else {
             None
         }
@@ -29,7 +36,7 @@ impl Drop for Execution {
             .get_or_init(Default::default)
             .lock()
             .unwrap()
-            .remove(&self.0);
+            .remove(&(self.0, self.1));
     }
 }
 static SECRETS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
@@ -283,7 +290,7 @@ impl Worker {
 }
 
 fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
-    let Some(_execution) = Execution::acquire(store) else {
+    let Some(_execution) = Execution::acquire(store, Lane::Background) else {
         return;
     };
     if cleanup { crate::voiceprints::reconcile(store); }
@@ -295,16 +302,21 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         let _ = s.automation_scan();
-        let jobs = match s.pending_workflow_jobs() {
+        // Kinds that hit their daily limit this round; their remaining jobs are skipped without preparing.
+        let mut blocked: std::collections::HashSet<String> = Default::default();
+        let _ = s.expire_stale_jobs();
+        let queue = match s.pending_job_queue() {
             Ok(v) => v,
             Err(_) => return,
         };
         let mut prepared = None;
-        for j in jobs["jobs"].as_array().into_iter().flatten() {
-            let kind = j["kind"].as_str().unwrap_or("");
-            if kind != "speech.recognize" && kind != "screen.summarize" && kind != "screen.excerpt" && !kind.starts_with("workflow.") {
+        for (id, kind, _) in queue {
+            let kind = kind.as_str();
+            if blocked.contains(kind) {
                 continue;
             }
+            let Ok(j) = s.job_command(&json!({"action":"get","id":id})) else { continue };
+            let j = &j;
             if j["state"] == "running" {
                 if j["lease_until_ms"].as_i64().unwrap_or(i64::MAX)
                     <= chrono::Utc::now().timestamp_millis()
@@ -348,6 +360,9 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
                 }
                 Err(e) => {
                     let reason = e.message();
+                    if reason.contains("waiting_feature_budget") {
+                        blocked.insert(kind.to_string());
+                    }
                     if reason.contains("waiting_") {
                         let _ = s.workflow_wait(
                             j["id"].as_str().unwrap_or(""),
@@ -374,24 +389,25 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
     if let Some(code) = error {
         if r["reconcile_speakers"]==true {if let Some(refs)=unused_refs {let _=s.discard_recording_speaker_refs(&refs);}}
         let _ = s.screen_request_rejected(&r, &code);
-        if r["reconcile_speakers"]==true && job["attempt"].as_u64().unwrap_or(0)<3 && (code.contains("离线")||code.contains("正在处理")||code.contains("声纹服务未完成")) {
-            let _=s.job_command(&json!({"action":"retry","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"delay_ms":30000,"error_code":"offline"}));
-        } else {
-        let _=s.job_command(&json!({"action":"finish","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"error_code":code}));
+        let attempt = job["attempt"].as_u64().unwrap_or(0);
+        // Speaker reconciliation reports "voice service busy/offline" in words rather than the shared codes.
+        let transient = if r["reconcile_speakers"]==true && (code.contains("离线")||code.contains("正在处理")||code.contains("声纹服务未完成")) { "offline" } else { code.as_str() };
+        match crate::retry::retry_delay_ms(attempt, transient) {
+            Some(delay) => {let _=s.job_command(&json!({"action":"retry","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"delay_ms":delay,"error_code":transient}));}
+            None => {let _=s.job_command(&json!({"action":"finish","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"error_code":code}));}
         }
     }
 }
 
 pub fn complete(store: &SharedStore, v: &Value) -> Result<Value, String> {
-    // The background tick holds the slot only while it scans or prepares; a direct call waits that out
-    // instead of failing, and reports busy only when a model call of its own is still running.
-    let mut execution = Execution::acquire(store);
+    // Interactive lane: never waits for the background worker, only for another interactive call.
+    let mut execution = Execution::acquire(store, Lane::Interactive);
     for _ in 0..100 {
         if execution.is_some() {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
-        execution = Execution::acquire(store);
+        execution = Execution::acquire(store, Lane::Interactive);
     }
     let _execution = execution.ok_or("模型忙，请稍后重试")?;
     let (r, call) = {
@@ -541,4 +557,28 @@ fn message_text(v: &Value) -> String {
             .collect::<Vec<_>>()
             .join("\n")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    fn store() -> SharedStore {
+        let root = std::env::temp_dir().join(format!("lanes-{}", candid_store::uuid_v4()));
+        Arc::new(Mutex::new(candid_store::TimelineStore::open(&root, "candid/test", true, candid_store::fixtures::test_clock()).unwrap()))
+    }
+
+    #[test]
+    fn lanes_do_not_block_each_other_but_each_is_serial() {
+        let s = store();
+        let background = Execution::acquire(&s, Lane::Background).unwrap();
+        let interactive = Execution::acquire(&s, Lane::Interactive).expect("interactive waits for no background call");
+        assert!(Execution::acquire(&s, Lane::Background).is_none());
+        assert!(Execution::acquire(&s, Lane::Interactive).is_none());
+        drop(background);
+        assert!(Execution::acquire(&s, Lane::Background).is_some());
+        drop(interactive);
+        assert!(Execution::acquire(&s, Lane::Interactive).is_some());
+    }
 }

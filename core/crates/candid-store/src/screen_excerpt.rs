@@ -224,9 +224,6 @@ impl TimelineStore {
         params.extend(sources.iter().map(text));
         params.push(int(BATCH));
         let shots = self.db.query(&sql, &params, |r| (r.text(0), r.opt_int(1), r.opt_text(2), r.opt_text(3), r.int(4)))?;
-        let limit = self.feature_settings()?["items"][FEATURE]["daily_calls"].as_i64().unwrap_or(300);
-        let today = self.clock.now_ms() - self.clock.now_ms().rem_euclid(86_400_000);
-        let mut queued_today = self.db.scalar("SELECT COUNT(*) FROM jobs WHERE kind=? AND created_ms>=?", &[text(JOB_KIND), int(today)])?;
         let version = self.excerpt_version()?;
         let (mut last, mut queued) = (cursor, 0);
         for (shot, start, app, title, seq) in shots {
@@ -250,12 +247,13 @@ impl TimelineStore {
                     (crate::webp::thumbnail_change(&previous, &thumb) >= MIN_THUMB_CHANGE, Value::Null, json!(engine.encode(&thumb)))
                 }
             };
-            if !fresh || queued_today >= limit {
+            // The daily limit is applied when a job is picked up (`feature_budget`), so frames over the limit wait in
+            // the queue and are dropped by `expire_stale_jobs` after a day, instead of being lost here.
+            if !fresh {
                 continue;
             }
             self.job_command(&json!({"action":"enqueue","kind":JOB_KIND,"feature":FEATURE,"input_ref":shot,"config_version":version}))?;
             self.automation_put(&window, &json!({"lines": lines, "thumb": thumb, "at": start}))?;
-            queued_today += 1;
             queued += 1;
         }
         if last != cursor {
