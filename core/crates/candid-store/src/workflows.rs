@@ -647,6 +647,7 @@ impl TimelineStore {
     pub fn workflow_reply_allowed(&self, r: &Value) -> Result<()> {
         if r["step"] == "screen-episodes" { return self.screen_reply_allowed(r); }
         if r["step"] == crate::screen_excerpt::FEATURE { return self.excerpt_reply_allowed(r); }
+        if r["step"] == "people-judge" { return self.people_judge_reply_allowed(r); }
         if r["step"] == crate::item_extract::FEATURE { return self.items_reply_allowed(r); }
         let job = &r["job"];
         let item = self.workflow_source(job["input_ref"].as_str().unwrap_or(""))?;

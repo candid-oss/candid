@@ -438,7 +438,7 @@ impl TimelineStore {
         }))
     }
 
-    pub(crate) fn people_judge_complete(&self, r: &Value, output: &Value) -> Result<Value> {
+    pub(crate) fn people_judge_reply_allowed(&self, r: &Value) -> Result<()> {
         if sha256_hex(&serde_json::to_vec(&self.model_config()?)?) != r["config_revision"] || self.feature_settings()?["items"][FEATURE] != r["feature_revision"] {
             return Err(bad("source_or_configuration_changed"));
         }
@@ -446,6 +446,18 @@ impl TimelineStore {
         if job["state"] != "running" || job["attempt"] != r["job"]["attempt"] || job["owner"] != r["job"]["owner"] || job["lease_until_ms"].as_i64().unwrap_or(0) <= self.clock.now_ms() {
             return Err(TimelineError::Denied("stale_job_lease".into()));
         }
+        let id = r["job"]["input_ref"].as_str().unwrap_or("");
+        let input = self.automation_get(&format!("people.judge.input/1:{id}"))?;
+        let pairs = input["pairs"].as_array().map(Vec::as_slice).unwrap_or_default();
+        let Some((content, kept)) = self.judge_input(pairs)? else { return Err(bad("source_changed")) };
+        if r["content"] != content || r["pairs"].as_array() != Some(&kept) {
+            return Err(bad("source_changed"));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn people_judge_complete(&self, r: &Value, output: &Value) -> Result<Value> {
+        self.people_judge_reply_allowed(r)?;
         let raw = output.as_str().ok_or_else(|| bad("invalid_output"))?;
         let model = r["assignment"]["model"]["model_id"].as_str().unwrap_or("");
         let pairs = r["pairs"].as_array().cloned().unwrap_or_default();

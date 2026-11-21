@@ -201,6 +201,7 @@ fn scan_queues_batches_of_ten_when_the_feature_is_on_and_prepare_builds_the_inpu
     let results: Vec<Value> = (1..=pairs.len()).map(|i| json!({"id": i, "verdict": "unsure", "reason": "信息不足"})).collect();
     let mut r = req.clone();
     r["job"] = job.clone();
+    fx.store.workflow_reply_allowed(&r).unwrap();
     fx.store.workflow_complete(&r, &json!(json!({"results": results}).to_string())).unwrap();
     assert_eq!(fx.store.job_command(&json!({"action":"get","id":job["id"]})).unwrap()["state"], "done");
     assert_eq!(fx.store.people_candidates().unwrap().len(), 12 - pairs.len());
@@ -223,6 +224,15 @@ fn judge_batches_drop_pairs_that_stopped_being_candidates_and_the_feature_is_lis
     let job = fx.store.job_command(&json!({"action":"claim","kind":"people.judge","owner":"synthetic","lease_ms":60000})).unwrap();
     let req = fx.store.workflow_prepare(&job).unwrap();
     assert_eq!(req["pairs"].as_array().unwrap().len(), 1, "{}", req["content"]);
+    fx.store.workflow_reply_allowed(&req).unwrap();
+    let pair = &req["pairs"][0];
+    fx.store.person_correct(&PersonCorrectionRequest {
+        action: "split".into(),
+        key: pair["a"].as_str().unwrap().into(),
+        other: Some(pair["b"].as_str().unwrap().into()),
+        name: None,
+    }).unwrap();
+    assert!(fx.store.workflow_reply_allowed(&req).unwrap_err().message().contains("source_changed"));
 }
 
 #[test]
