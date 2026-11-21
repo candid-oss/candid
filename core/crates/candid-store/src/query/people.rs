@@ -79,7 +79,9 @@ impl TimelineStore {
             let (k, a) = (r.text(0), r.text(1));
             json!({"key": if k == "other" { a.clone() } else { format!("{k}:{a}") }, "kind": k, "alias": a, "source": r.text(2)})
         })?;
-        Ok(json!({"person_id": id, "name": name, "status": status, "aliases": aliases}))
+        // Merges the model made for you (judged the same person, with a supporting rule); undo = "not the same person".
+        let auto_merged = self.people_auto_merges(id)?;
+        Ok(json!({"person_id": id, "name": name, "status": status, "aliases": aliases, "auto_merged": auto_merged}))
     }
 
     pub fn person(&self, req: &PersonRequest, client_id: &str) -> Result<Value> {
@@ -157,6 +159,15 @@ impl TimelineStore {
         self.audited("app_person_correct", client_id, req, |_: &Value| Some(1), |_ctx: &ClientContext| -> QResult<Value> {
             self.require_internal(client_id)?;
             Ok(self.person_correct(req)?)
+        })
+    }
+
+    /// 「可能是同一人」: pairs the model called the same person that no rule backs up (merge or "not the same person"),
+    /// and the automatic merges it made (undo = "not the same person"). Read from cached verdicts only.
+    pub fn app_people_candidates(&self, client_id: &str) -> Result<Value> {
+        self.audited("app_people_candidates", client_id, &json!({}), |v: &Value| Some(v["candidates"].as_array().map(|a| a.len()).unwrap_or(0) as i64), |_ctx: &ClientContext| -> QResult<Value> {
+            self.require_internal(client_id)?;
+            Ok(self.people_candidate_list()?)
         })
     }
 }

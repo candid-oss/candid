@@ -463,6 +463,7 @@ impl TimelineStore {
         if job["kind"] == "workflow.speakers" {return self.recording_speakers_prepare(job);}
         if job["kind"] == "screen.summarize" { return self.screen_prepare(job); }
         if job["kind"] == crate::screen_excerpt::JOB_KIND { return self.excerpt_prepare(job); }
+        if job["kind"] == "people.judge" { return self.people_judge_prepare(job); }
         let id = job["input_ref"].as_str().unwrap_or("");
         let item = self.workflow_source(id)?;
         let kind = job["kind"].as_str().unwrap_or("");
@@ -720,6 +721,7 @@ impl TimelineStore {
     pub fn workflow_complete(&self, r: &Value, output: &Value) -> Result<Value> {
         if r["step"] == "screen-episodes" { return self.screen_complete(r, output); }
         if r["step"] == crate::screen_excerpt::FEATURE { return self.excerpt_complete(r, output); }
+        if r["step"] == "people-judge" { return self.people_judge_complete(r, output); }
         let job = &r["job"];
         let id = job["input_ref"].as_str().unwrap_or("");
         let item = self.workflow_source(id)?;

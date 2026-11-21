@@ -25,6 +25,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+mod judge;
+mod pinyin;
+pub use judge::{PeopleCandidate, BATCH};
+
 pub const SELF_ENTITY: &str = "ppl-self";
 const PREFIX: &str = "ppl-";
 const SELF_KEY: &str = "self";
@@ -55,6 +59,9 @@ pub struct PeopleVerdict {
     pub model_ref: Option<String>,
     #[serde(default)]
     pub prompt_version: Option<String>,
+    /// Hash of both alias sets, prompt and model the answer was given for; a different key asks again.
+    #[serde(default)]
+    pub cache_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

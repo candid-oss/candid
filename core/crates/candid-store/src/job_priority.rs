@@ -24,6 +24,8 @@ pub const JOB_CLASSES: &[JobClass] = &[
     JobClass { kind: "workflow.", priority: 2, max_age_ms: None },
     // P3: can wait for a quiet moment or the next day.
     JobClass { kind: "screen.summarize", priority: 3, max_age_ms: None },
+    // Batches are re-checked against the current candidates when they run, so a long wait does no harm.
+    JobClass { kind: "people.judge", priority: 3, max_age_ms: None },
 ];
 
 /// Priority used for a kind the table does not know. Such jobs are not picked up by the worker at all.

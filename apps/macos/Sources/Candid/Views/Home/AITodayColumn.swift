@@ -181,6 +181,7 @@ struct AITodayColumn: View {
                 if index > 0 { HairlineDivider() }
                 ProposalRow(model: model, proposal: proposal, compact: false)
             }
+            PeopleCandidateRows(model: model.people)
             ForEach(model.speakers) { speaker in
                 let key = "speaker:" + speaker.id
                 VStack(alignment: .leading, spacing: Space.xxs) {

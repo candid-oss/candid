@@ -25,8 +25,8 @@ pub const TOOL_NAMES: [&str; 21] =
     ["day", "find", "person", "conversations", "conversation", "evidence", "source_query", "records", "agent", "status", "overview", "search", "timeline", "context", "get_event", "episodes", "episode", "thread", "media", "usage", "propose"];
 
 /// The App's own read tools (internal client only, never listed in the catalog or MCP).
-pub const APP_TOOL_NAMES: [&str; 9] =
-    ["app_person_correct", "app_activities", "app_activity", "app_media", "app_recognition", "app_pending_recognition", "app_ocr", "app_retention_count", "app_day_counts"];
+pub const APP_TOOL_NAMES: [&str; 10] =
+    ["app_person_correct", "app_people_candidates", "app_activities", "app_activity", "app_media", "app_recognition", "app_pending_recognition", "app_ocr", "app_retention_count", "app_day_counts"];
 
 fn decode<T: DeserializeOwned>(body: &[u8]) -> Result<T, ToolCallFailure> {
     serde_json::from_slice(body).map_err(ToolCallFailure::Decode)
@@ -75,6 +75,7 @@ impl TimelineStore {
             "find" => value(self.find(&decode(body)?, client_id)?),
             "person" => value(self.person(&decode(body)?, client_id)?),
             "app_person_correct" => value(self.app_person_correct(&decode(body)?, client_id)?),
+            "app_people_candidates" => value(self.app_people_candidates(client_id)?),
             "conversations" => value(self.conversations(&decode(body)?, client_id)?),
             "conversation" => value(self.conversation(&decode(body)?, client_id)?),
             "evidence" => value(self.evidence(&decode(body)?, client_id)?),

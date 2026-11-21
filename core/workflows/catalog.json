@@ -291,6 +291,22 @@
       "default_daily_calls": 300,
       "allow_remote": false,
       "notifications": false
+    },
+    {
+      "id": "people-judge",
+      "title": "人物判断（可能是同一人）",
+      "mode": "core",
+      "implemented": true,
+      "trigger": "出现新别名时",
+      "role": "summary",
+      "job_kind": "people.judge",
+      "sources": [
+        "*"
+      ],
+      "default_enabled": false,
+      "default_daily_calls": 50,
+      "allow_remote": false,
+      "notifications": false
     }
   ]
 }
