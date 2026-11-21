@@ -8,6 +8,7 @@ mod chunk;
 mod clock;
 mod compose;
 mod curated;
+mod curated_screen;
 mod db;
 mod delete;
 mod derived;

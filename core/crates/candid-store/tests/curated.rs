@@ -135,3 +135,84 @@ fn sync_is_incremental() {
     }])).unwrap();
     assert_eq!(fx.store.curated_sync().unwrap()["inserted"], 1);
 }
+
+fn prompt(key: &str, at: i64, session: &str, text: &str) -> IngestEvent {
+    let mut e = IngestEvent::new(key, "ai.prompt", Some(at));
+    e.payload = json!({"agent": "claude_code", "session_ref": session, "message_ref": key, "project": "/work/candid", "followups": 0, "truncated": false, "origin": "transcript"});
+    e.text = vec![IngestText::new("prompt", text)];
+    e
+}
+
+#[test]
+fn ai_prompts_become_agent_conversations_without_answers() {
+    let fx = Fx::make("curated-agent");
+    fx.store.ingest(&IngestBatch::events(&fx.source, vec![
+        prompt("p1", T0, "agent:claude_code:s1", "帮我看看这个报错"),
+        prompt("p2", T0 + 60_000, "agent:claude_code:s1", "再把测试补上"),
+        prompt("p3", T0 + 90_000, "agent:claude_code:s2", "另一个会话的问题"),
+    ])).unwrap();
+    let list = call(&fx, &fx.client, "conversations", json!({"kind": "agent"}));
+    let convs = list["conversations"].as_array().unwrap();
+    assert_eq!(convs.len(), 2, "{list}");
+    let c = convs.iter().find(|c| c["conversation_id"] == "agent:claude_code:s1").unwrap();
+    assert_eq!((c["messages"].as_i64(), c["app"].as_str(), c["title"].as_str()), (Some(2), Some("claude_code"), Some("candid")));
+    let thread = call(&fx, &fx.client, "conversation", json!({"conversation_id": "agent:claude_code:s1"}));
+    assert!(thread["messages"].as_array().unwrap().iter().all(|m| m["actor"] == "self"));
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM messages WHERE conversation_id LIKE 'agent:%' AND producer<>'projection/1'"), 0);
+    // Other kinds do not list them, and find can be narrowed to them.
+    assert!(call(&fx, &fx.client, "conversations", json!({"kind": "mail"}))["conversations"].as_array().unwrap().is_empty());
+    let found = call(&fx, &fx.client, "find", json!({"q": "补上", "conversation_kind": "agent"}));
+    assert_eq!(found["results"].as_array().unwrap().len(), 1, "{found}");
+    let none = call(&fx, &fx.client, "find", json!({"q": "补上", "conversation_kind": "mail"}));
+    assert!(none["results"].as_array().unwrap().is_empty());
+    // Deleting the record deletes the message and, with the last one, the conversation.
+    let ids = fx.texts("SELECT event_id FROM events WHERE source_key='p3'");
+    fx.store.delete_events(&ids, "user").unwrap();
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM conversations WHERE conversation_id='agent:claude_code:s2'"), 0);
+}
+
+fn ax(key: &str, at: i64, app: &str, title: &str, url: Option<&str>, body: &str) -> IngestEvent {
+    let mut e = IngestEvent::new(key, "screen.text", Some(at));
+    e.app_name = Some(app.into());
+    e.title = Some(title.into());
+    let object = match url {
+        Some(u) => json!({"basis": "path", "key": u}),
+        None => json!({"basis": "title", "key": title}),
+    };
+    e.payload = json!({"trigger": "timer", "text_status": "captured", "record_evidence": {"format": "candid-record-evidence/1", "object": object, "field": null, "input_value": null, "input_status": "disabled", "active": true, "reading": [], "confirmation": null}});
+    e.text = vec![IngestText::new("body", body)];
+    e
+}
+
+#[test]
+fn ax_page_text_becomes_one_excerpt_per_visit() {
+    let fx = Fx::make("curated-ax");
+    let page = "https://example.com/article";
+    let m = 60_000;
+    fx.store.ingest(&IngestBatch::events(&fx.source, vec![
+        ax("a1", T0, "Google Chrome", "文章 - Google Chrome", Some(page), "导航\n预算会议纪要第一段内容\n第二段讲报价单"),
+        ax("a2", T0 + m, "Google Chrome", "文章 - 内存用量高 - 910 MB - Google Chrome", Some(page), "导航\n预算会议纪要第一段内容\n第二段讲报价单\n第三段是新滚出来的内容"),
+        ax("a3", T0 + 2 * m, "Google Chrome", "文章 - Google Chrome", Some(page), "导航\n第三段是新滚出来的内容"),
+        // The same page after a long absence is a new visit.
+        ax("a4", T0 + 60 * m, "Google Chrome", "文章 - Google Chrome", Some(page), "晚些时候重新打开读到的第四段内容，这一段比较长所以够得上摘录"),
+        // Left out: private window, AI chat site, a chat client (screenshot path), a window with no URL goes by title.
+        ax("x1", T0, "Google Chrome", "秘密页面 - Google Chrome（无痕）", Some("https://secret.example/a"), "不应该出现的无痕页面内容"),
+        ax("x2", T0, "Google Chrome", "ChatGPT", Some("https://chatgpt.com/c/1"), "AI 的回答不应该进摘录里面来"),
+        ax("x3", T0, "微信", "张三", None, "聊天气泡的内容走截图摘录而不是这里"),
+        ax("n1", T0, "Notion", "项目计划", None, "Notion 页面的正文内容在这里面，同样需要足够长才会成为摘录"),
+    ])).unwrap();
+    fx.store.curated_sync().unwrap();
+    let rows = fx.texts("SELECT title||'|'||COALESCE(url,'')||'|'||start_ms||'|'||end_ms||'|'||replace(text,char(10),'/') FROM excerpts ORDER BY start_ms, key");
+    assert_eq!(rows.len(), 3, "{rows:?}");
+    assert!(rows.contains(&format!("文章|{page}|{}|{}|预算会议纪要第一段内容/第二段讲报价单/第三段是新滚出来的内容", T0, T0 + 2 * m)), "{rows:?}");
+    assert!(rows.iter().any(|r| r.starts_with("文章|") && r.ends_with("晚些时候重新打开读到的第四段内容，这一段比较长所以够得上摘录")));
+    assert!(rows.iter().any(|r| r.starts_with("项目计划||")), "no URL: keyed by app and title");
+    // Sources are the events that contributed lines; the repeated page body did not add a1's lines twice.
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM excerpt_sources s JOIN events e ON e.event_id=s.event_id WHERE e.source_key IN ('a1','a2')"), 2);
+    // find reaches them; deleting the contributing events removes the excerpt.
+    let found = call(&fx, &fx.client, "find", json!({"q": "报价单", "kind": "excerpt"}));
+    assert_eq!(found["results"].as_array().unwrap().len(), 1, "{found}");
+    let late = fx.texts("SELECT event_id FROM events WHERE source_key='a4'");
+    fx.store.delete_events(&late, "user").unwrap();
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM excerpts WHERE text LIKE '%第四段%'"), 0);
+}

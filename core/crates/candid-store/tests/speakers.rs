@@ -229,3 +229,19 @@ fn whole_recording_result_is_checked() {
     assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
     assert!(fx.store.recording_speakers_complete(&r,&out).is_ok());
 }
+
+#[test]
+fn recording_messages_carry_speaker_names_and_follow_relabels() {
+    let (fx, id) = recording();
+    fx.store.curated_sync().unwrap();
+    let senders = || fx.texts("SELECT COALESCE(sender,'-')||'|'||COALESCE(sender_entity_id IS NOT NULL,0) FROM messages WHERE conversation_id GLOB 'rec:*' ORDER BY sent_ms");
+    // 张伟 matched clearly (a person, but only a voice-library name: no entity yet); the rest are labels.
+    assert_eq!(senders(), vec!["张伟|0", "说话人 2|0", "说话人 3|0", "张伟|0", "说话人 4|0"]);
+    // You say who 说话人 2 is: the message follows, with the person's entity.
+    fx.store.media_command(&json!({"action":"speaker","id":id,"speaker":"说话人 2","voice_id":"v-li","name":"李娜","samples_saved":false})).unwrap();
+    fx.store.curated_sync().unwrap();
+    let after = senders();
+    assert_eq!(after[1], "李娜|1", "{after:?}");
+    assert_eq!(after[0], "张伟|0");
+    assert_eq!(fx.scalar("SELECT COUNT(DISTINCT sender_entity_id) FROM messages WHERE sender='李娜'"), 1);
+}

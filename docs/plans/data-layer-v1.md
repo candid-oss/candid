@@ -57,22 +57,23 @@ CREATE TABLE items (
   owner        TEXT NOT NULL CHECK (owner IN ('self','other')),   -- 我答应的 / 等别人做的
   title        TEXT NOT NULL,
   when_text    TEXT,                    -- 原话里的时间说法
-  start_ms INTEGER, end_ms INTEGER, all_day INTEGER,
+  start_ms INTEGER, end_ms INTEGER,
+  all_day      INTEGER NOT NULL DEFAULT 0,
   counterpart  TEXT,                    -- 对方别名键；人物合并后自动指向新实体
-  conversation_id TEXT,
+  conversation_id TEXT REFERENCES conversations(conversation_id) ON DELETE SET NULL,
   review       TEXT NOT NULL CHECK (review IN ('candidate','confirmed','rejected')),
   state        TEXT NOT NULL CHECK (state IN ('open','done','cancelled','expired')),
   user_fields  TEXT NOT NULL DEFAULT '[]',  -- 你改过的字段，模型不再覆盖
   external_ref TEXT,                    -- EventKit 标识（经提案写入后回填）
   producer TEXT NOT NULL, model_ref TEXT, prompt_version TEXT,
   created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL
-) STRICT;
+) STRICT;                               -- 索引：items_open(state, review, start_ms)、items_conversation
 CREATE TABLE item_changes (            -- 每次新增、更新、完成、作废一行，带依据
   change_id  TEXT PRIMARY KEY,
   item_id    TEXT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
   op         TEXT NOT NULL CHECK (op IN ('create','update','done','cancel','merge','expire','user')),
   fields_json TEXT NOT NULL,
-  by         TEXT NOT NULL CHECK (by IN ('model','rule','user','calendar')),
+  "by"       TEXT NOT NULL CHECK ("by" IN ('model','rule','user','calendar')),   -- 列名要加引号
   created_ms INTEGER NOT NULL
 ) STRICT;
 CREATE TABLE item_sources (
@@ -82,7 +83,8 @@ CREATE TABLE item_sources (
 ) STRICT;
 ```
 
-字段是草案，实施时再定。删除源消息：失去依据的变更行删除；`create` 失去依据则整条删除（触发器）。
+已在时间线库 v12 落地（`curated.rs` 的 DDL）。与草案相比只加了 `all_day` 的默认值、`conversation_id` 的外键（对话删了置空）和索引。触发器：`item_sources` 删掉某个变更的最后一条依据，这条 `item_changes` 删除；被删的是 `op='create'` 那行，整条 item 连同其余变更一起删除。没有依据的变更（`by=user`、`by=calendar`）不受影响。
+
 
 ### 2.2 抽取（`summary` 角色，后台通道）
 
@@ -120,6 +122,8 @@ AI 页「待你处理」分日程、提醒、备忘三栏，加「可能是同�
 | AI 会话 | `ai.prompt` 事件 → `conversations.kind='agent'`（v12 放宽 CHECK），你写的提示词为 self 消息；AI 回答按引用型连接器的设计不入库，经 `evidence` 现读 | 不调 |
 | 浏览器等 AX 能读到正文的应用 | `screen.text` 中 AX 主内容区（网页区域）的文字，按 (应用, URL 或标题) 和访问时段（间隔 > 30 分钟算新一段）合并为 `excerpts`，段落去重复用 `screen_cleanup`；AX 读不到正文的应用仍走截图摘录 | 不调 |
 | 活动块 | 规则切时段（5 分钟间隔，沿用现有屏幕片段）→ 一句话概括，**只读该时段的消息、摘录和应用时长统计**，不读原始 OCR；配 `day` 工具 | `episode` 角色，每块 1 次 |
+
+**实现状态（v12，2026-11-21）**：三项都已接入 `curated_sync`。录音说话人在媒体投影 revision 变化时重算（你改说话人、重新匹配后自动跟随）；`sender` 为显示名，没有名字时为「说话人 N」，`sender_entity_id` 只在已确认或自动匹配、且有人物实体时填。AI 会话每个 session 一个 `agent` 对话，id 即 `session_ref`。AX 摘录只收浏览器和文档类应用（见 `curated_screen.rs` 的 `AX_APPS`）；AI 聊天站点与应用、无痕窗口不收（AI 回答不入整理层）；微信、QQ 等聊天客户端的 AX 文本是气泡列表，仍走截图摘录。
 
 前三项先在本机真实库副本上确认数据形态（尤其 AX 是否带网页区域、`ai.prompt` 是否在采），再写投影。
 

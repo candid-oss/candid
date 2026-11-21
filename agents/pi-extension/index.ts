@@ -105,12 +105,12 @@ const TOOLS: ToolSpec[] = [
   {
     name: "pv_find", core: "find", label: "查找内容",
     description: `在整理好的内容里搜索：对话消息（聊天、邮件、录音转写，带发送人）和阅读摘录。找具体内容先用它；引用时用结果里的 ref。${time}`,
-    parameters: Type.Object({ q: Type.String(), kind: opt(Type.Union([Type.Literal("message"), Type.Literal("excerpt")])), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+    parameters: Type.Object({ q: Type.String(), kind: opt(Type.Union([Type.Literal("message"), Type.Literal("excerpt")])), conversation_kind: opt(Type.Union([Type.Literal("chat"), Type.Literal("mail"), Type.Literal("meeting"), Type.Literal("agent")])), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
   },
   {
     name: "pv_conversations", core: "conversations", label: "对话列表",
-    description: `列出对话（chat 聊天、mail 邮件、meeting 录音），最近的在前，带参与者和最后一条消息。问和谁聊过、和某人的往来时用，who 按人名或标题过滤。${time}`,
-    parameters: Type.Object({ kind: opt(Type.Union([Type.Literal("chat"), Type.Literal("mail"), Type.Literal("meeting")])), who: opt(Type.String()), app: opt(Type.String()), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+    description: `列出对话（chat 聊天、mail 邮件、meeting 录音、agent 你写给 AI 的提示词），最近的在前，带参与者和最后一条消息。问和谁聊过、和某人的往来时用，who 按人名或标题过滤。${time}`,
+    parameters: Type.Object({ kind: opt(Type.Union([Type.Literal("chat"), Type.Literal("mail"), Type.Literal("meeting"), Type.Literal("agent")])), who: opt(Type.String()), app: opt(Type.String()), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
   },
   {
     name: "pv_conversation", core: "conversation", label: "读一段对话",

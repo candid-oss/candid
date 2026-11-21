@@ -13,6 +13,7 @@
   - 样例回放：`cargo run -p candid-store --example excerpt_replay -- select|ocr|apply|compose …`，只用于真实库的**副本**。
   - 已知缺口：App 的截图 OCR 默认是手动，需要设为自动才有坐标；关键帧偏多（无 OCR 时约 72%）；VLM 偶尔漏掉一条；经 LM Studio HTTP 发送 WebP 图片尚未实测；录音说话人仍为空；模型调用还没有流式输出。
 - **2026-11-21 · 数据层规划定稿**：人物归一、条目层（新建 `items`）、整理层补齐的来源、模型调用清单与预算、实施顺序见 [数据层与 AI 处理规划 v1](data-layer-v1.md)，其中的决定替代本文 M4 第 2、4 条和 M1 第 1 条的粗略写法。
+- **2026-11-21 · 整理层来源与时间线库 v12**：`conversations.kind` 加 `agent`；新建 `items`、`item_changes`、`item_sources`（字段与触发器见 [数据层规划](data-layer-v1.md#21-存储时间线库-v12)）；录音说话人、AI 提示词会话、浏览器和文档类应用的 AX 正文摘录接入 `curated_sync`；`find` 加 `conversation_kind`，`conversations` 可按 `agent` 过滤。在本机真实库副本（v10）上验证：升级 1.7s，首次同步约 2.6s。
 - 下一步：按数据层规划的顺序——调度地基（两条通道、每功能预算）→ 不调模型的来源 → 人物规则层 → 条目抽取。
 
 ## 0. 调研结论（2026-11-20，本机最近 7 天数据）

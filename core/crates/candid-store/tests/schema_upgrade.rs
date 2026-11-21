@@ -467,3 +467,68 @@ fn v8_upgrade_stores_large_content_once() {
     drop(db);
     let _ = fs::remove_dir_all(root);
 }
+
+/// A v12 store turned back into v11: old conversations CHECK, no item tables, one synthetic mail message.
+fn v11_root() -> PathBuf {
+    let root = fixtures::temp_root("v11-upgrade");
+    drop(TimelineStore::open(&root, "SYNTHETIC-v11", true, fixtures::test_clock()).unwrap());
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    db.script("DROP TABLE item_sources; DROP TABLE item_changes; DROP TABLE items; DROP TABLE conversations").unwrap();
+    db.script("CREATE TABLE conversations (conversation_id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('chat','mail','meeting')), app TEXT, title TEXT, started_ms INTEGER NOT NULL, last_ms INTEGER NOT NULL, producer TEXT NOT NULL, updated_ms INTEGER NOT NULL) STRICT; CREATE INDEX conversations_last ON conversations(last_ms)").unwrap();
+    db.script("INSERT INTO conversations VALUES('mail:t','mail','邮件','SYNTHETIC',1,1,'projection/1',1); INSERT INTO messages(message_id,conversation_id,sent_ms,actor,text,producer,created_ms) VALUES('m','mail:t',1,'self','SYNTHETIC body','projection/1',1)").unwrap();
+    db.script("DELETE FROM store_meta WHERE key='schema.upgrade'; PRAGMA user_version=11;").unwrap();
+    drop(db);
+    let mut identity: StoreIdentity = serde_json::from_str(&fs::read_to_string(root.join("store.json")).unwrap()).unwrap();
+    identity.schema_version = 11;
+    fs::write(root.join("store.json"), json::canonical_of(&identity)).unwrap();
+    root
+}
+
+#[test]
+fn v11_upgrade_allows_agent_conversations_and_adds_items_idempotently() {
+    let root = v11_root();
+    let store = open(&root).unwrap();
+    assert_eq!(store.identity.schema_version, SCHEMA_VERSION);
+    let db = store.raw_db();
+    // Existing rows, their messages and the FTS index survive the rebuild.
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM messages WHERE conversation_id='mail:t'", &[]).unwrap(), 1);
+    db.script("INSERT INTO conversations VALUES('agent:x','agent','Claude','SYNTHETIC',2,2,'projection/1',2)").unwrap();
+    // Item deletion chain: last source of the `create` change gone → the whole item goes.
+    db.script("INSERT INTO messages(message_id,conversation_id,sent_ms,actor,text,producer,created_ms) VALUES('m2','mail:t',2,'self','SYNTHETIC two','projection/1',2);
+      INSERT INTO items VALUES('i','event','self','SYNTHETIC',NULL,NULL,NULL,0,NULL,'mail:t','candidate','open','[]',NULL,'model/1',NULL,NULL,1,1);
+      INSERT INTO item_changes VALUES('c1','i','create','{}','model',1);
+      INSERT INTO item_changes VALUES('c2','i','update','{}','model',2);
+      INSERT INTO item_sources VALUES('c1','m'); INSERT INTO item_sources VALUES('c2','m'); INSERT INTO item_sources VALUES('c2','m2');").unwrap();
+    db.script("DELETE FROM messages WHERE message_id='m2'").unwrap();
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM item_changes WHERE change_id='c2'", &[]).unwrap(), 1);
+    db.script("DELETE FROM messages WHERE message_id='m'").unwrap();
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM items", &[]).unwrap(), 0);
+    assert_eq!(db.scalar("SELECT COUNT(*)+(SELECT COUNT(*) FROM item_sources) FROM item_changes", &[]).unwrap(), 0);
+    assert!(store.integrity_check(false).unwrap().ok);
+    drop(store);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn v11_upgrade_failure_rolls_back_and_resumes_after_interrupted_metadata_write() {
+    let root = v11_root();
+    // A leftover table of the same name makes the item DDL fail midway: nothing may change.
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    db.script("CREATE VIEW item_changes AS SELECT 1 AS synthetic").unwrap();
+    drop(db);
+    assert!(open(&root).is_err());
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    assert_eq!(db.scalar("PRAGMA user_version", &[]).unwrap(), 11);
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM sqlite_master WHERE name IN ('conversations_v12','items')", &[]).unwrap(), 0);
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM messages", &[]).unwrap(), 1);
+    db.script("DROP VIEW item_changes").unwrap();
+    drop(db);
+    fs::create_dir(root.join(".store.json.tmp")).unwrap();
+    assert!(open(&root).is_err());
+    fs::remove_dir(root.join(".store.json.tmp")).unwrap();
+    let store = open(&root).unwrap();
+    assert_eq!(store.identity.schema_version, SCHEMA_VERSION);
+    assert!(store.integrity_check(false).unwrap().ok);
+    drop(store);
+    fs::remove_dir_all(root).unwrap();
+}

@@ -2,7 +2,7 @@
 //!
 //! | Tool | Returns |
 //! |---|---|
-//! | `conversations` | conversations (chat, mail, meeting) with participants, counts and the last message, newest first |
+//! | `conversations` | conversations (chat, mail, meeting, agent) with participants, counts and the last message, newest first |
 //! | `conversation` | the messages of one conversation in time order |
 //! | `find` | full-text hits in messages and excerpts, each with its conversation or page |
 //! | `evidence` | the raw records a message or excerpt was built from (needs the client's `text` scope) |
@@ -21,7 +21,7 @@ use serde_json::{json, Value};
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConversationsRequest {
-    /// `chat`, `mail` or `meeting`.
+    /// `chat`, `mail`, `meeting` or `agent` (what you wrote to an AI; the replies are not stored).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
     /// Matches the conversation title or a sender name.
@@ -54,6 +54,9 @@ pub struct ConversationRequest {
 #[serde(deny_unknown_fields)]
 pub struct FindRequest {
     pub q: String,
+    /// Only messages of conversations of this kind (`chat`, `mail`, `meeting`, `agent`); excerpts are left out then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conversation_kind: Option<String>,
     /// `message` or `excerpt`; both when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
@@ -133,8 +136,8 @@ impl TimelineStore {
             }
             sql += ")";
             if let Some(kind) = &req.kind {
-                if !["chat", "mail", "meeting"].contains(&kind.as_str()) {
-                    return Err(invalid("kind 只能是 chat、mail 或 meeting").into());
+                if !["chat", "mail", "meeting", "agent"].contains(&kind.as_str()) {
+                    return Err(invalid("kind 只能是 chat、mail、meeting 或 agent").into());
                 }
                 sql += " AND c.kind=?";
                 params.push(text(kind));
@@ -230,6 +233,11 @@ impl TimelineStore {
             // Trigram FTS needs three characters per term; shorter queries scan with LIKE.
             let use_fts = q.split_whitespace().all(|t| t.chars().count() >= 3);
             let mut results: Vec<(i64, Value)> = vec![];
+            if let Some(k) = req.conversation_kind.as_deref() {
+                if !["chat", "mail", "meeting", "agent"].contains(&k) {
+                    return Err(invalid("conversation_kind 只能是 chat、mail、meeting 或 agent").into());
+                }
+            }
             if req.kind.as_deref().is_none_or(|k| k == "message") {
                 let (visible, vparams) = self.curated_visible(ctx, "m", "message_sources", "message_id");
                 let (matcher, mp) = if use_fts {
@@ -240,6 +248,10 @@ impl TimelineStore {
                 let mut sql = format!("SELECT m.message_id,m.conversation_id,m.sent_ms,m.actor,m.sender,m.text,c.kind,c.app,c.title FROM messages m JOIN conversations c ON c.conversation_id=m.conversation_id WHERE {matcher} AND {visible}");
                 let mut params = mp;
                 params.extend(vparams);
+                if let Some(k) = req.conversation_kind.as_deref() {
+                    sql += " AND c.kind=?";
+                    params.push(text(k));
+                }
                 if let Some(s) = ws {
                     sql += " AND m.sent_ms>=?";
                     params.push(int(s));
@@ -257,7 +269,7 @@ impl TimelineStore {
                     results.push((at, v));
                 }
             }
-            if req.kind.as_deref().is_none_or(|k| k == "excerpt") {
+            if req.conversation_kind.is_none() && req.kind.as_deref().is_none_or(|k| k == "excerpt") {
                 let (visible, vparams) = self.curated_visible(ctx, "x", "excerpt_sources", "excerpt_id");
                 let (matcher, mp) = if use_fts {
                     ("x.seq IN (SELECT rowid FROM excerpts_fts WHERE excerpts_fts MATCH ?)".to_string(), vec![text(fts_query(q))])

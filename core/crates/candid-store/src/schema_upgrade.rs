@@ -1,4 +1,4 @@
-//! Transactional upgrades v1 → … → v9. The database commit precedes atomic store.json replacement;
+//! Transactional upgrades v1 → … → v12. The database commit precedes atomic store.json replacement;
 //! a durable marker permits only that particular interrupted replacement to resume.
 use crate::{
     db::{text, Db, RowExt},
@@ -32,7 +32,8 @@ pub(crate) fn upgrade(
         result?;
     } else if version != identity.schema_version {
         let marker = db.first("SELECT value FROM store_meta WHERE key='schema.upgrade'", &[], |r| r.text(0))?;
-        let pending = (version == 11 && identity.schema_version <= 10 && marker.as_deref() == Some("10:11"))
+        let pending = (version == 12 && identity.schema_version <= 11 && marker.as_deref() == Some("11:12"))
+            || (version == 11 && identity.schema_version <= 10 && marker.as_deref() == Some("10:11"))
             || (version == 10 && identity.schema_version <= 9 && marker.as_deref() == Some("9:10"))
             || (version == 9 && identity.schema_version <= 8 && marker.as_deref() == Some("8:9"))
             || (version == 8 && identity.schema_version <= 7 && marker.as_deref() == Some("7:8"))
@@ -191,6 +192,23 @@ pub(crate) fn upgrade(
             db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','10:11')", &[])?;
             db.execute("PRAGMA user_version=11", &[])
         })?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 11 {
+        // v12: agent conversations and the item tables. The conversations rebuild needs foreign keys off.
+        // legacy_alter_table: the rename must not re-check triggers that mention the table dropped a moment ago.
+        db.execute("PRAGMA foreign_keys=OFF", &[])?;
+        db.execute("PRAGMA legacy_alter_table=ON", &[])?;
+        let result = db.transaction(|| {
+            crate::curated::upgrade_v12(db)?;
+            if !db.query("PRAGMA foreign_key_check", &[], |_| true)?.is_empty() {
+                return Err(TimelineError::InvalidStore("升级后的整理层引用不完整".into()));
+            }
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','11:12')", &[])?;
+            db.execute("PRAGMA user_version=12", &[])
+        });
+        db.execute("PRAGMA legacy_alter_table=OFF", &[])?;
+        db.execute("PRAGMA foreign_keys=ON", &[])?;
+        result?;
     }
     if vacuum {
         // Give the freed pages back once; outside the transactions by necessity.

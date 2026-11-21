@@ -27,13 +27,13 @@ pub fn tools() -> Vec<Tool> {
         t(
             "find",
             format!("在整理好的内容里搜索：对话消息（聊天、邮件、录音转写，带发送人）和阅读摘录。比 search 干净，找具体内容时先用它；结果里的 ref 是可引用的记录。{TIME_NOTE}{EVIDENCE_NOTE}"),
-            r#"{"type":"object","properties":{"q":{"type":"string","description":"关键词"},"kind":{"type":"string","enum":["message","excerpt"]},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["q"],"additionalProperties":false}"#,
+            r#"{"type":"object","properties":{"q":{"type":"string","description":"关键词"},"kind":{"type":"string","enum":["message","excerpt"]},"conversation_kind":{"type":"string","enum":["chat","mail","meeting","agent"],"description":"只搜这种对话里的消息"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"required":["q"],"additionalProperties":false}"#,
             false,
         ),
         t(
             "conversations",
-            format!("列出对话（chat 聊天、mail 邮件、meeting 录音会议），最近的在前：参与者、消息数、最后一条。问「最近和谁聊过」「和某人的往来」时用，who 按人名或标题过滤。{TIME_NOTE}"),
-            r#"{"type":"object","properties":{"kind":{"type":"string","enum":["chat","mail","meeting"]},"who":{"type":"string","description":"人名或对话标题"},"app":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false}"#,
+            format!("列出对话（chat 聊天、mail 邮件、meeting 录音会议、agent 你写给 AI 的提示词；AI 的回答不保存），最近的在前：参与者、消息数、最后一条。问「最近和谁聊过」「和某人的往来」时用，who 按人名或标题过滤。{TIME_NOTE}"),
+            r#"{"type":"object","properties":{"kind":{"type":"string","enum":["chat","mail","meeting","agent"]},"who":{"type":"string","description":"人名或对话标题"},"app":{"type":"string"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50}},"additionalProperties":false}"#,
             false,
         ),
         t(

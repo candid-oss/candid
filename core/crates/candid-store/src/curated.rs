@@ -18,20 +18,30 @@ use serde_json::{json, Value};
 pub(crate) const PROJECTION: &str = "projection/1";
 const CURSOR: &str = "curated.cursor/1";
 const MEDIA_REVISION: &str = "curated.media_revision/1";
+const PROMPT_REVISION: &str = "curated.prompt_revision/1";
+const SPEAKER_REVISION: &str = "curated.speaker_revision/1";
 const BATCH: i64 = 2000;
 
-/// Idempotent: the upgrade step can run again after an interrupted metadata write.
-pub(crate) const DDL: &str = r#"
-CREATE TABLE IF NOT EXISTS conversations (
+/// The conversations table, under a name of its own so the v12 upgrade can rebuild it (kind gained `agent`).
+macro_rules! conversations_table {
+    ($name:literal) => {
+        concat!(
+            "CREATE TABLE IF NOT EXISTS ", $name, " (
   conversation_id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK (kind IN ('chat','mail','meeting')),
+  kind TEXT NOT NULL CHECK (kind IN ('chat','mail','meeting','agent')),
   app TEXT,
   title TEXT,
   started_ms INTEGER NOT NULL,
   last_ms INTEGER NOT NULL,
   producer TEXT NOT NULL,
   updated_ms INTEGER NOT NULL
-) STRICT;
+) STRICT;"
+        )
+    };
+}
+
+/// Idempotent: the upgrade step can run again after an interrupted metadata write.
+pub(crate) const DDL: &str = concat!(conversations_table!("conversations"), r#"
 CREATE INDEX IF NOT EXISTS conversations_last ON conversations(last_ms);
 CREATE TABLE IF NOT EXISTS messages (
   seq INTEGER PRIMARY KEY,
@@ -106,7 +116,68 @@ CREATE TRIGGER IF NOT EXISTS excerpt_sources_last AFTER DELETE ON excerpt_source
   WHEN NOT EXISTS (SELECT 1 FROM excerpt_sources WHERE excerpt_id=OLD.excerpt_id) BEGIN
   DELETE FROM excerpts WHERE excerpt_id=OLD.excerpt_id;
 END;
-"#;
+"#, r#"
+CREATE TABLE IF NOT EXISTS items (
+  item_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('event','reminder','commitment')),
+  owner TEXT NOT NULL CHECK (owner IN ('self','other')),
+  title TEXT NOT NULL,
+  when_text TEXT,
+  start_ms INTEGER,
+  end_ms INTEGER,
+  all_day INTEGER NOT NULL DEFAULT 0,
+  counterpart TEXT,
+  conversation_id TEXT REFERENCES conversations(conversation_id) ON DELETE SET NULL,
+  review TEXT NOT NULL CHECK (review IN ('candidate','confirmed','rejected')),
+  state TEXT NOT NULL CHECK (state IN ('open','done','cancelled','expired')),
+  user_fields TEXT NOT NULL DEFAULT '[]',
+  external_ref TEXT,
+  producer TEXT NOT NULL,
+  model_ref TEXT,
+  prompt_version TEXT,
+  created_ms INTEGER NOT NULL,
+  updated_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS items_open ON items(state, review, start_ms);
+CREATE INDEX IF NOT EXISTS items_conversation ON items(conversation_id);
+CREATE TABLE IF NOT EXISTS item_changes (
+  change_id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES items(item_id) ON DELETE CASCADE,
+  op TEXT NOT NULL CHECK (op IN ('create','update','done','cancel','merge','expire','user')),
+  fields_json TEXT NOT NULL,
+  "by" TEXT NOT NULL CHECK ("by" IN ('model','rule','user','calendar')),
+  created_ms INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS item_changes_item ON item_changes(item_id, created_ms);
+CREATE TABLE IF NOT EXISTS item_sources (
+  change_id TEXT NOT NULL REFERENCES item_changes(change_id) ON DELETE CASCADE,
+  message_id TEXT NOT NULL REFERENCES messages(message_id) ON DELETE CASCADE,
+  PRIMARY KEY (change_id, message_id)
+) STRICT;
+CREATE INDEX IF NOT EXISTS item_sources_message ON item_sources(message_id);
+CREATE TRIGGER IF NOT EXISTS item_sources_last AFTER DELETE ON item_sources
+  WHEN NOT EXISTS (SELECT 1 FROM item_sources WHERE change_id=OLD.change_id) BEGIN
+  DELETE FROM item_changes WHERE change_id=OLD.change_id;
+END;
+CREATE TRIGGER IF NOT EXISTS item_changes_create_gone AFTER DELETE ON item_changes
+  WHEN OLD.op='create' BEGIN
+  DELETE FROM items WHERE item_id=OLD.item_id;
+END;
+"#);
+
+/// v11 → v12: `conversations.kind` accepts `agent` (SQLite cannot alter a CHECK, so the table is rebuilt with
+/// foreign keys off by the caller) and the item tables appear. Safe to run again.
+pub(crate) fn upgrade_v12(db: &crate::db::Db) -> Result<()> {
+    db.script("DROP TABLE IF EXISTS conversations_v12;")?;
+    db.script(conversations_table!("conversations_v12"))?;
+    db.script("INSERT INTO conversations_v12 SELECT * FROM conversations; DROP TABLE conversations; ALTER TABLE conversations_v12 RENAME TO conversations; CREATE INDEX IF NOT EXISTS conversations_last ON conversations(last_ms);")?;
+    db.script(DDL)?;
+    // New sources (agent prompts, screen text) project from the beginning; rows that exist are skipped.
+    db.script("DELETE FROM store_meta WHERE key IN ('curated.cursor/1','curated.prompt_revision/1','curated.speaker_revision/1','curated.screen_cursor/1')")
+}
+
+/// (sender, person entity) of each segment of a recording, by start second.
+type SpeakerLabels = std::collections::HashMap<String, (Option<String>, Option<String>)>;
 
 /// A message to write, with the events it came from.
 pub(crate) struct NewMessage<'a> {
@@ -124,30 +195,108 @@ impl TimelineStore {
     /// Brings projected messages up to date with the records: new mail and transcript segments since the last run,
     /// and transcript segments whose visibility changed when a recording was re-projected. Cheap when nothing changed.
     pub fn curated_sync(&self) -> Result<Value> {
+        let mut out = self.sync_records()?;
+        let labelled = self.sync_speaker_labels(out["inserted"].as_i64().unwrap_or(0) > 0)?;
+        if labelled > 0 {
+            out["changed"] = json!(true);
+            out["speakers_updated"] = json!(labelled);
+        }
+        Ok(out)
+    }
+
+    /// Who said each transcript line. Labels live in the recording's speaker results, not in the segment events, so
+    /// they are read through the recording the way the App shows it (your relabels and voice matches included) and
+    /// written onto the messages: `sender` is the shown name or label, `sender_entity_id` the person when known.
+    /// Runs again whenever the media projection revision moves (relabel, re-match, re-transcription).
+    fn sync_speaker_labels(&self, force: bool) -> Result<usize> {
+        let revision = self.db.first("SELECT revision FROM background_revisions WHERE domain='media_projection'", &[], |r| r.int(0))?.unwrap_or(0);
+        let seen: i64 = self.db.first("SELECT value FROM store_meta WHERE key=?", &[text(SPEAKER_REVISION)], |r| r.text(0))?.and_then(|v| v.parse().ok()).unwrap_or(-1);
+        if !force && revision == seen {
+            return Ok(0);
+        }
+        let rows = self.db.query(
+            "SELECT m.message_id,json_extract(e.payload_json,'$.native_projection_owner'),json_extract(e.payload_json,'$.start_seconds'),m.sender,m.sender_entity_id \
+             FROM messages m JOIN events e ON e.event_id=substr(m.message_id,4) WHERE m.conversation_id GLOB 'rec:*' AND m.message_id GLOB 'ev:*' AND m.producer=?",
+            &[text(PROJECTION)],
+            |r| (r.text(0), r.opt_text(1), r.get::<_, Option<f64>>(2).unwrap_or(None), r.opt_text(3), r.opt_text(4)),
+        )?;
+        let mut labels: std::collections::HashMap<String, SpeakerLabels> = Default::default();
+        let mut updates = vec![];
+        for (message, owner, start, sender, entity) in rows {
+            let (Some(owner), Some(start)) = (owner, start) else { continue };
+            let by_start = labels.entry(owner.clone()).or_insert_with(|| self.recording_labels(&owner));
+            let Some((name, person)) = by_start.get(&format!("{start:.3}")) else { continue };
+            if name.is_some() && (*name != sender || *person != entity) {
+                updates.push((message, name.clone(), person.clone()));
+            }
+        }
+        let changed = updates.len();
+        self.db.transaction(|| {
+            for (message, name, person) in &updates {
+                self.db.execute("UPDATE messages SET sender=?,sender_entity_id=? WHERE message_id=?", &[opt_text(name.as_deref()), opt_text(person.as_deref()), text(message)])?;
+            }
+            self.db.execute("INSERT OR REPLACE INTO store_meta(key,value) VALUES(?,?)", &[text(SPEAKER_REVISION), text(revision.to_string())])?;
+            Ok(())
+        })?;
+        Ok(changed)
+    }
+
+    /// (sender, person entity) of every segment of a recording, by start second; empty when the recording cannot be read.
+    fn recording_labels(&self, owner: &str) -> SpeakerLabels {
+        let Ok(item) = self.media_item(owner) else { return Default::default() };
+        let people: std::collections::HashMap<&str, &str> = item["speakers"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|s| matches!(s["status"].as_str(), Some("confirmed" | "auto")))
+            .filter_map(|s| Some((s["key"].as_str()?, s["person_id"].as_str()?)))
+            .collect();
+        let mut out = std::collections::HashMap::new();
+        for s in item["segments"].as_array().into_iter().flatten() {
+            let Some(start) = s["start_seconds"].as_f64() else { continue };
+            let name = s["speaker_name"].as_str().or_else(|| s["speaker_display_label"].as_str()).filter(|n| !n.is_empty()).map(String::from);
+            let person = s["speaker"].as_str().and_then(|k| people.get(k)).filter(|_| s["speaker_name"].is_string()).map(|p| p.to_string());
+            out.insert(format!("{start:.3}"), (name, person));
+        }
+        out
+    }
+
+    fn sync_records(&self) -> Result<Value> {
         let mut inserted = 0;
         let cursor: i64 = self.db.first("SELECT value FROM store_meta WHERE key=?", &[text(CURSOR)], |r| r.text(0))?.and_then(|v| v.parse().ok()).unwrap_or(0);
         let rows = self.db.query(
-            "SELECT event_id,kind,start_ms,ingested_ms,actor,app_name,title,thread_id,parent_event_id,payload_json,ingest_seq FROM events \
-             WHERE ingest_seq>? AND kind IN ('mail.message','speech.segment') ORDER BY ingest_seq LIMIT ?",
+            "SELECT event_id,kind,start_ms,ingested_ms,actor,app_name,title,thread_id,parent_event_id,payload_json,ingest_seq,source_id FROM events \
+             WHERE ingest_seq>? AND kind IN ('mail.message','speech.segment','ai.prompt','screen.text') ORDER BY ingest_seq LIMIT ?",
             &[int(cursor), int(BATCH)],
-            |r| (r.text(0), r.text(1), r.opt_int(2), r.int(3), r.text(4), r.opt_text(5), r.opt_text(6), r.opt_text(7), r.opt_text(8), r.text(9), r.int(10)),
+            |r| (r.text(0), r.text(1), r.opt_int(2), r.int(3), r.text(4), r.opt_text(5), r.opt_text(6), r.opt_text(7), r.opt_text(8), r.text(9), r.int(10), r.text(11)),
         )?;
         let last_seq = if (rows.len() as i64) < BATCH { self.db.scalar("SELECT COALESCE(MAX(ingest_seq),0) FROM events", &[])?.max(cursor) } else { rows.last().map(|r| r.10).unwrap_or(cursor) };
         let media_revision = self.db.first("SELECT revision FROM background_revisions WHERE domain='media_projection'", &[], |r| r.int(0))?.unwrap_or(0);
         let seen_media: i64 = self.db.first("SELECT value FROM store_meta WHERE key=?", &[text(MEDIA_REVISION)], |r| r.text(0))?.and_then(|v| v.parse().ok()).unwrap_or(-1);
-        if rows.is_empty() && last_seq == cursor && media_revision == seen_media {
+        let prompt_revision: i64 = self.db.first("SELECT value FROM store_meta WHERE key=?", &[text(PROMPT_REVISION)], |r| r.text(0))?.and_then(|v| v.parse().ok()).unwrap_or(0);
+        let latest_prompt_revision = self.db.scalar("SELECT COALESCE(MAX(rowid),0) FROM agent_event_revisions", &[])?;
+        if rows.is_empty() && last_seq == cursor && media_revision == seen_media && latest_prompt_revision == prompt_revision {
             return Ok(json!({"changed": false}));
         }
         self.db.transaction(|| {
-            for (event_id, kind, start, ingested, actor, app, title, thread, parent, payload, _) in &rows {
+            let mut screen = vec![];
+            for (event_id, kind, start, ingested, actor, app, title, thread, parent, payload, _, source) in &rows {
                 let p: Value = serde_json::from_str(payload).unwrap_or(Value::Null);
                 let at = start.unwrap_or(*ingested);
                 if kind == "mail.message" {
                     inserted += self.project_mail(event_id, at, actor, app.as_deref(), title.as_deref(), thread.as_deref(), &p)?;
+                } else if kind == "screen.text" {
+                    // Collected: a visit is merged across the batch's frames at once.
+                    if app.as_deref().is_some_and(crate::curated_screen::wants) {
+                        screen.push((event_id.clone(), *start, None, *ingested, source.clone(), app.clone(), title.clone(), payload.clone()));
+                    }
+                } else if kind == "ai.prompt" {
+                    inserted += self.project_prompt(event_id, at, &p)?;
                 } else if p["native_hidden"] != 1 {
                     inserted += self.project_speech(event_id, at, parent.as_deref(), &p)?;
                 }
             }
+            inserted += self.project_screen_text(&screen)?;
             if media_revision != seen_media {
                 // A re-projected recording hides some segments and shows others; the transcript is small.
                 self.db.execute(
@@ -166,6 +315,21 @@ impl TimelineStore {
                 }
                 self.db.execute("INSERT OR REPLACE INTO store_meta(key,value) VALUES(?,?)", &[text(MEDIA_REVISION), text(media_revision.to_string())])?;
             }
+            // A prompt that gained follow-ups is revised in place, keeping its sequence number.
+            let revised: i64 = self.db.first("SELECT value FROM store_meta WHERE key=?", &[text(PROMPT_REVISION)], |r| r.text(0))?.and_then(|v| v.parse().ok()).unwrap_or(0);
+            let latest = self.db.scalar("SELECT COALESCE(MAX(rowid),0) FROM agent_event_revisions", &[])?;
+            if latest > revised {
+                let again = self.db.query(
+                    "SELECT event_id,start_ms,ingested_ms,payload_json FROM events WHERE kind='ai.prompt' AND ingest_seq<=? AND event_id IN (SELECT event_id FROM agent_event_revisions WHERE rowid>?)",
+                    &[int(cursor), int(revised)],
+                    |r| (r.text(0), r.opt_int(1), r.int(2), r.text(3)),
+                )?;
+                for (event_id, start, ingested, payload) in again {
+                    let p: Value = serde_json::from_str(&payload).unwrap_or(Value::Null);
+                    inserted += self.project_prompt(&event_id, start.unwrap_or(ingested), &p)?;
+                }
+                self.db.execute("INSERT OR REPLACE INTO store_meta(key,value) VALUES(?,?)", &[text(PROMPT_REVISION), text(latest.to_string())])?;
+            }
             self.db.execute("INSERT OR REPLACE INTO store_meta(key,value) VALUES(?,?)", &[text(CURSOR), text(last_seq.to_string())])?;
             Ok(())
         })?;
@@ -173,7 +337,7 @@ impl TimelineStore {
     }
 
     /// The text of one field of an event, paragraphs joined by new lines.
-    fn field_text(&self, event_id: &str, field: &str) -> Result<String> {
+    pub(crate) fn field_text(&self, event_id: &str, field: &str) -> Result<String> {
         Ok(self
             .db
             .query(
@@ -220,6 +384,31 @@ impl TimelineStore {
             producer: PROJECTION,
             sources: vec![event_id.into()],
         })
+    }
+
+    /// What you wrote to an AI: one `agent` conversation per session, your prompt a message from you. The AI's reply
+    /// is not stored (timeline-v1 §6.2), so the conversation is your side only. A revised prompt (follow-ups merged
+    /// in) replaces the text of its message.
+    fn project_prompt(&self, event_id: &str, at: i64, p: &Value) -> Result<usize> {
+        let body = self.field_text(event_id, "prompt")?;
+        let Some(session) = p["session_ref"].as_str().filter(|s| !s.is_empty()) else { return Ok(0) };
+        if body.is_empty() {
+            return Ok(0);
+        }
+        let agent = p["agent"].as_str().filter(|s| !s.is_empty());
+        let project = p["project"].as_str().and_then(|s| s.trim_end_matches('/').rsplit('/').next()).filter(|s| !s.is_empty());
+        let title = project.map(String::from).unwrap_or_else(|| body.chars().take(40).collect());
+        let conversation_id = if session.starts_with("agent:") { session.to_string() } else { format!("agent:{session}") };
+        self.upsert_conversation(&conversation_id, "agent", agent, Some(&title), at, PROJECTION)?;
+        let message_id = format!("ev:{event_id}");
+        let old = self.db.first("SELECT text FROM messages WHERE message_id=?", &[text(&message_id)], |r| r.text(0))?;
+        if let Some(old) = old {
+            if old != body {
+                self.db.execute("UPDATE messages SET text=? WHERE message_id=?", &[text(&body), text(&message_id)])?;
+            }
+            return Ok(0);
+        }
+        self.insert_message(&NewMessage { message_id, conversation_id: &conversation_id, sent_ms: at, actor: "self", sender: None, text: body, producer: PROJECTION, sources: vec![event_id.into()] })
     }
 
     fn project_speech(&self, event_id: &str, at: i64, parent: Option<&str>, p: &Value) -> Result<usize> {
