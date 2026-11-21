@@ -51,6 +51,11 @@ impl TimelineStore {
         let mut usage = self.app_stats()?.storage_bytes;
         let mut report = ScreenshotSpaceReport::default();
         let sources = self.desktop_sources()?;
+        let still_counted = format!(
+            "SELECT EXISTS (SELECT 1 FROM event_blobs eb JOIN events e USING(event_id)
+             WHERE eb.sha256=? AND e.source_id IN ({}))",
+            placeholders(sources.len())
+        );
         let cutoff = self.clock.now_ms() - SCREENSHOT_KEEP_RECENT_MS;
         while usage > req.target_bytes && !sources.is_empty() {
             let mut p: Vec<P> = sources.iter().map(text).collect();
@@ -74,15 +79,28 @@ impl TimelineStore {
             }
             let mut files = Vec::new();
             let target = req.target_bytes;
-            let (bytes, shots) = self.db.transaction(|| {
-                let (mut bytes, mut shots) = (0i64, 0i64);
+            let (bytes, savings, shots) = self.db.transaction(|| {
+                let (mut bytes, mut savings, mut shots) = (0i64, 0i64, 0i64);
                 for id in &candidates {
-                    if usage - bytes <= target {
+                    if usage - savings <= target {
                         break;
                     }
-                    let shas = self.db.query("SELECT sha256 FROM event_blobs WHERE event_id=? AND role='original'", &[text(id)], |r| r.text(0))?;
+                    let originals = self.db.query(
+                        "SELECT b.sha256,b.byte_count FROM event_blobs eb JOIN blobs b USING(sha256)
+                         WHERE eb.event_id=? AND eb.role='original'",
+                        &[text(id)],
+                        |r| (r.text(0), r.int(1)),
+                    )?;
                     self.db.execute("DELETE FROM event_blobs WHERE event_id=? AND role='original'", &[text(id)])?;
-                    bytes += self.drop_unreferenced_blobs(shas, &mut files)?.1;
+                    for (sha, size) in &originals {
+                        let mut params = vec![text(sha)];
+                        params.extend(sources.iter().map(text));
+                        // A different source may still own the file even though it no longer counts against the Desktop budget.
+                        if self.db.scalar(&still_counted, &params)? == 0 {
+                            savings += size;
+                        }
+                    }
+                    bytes += self.drop_unreferenced_blobs(originals.into_iter().map(|(sha, _)| sha), &mut files)?.1;
                     self.record_change("event", id, "update")?;
                     shots += 1;
                 }
@@ -90,12 +108,12 @@ impl TimelineStore {
                 for (k, v) in [(META_FREED_BYTES, total_bytes + bytes), (META_FREED_SCREENSHOTS, total_shots + shots)] {
                     self.db.execute("INSERT OR REPLACE INTO store_meta(key,value) VALUES(?,?)", &[text(k), text(v.to_string())])?;
                 }
-                Ok((bytes, shots))
+                Ok((bytes, savings, shots))
             })?;
             for f in files {
                 let _ = fs::remove_file(f);
             }
-            usage -= bytes;
+            usage -= savings;
             report.freed_bytes += bytes;
             report.screenshots += shots;
             if shots == 0 {

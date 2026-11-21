@@ -59,3 +59,23 @@ fn oldest_originals_with_text_go_first_and_recent_ones_stay() {
     assert_eq!((stats.storage_bytes, stats.freed_bytes, stats.freed_screenshots), (1000, 3000, 3));
     assert!(s.free_screenshot_space(&ScreenshotSpaceRequest { target_bytes: -1 }).is_err());
 }
+
+#[test]
+fn a_blob_owned_elsewhere_stops_counting_without_evicting_more_screenshots() {
+    let fx = Fx::make("screenshot-budget-shared");
+    let s = &fx.store;
+    let other = s.register_source("media.import", "Synthetic import", &SourcePolicy::new(true, true)).unwrap();
+    let shared = vec![1; 1000];
+    let (path, sha) = write_staging(s, &shared, "jpg");
+    let (newer_path, newer_sha) = write_staging(s, &vec![2; 1000], "jpg");
+    s.ingest(&IngestBatch::events(&fx.source, vec![
+        shot("old", NOW - 30 * DAY, &path, &sha),
+        shot("newer", NOW - 20 * DAY, &newer_path, &newer_sha),
+    ])).unwrap();
+    let (path, sha) = write_staging(s, &shared, "jpg");
+    s.ingest(&IngestBatch::events(&other, vec![shot("import", NOW - 30 * DAY, &path, &sha)])).unwrap();
+
+    let report = s.free_screenshot_space(&ScreenshotSpaceRequest { target_bytes: 1000 }).unwrap();
+    assert_eq!((report.screenshots, report.freed_bytes, report.storage_bytes, report.reached_target), (1, 0, 1000, true));
+    assert_eq!(blob_files(&fx.root).len(), 2);
+}
