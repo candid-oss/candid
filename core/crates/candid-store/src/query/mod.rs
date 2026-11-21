@@ -5,6 +5,7 @@ pub mod agent_tools;
 pub mod app;
 pub mod curated;
 pub mod people;
+pub mod day;
 pub(crate) mod core;
 pub mod dispatch;
 mod search;

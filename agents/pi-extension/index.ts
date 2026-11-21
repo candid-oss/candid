@@ -64,11 +64,11 @@ function core(path: string, body: unknown, signal?: AbortSignal): Promise<{ stat
 /** Some compatible models emit blank optional values. Normalize reads before Pi validates tool arguments;
  * required identifiers, nonempty cursors and every write argument remain untouched. */
 export function normalizeReadArguments(tool: string, input: string): string {
-  if (!["pv_find", "pv_person", "pv_conversations", "pv_conversation", "pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
+  if (!["pv_day", "pv_find", "pv_person", "pv_conversations", "pv_conversation", "pv_search", "pv_timeline", "pv_overview", "pv_episodes", "pv_thread", "pv_agent", "pv_records", "pv_context", "pv_get_event"].includes(tool)) return input;
   try {
     const value = JSON.parse(input);
     if (!value || Array.isArray(value) || typeof value !== "object") return input;
-    for (const key of ["cursor", "start", "end", "level", "group_by", "q", "query", "who", "person", "person_id", "before", "project", "reference", "apps", "kinds", "include"]) {
+    for (const key of ["cursor", "date", "start", "end", "level", "group_by", "q", "query", "who", "person", "person_id", "before", "project", "reference", "apps", "kinds", "include"]) {
       if ((typeof value[key] === "string" && !value[key].trim()) || (Array.isArray(value[key]) && value[key].length === 0)) delete value[key];
     }
     return JSON.stringify(value);
@@ -103,6 +103,11 @@ const strs = (description: string) => opt(Type.Array(Type.String(), { descriptio
 
 const TOOLS: ToolSpec[] = [
   {
+    name: "pv_day", core: "day", label: "这天做了什么",
+    description: `某一天或某一段时间做了什么：按时间排列的活动块（时间、应用和窗口、标题、一两句概括、相关对话和摘录 id），加当天已有的天级汇总。问「今天/昨天做了什么」「下午在忙什么」先用它；概括只来自整理好的消息和摘录，by 为 rule 的块只有应用时长。要细节再用 pv_conversation、pv_find、pv_evidence 展开。${time}`,
+    parameters: Type.Object({ date: opt(Type.String({ description: "某一天，如 2026-11-20、today、yesterday" })), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
+  },
+  {
     name: "pv_find", core: "find", label: "查找内容",
     description: `在整理好的内容里搜索：对话消息（聊天、邮件、录音转写，带发送人）和阅读摘录。找具体内容先用它；引用时用结果里的 ref。${time}`,
     parameters: Type.Object({ q: Type.String(), person: opt(Type.String()), kind: opt(Type.Union([Type.Literal("message"), Type.Literal("excerpt")])), conversation_kind: opt(Type.Union([Type.Literal("chat"), Type.Literal("mail"), Type.Literal("meeting"), Type.Literal("agent")])), start: opt(Type.String()), end: opt(Type.String()), limit: opt(Type.Number()) }),
@@ -136,7 +141,7 @@ const TOOLS: ToolSpec[] = [
   },
   {
     name: "pv_timeline", core: "timeline", label: "时间线",
-    description: `按时间顺序列出一段时间里的事件或片段。${time}`,
+    description: `按时间顺序列出一段时间里的原始事件或片段（level=event 是原始记录流，噪声多）。问「这天做了什么」先用 pv_day。${time}`,
     parameters: Type.Object({ start: opt(Type.String()), end: opt(Type.String()), level: opt(Type.Union([Type.Literal("episode"), Type.Literal("event")])), kinds: strs("事件种类"), limit: opt(Type.Integer({ minimum: 1, maximum: 50 })), cursor: opt(Type.String({ description: "翻页时原样使用上一次同一工具、同一条件返回的 next_cursor；首页省略，不填空串或自己编造。" })) }),
   },
   {

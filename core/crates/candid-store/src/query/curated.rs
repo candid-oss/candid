@@ -96,7 +96,11 @@ fn like(q: &str) -> String {
 
 impl TimelineStore {
     /// SQL that is true when row `alias` (with key column `key`) of `table` is visible to the client.
-    pub(super) fn curated_visible(&self, ctx: &ClientContext, alias: &str, table: &str, key: &str) -> (String, Vec<P>) {
+    pub(crate) fn curated_visible_pub(&self, ctx: &ClientContext, alias: &str, table: &str, key: &str) -> (String, Vec<P>) {
+        self.curated_visible(ctx, alias, table, key)
+    }
+
+        pub(super) fn curated_visible(&self, ctx: &ClientContext, alias: &str, table: &str, key: &str) -> (String, Vec<P>) {
         let f = self.scope_filter(ctx, "e");
         let mut params = f.params.clone();
         let derived = if ctx.scope.derived { "1" } else { "0" };

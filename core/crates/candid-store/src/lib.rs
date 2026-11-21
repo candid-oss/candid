@@ -7,6 +7,7 @@
 mod chunk;
 mod clock;
 mod compose;
+mod activity;
 mod curated;
 mod curated_screen;
 mod people;
@@ -47,6 +48,7 @@ pub use query::agent_tools::{AnnotateRequest, CommitmentRequest, MarkReferenceRe
 pub use query::agenda::AGENDA_EXECUTABLE_KINDS;
 pub use query::app::*;
 pub use query::people::PersonRequest;
+pub use query::day::DayRequest;
 pub use query::curated::{ConversationRequest, ConversationsRequest, EvidenceRequest, FindRequest};
 pub use query::dispatch::{ToolCallFailure, APP_TOOL_NAMES, TOOL_NAMES};
 pub use query::types::*;
