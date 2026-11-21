@@ -76,6 +76,8 @@ pub mod workflows;
 mod feature_settings;
 pub mod automation;
 pub mod screen_cleanup;
+mod screenshot_budget;
+pub use screenshot_budget::{ScreenshotSpaceReport, ScreenshotSpaceRequest, SCREENSHOT_KEEP_RECENT_MS};
 mod screen_pipeline;
 
 mod voiceprints;

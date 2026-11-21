@@ -161,8 +161,12 @@ public struct DesktopStatistics: Sendable, Equatable {
     public var recordCount: Int
     public var screenshotCount: Int
     public var storageBytes: Int64
-    public init(recordCount: Int = 0, screenshotCount: Int = 0, storageBytes: Int64 = 0) {
+    /// Screenshot originals stepped down to text only to stay within the storage limit, in total.
+    public var freedBytes: Int64
+    public var freedScreenshots: Int
+    public init(recordCount: Int = 0, screenshotCount: Int = 0, storageBytes: Int64 = 0, freedBytes: Int64 = 0, freedScreenshots: Int = 0) {
         self.recordCount = recordCount; self.screenshotCount = screenshotCount; self.storageBytes = storageBytes
+        self.freedBytes = freedBytes; self.freedScreenshots = freedScreenshots
     }
 }
 

@@ -223,6 +223,10 @@ fn direct_capture_reads_back_as_activities_with_pages_search_and_paths() {
     assert_eq!(code, 403);
     let port = service.port();
     assert_eq!(loopback_status(port, "/v1/app_activities"), 404);
+    // Over the budget, only screenshots older than 7 days lose their original: this one is newer, so it stays.
+    let freed = ok(&f.socket, "/local/desktop/free-space", json!({"target_bytes": 0}));
+    assert_eq!((freed["screenshots"].as_i64(), freed["reached_target"].as_bool()), (Some(0), Some(false)), "{freed}");
+    assert_eq!(call(&f.socket, "POST", "/local/desktop/free-space", json!({"target_bytes": -1})).0, 400);
     // Retention counts, then deletes, records before a time; deleting an activity removes all of it.
     assert_eq!(ok(&f.socket, "/v1/app_retention_count", json!({"before_ms": T + 2500}))["records"], 3);
     assert_eq!(ok(&f.socket, "/local/desktop/retention", json!({"before_ms": T + 500}))["deleted"], 1);

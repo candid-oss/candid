@@ -21,6 +21,7 @@
 //! | `GET /local/desktop/legacy-preferences` | the capture preferences kept in the ledger (read-only), for the first direct launch |
 //! | `POST /local/desktop/delete` | `{"activity_id"}`, or `{"record_ids"\|"event_ids", "reason"}` → tombstones |
 //! | `POST /local/desktop/retention` | `{"before_ms"}` → deletes older desktop records (reason `retention`) |
+//! | `POST /local/desktop/free-space` | `{"target_bytes"}` → drops the oldest screenshot originals (over 7 days old; event, OCR and AX text stay) until desktop originals fit |
 //! | `POST /v1/<tool>` | the query tools, and the App's own `app_*` read tools (internal client only) |
 //! | `/local/pi/*`, agent tools | the attached Pi agent: run start/stop, model gateway, in-store writes ([`crate::pi`]) |
 
@@ -782,8 +783,24 @@ impl Core {
                 let outcome = lock(&self.store).delete_desktop_before(req.before_ms);
                 self.after_delete(outcome)
             }
+            ("POST", "/local/desktop/free-space") => {
+                let req: candid_store::ScreenshotSpaceRequest = match decode(request, "腾出空间") {
+                    Ok(r) => r,
+                    Err(e) => return e,
+                };
+                let outcome = lock(&self.store).free_screenshot_space(&req);
+                match outcome {
+                    Ok(report) => {
+                        if report.screenshots > 0 {
+                            self.feed.publish("data");
+                        }
+                        ok_json(&json!(report))
+                    }
+                    Err(e) => store_error(&e),
+                }
+            }
             (_, "/local/agents" | "/local/agents/consent" | "/local/agents/query" | "/health" | "/local/status" | "/local/clients" | "/local/clients/revoke" | "/local/sync" | "/local/verify" | "/local/sources" | "/local/ingest" | "/local/events"
-                | "/local/desktop/cutover" | "/local/desktop/legacy-preferences" | "/local/desktop/delete" | "/local/desktop/retention") => {
+                | "/local/desktop/cutover" | "/local/desktop/legacy-preferences" | "/local/desktop/delete" | "/local/desktop/retention" | "/local/desktop/free-space") => {
                 HttpResponse::error(405, "method", "方法不对。")
             }
             _ => HttpResponse::error(404, "not_found", &format!("没有这个接口：{path}")),

@@ -185,6 +185,19 @@ public struct AppStats: Codable, Sendable, Equatable {
     public var record_count: Int
     public var screenshot_count: Int
     public var storage_bytes: Int64
+    /// Screenshot originals stepped down to text only to stay within the storage limit, in total (newer cores).
+    public var freed_bytes: Int64?
+    public var freed_screenshots: Int?
+}
+
+/// What `POST /local/desktop/free-space` did.
+public struct ScreenshotSpaceReport: Codable, Sendable, Equatable {
+    public var freed_bytes: Int64
+    public var screenshots: Int
+    public var storage_bytes: Int64
+    public var reached_target: Bool
+    public var total_freed_bytes: Int64
+    public var total_screenshots: Int
 }
 
 public struct AppActivities: Codable, Sendable, Equatable {
@@ -262,6 +275,12 @@ extension LocalChannel {
 
     public func deleteDesktopBefore(_ ms: Int64) async throws -> Int {
         try await deleted("/local/desktop/retention", ["before_ms": .int(ms)])
+    }
+
+    /// Steps the oldest screenshots (over 7 days old) down to text only until desktop originals use at most
+    /// `targetBytes`; the events, OCR text and AX evidence stay.
+    public func freeScreenshotSpace(targetBytes: Int64) async throws -> ScreenshotSpaceReport {
+        try await post("/local/desktop/free-space", body: ["target_bytes": CoreJSON.int(targetBytes)], timeout: 300)
     }
 
     private func deleted(_ path: String, _ body: [String: CoreJSON]) async throws -> Int {

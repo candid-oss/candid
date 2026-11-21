@@ -1,3 +1,4 @@
+import DesktopCore
 import SwiftUI
 import CandidLocalization
 
@@ -101,7 +102,11 @@ struct CaptureControls: View {
             Toggle(isOn: Binding(get: { session.isRecording }, set: { $0 ? session.startRecording() : session.pauseRecording() })) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L("电脑活动"))
-                    Text(session.statusText).typography(.caption).foregroundStyle(.secondary)
+                    if let storage = session.storageBudget.shortLabel, !session.isDemo {
+                        Text(storage).typography(.caption).foregroundStyle(Palette.warning)
+                    } else {
+                        Text(session.statusText).typography(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             .disabled(session.isDemo)

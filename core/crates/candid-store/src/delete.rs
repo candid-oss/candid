@@ -86,6 +86,25 @@ impl TimelineStore {
         )
     }
 
+    /// Step 4 of deletion for blobs: each of `shas` that no event references any more loses its row (with a `blob`
+    /// change); its file is queued in `files`, removed by the caller only after the transaction commits.
+    /// Returns how many blobs went and their byte count.
+    pub(crate) fn drop_unreferenced_blobs(&self, shas: impl IntoIterator<Item = String>, files: &mut Vec<PathBuf>) -> Result<(usize, i64)> {
+        let (mut count, mut bytes) = (0, 0);
+        for sha in shas {
+            if self.db.scalar("SELECT COUNT(*) FROM event_blobs WHERE sha256=?", &[text(&sha)])? == 0 {
+                if let Some((rel, size)) = self.db.first("SELECT rel_path,byte_count FROM blobs WHERE sha256=?", &[text(&sha)], |r| (r.text(0), r.int(1)))? {
+                    self.db.execute("DELETE FROM blobs WHERE sha256=?", &[text(&sha)])?;
+                    files.push(self.root.join(rel));
+                    self.record_change("blob", &sha, "delete")?;
+                    count += 1;
+                    bytes += size;
+                }
+            }
+        }
+        Ok((count, bytes))
+    }
+
     pub(crate) fn delete_in_transaction(&self, requested: &[String], reason: &str, files: &mut Vec<PathBuf>) -> Result<DeletionReport> {
         let mut report = DeletionReport::default();
         // expand to descendants
@@ -207,16 +226,7 @@ impl TimelineStore {
                 }
             }
         }
-        for sha in shas {
-            if self.db.scalar("SELECT COUNT(*) FROM event_blobs WHERE sha256=?", &[text(&sha)])? == 0 {
-                if let Some(rel) = self.db.first("SELECT rel_path FROM blobs WHERE sha256=?", &[text(&sha)], |r| r.text(0))? {
-                    self.db.execute("DELETE FROM blobs WHERE sha256=?", &[text(&sha)])?;
-                    files.push(self.root.join(rel));
-                    self.record_change("blob", &sha, "delete")?;
-                    report.blobs += 1;
-                }
-            }
-        }
+        report.blobs += self.drop_unreferenced_blobs(shas, files)?.0;
         for t in thread_ids {
             if self.db.scalar("SELECT COUNT(*) FROM events WHERE thread_id=?", &[text(&t)])? == 0 {
                 self.tombstone("thread", &t, reason)?;

@@ -1,10 +1,11 @@
 import AppKit
 import CandidLocalization
+import DesktopCore
 import SwiftUI
 
 /// Something in the menu bar panel that needs the user's attention.
 struct StatusAlert: Identifiable, Equatable {
-    enum Action: Equatable { case grantScreen, grantAccessibility, saveDraft, discardDraft, dismissError, openApp }
+    enum Action: Equatable { case grantScreen, grantAccessibility, saveDraft, discardDraft, dismissError, openApp, raiseStorageLimit }
     let id: String
     let symbol: String
     let text: String
@@ -22,6 +23,7 @@ struct StatusAlert: Identifiable, Equatable {
                                 text: draft.kind == "audio" ? L("录音已就绪，等你保存") : L("截图已就绪，等你保存"),
                                 actions: [(L("保存"), .saveDraft), (L("丢弃"), .discardDraft)]))
         }
+        if !session.isDemo, let alert = storage(session.storageBudget) { alerts.append(alert) }
         if !session.isDemo, session.screenshotsEnabled, !session.screenPermission {
             alerts.append(.init(id: "screen", symbol: "rectangle.dashed.badge.record", text: L("窗口截图需要屏幕录制授权"), actions: [(L("授权"), .grantScreen)]))
         }
@@ -29,6 +31,16 @@ struct StatusAlert: Identifiable, Equatable {
             alerts.append(.init(id: "ax", symbol: "accessibility", text: L("读取文字需要辅助功能授权"), actions: [(L("授权"), .grantAccessibility)]))
         }
         return alerts
+    }
+
+    /// The screenshot storage limit at ≥90% or full, with a way to raise it.
+    static func storage(_ budget: DesktopStorageBudget) -> StatusAlert? {
+        guard let text = budget.message else { return nil }
+        let symbol = budget.level == .full ? "externaldrive.fill.badge.exclamationmark" : "externaldrive.badge.exclamationmark"
+        let actions: [(title: String, action: StatusAlert.Action)] = budget.raisedLimit.map {
+            [(L("上限提高到 %@", ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)), .raiseStorageLimit)]
+        } ?? []
+        return StatusAlert(id: "storage", symbol: symbol, text: text, actions: actions)
     }
 }
 
@@ -212,6 +224,7 @@ struct MenuBarPanel: View {
         case .discardDraft: media.discardDraft()
         case .dismissError: session.dismissError(); media.error = nil
         case .openApp: openMain()
+        case .raiseStorageLimit: session.raiseStorageLimit()
         }
     }
 

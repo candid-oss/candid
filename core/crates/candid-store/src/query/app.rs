@@ -129,6 +129,11 @@ pub struct AppStats {
     pub record_count: i64,
     pub screenshot_count: i64,
     pub storage_bytes: i64,
+    /// Screenshot originals stepped down to text only to stay within the storage limit, in total.
+    #[serde(default)]
+    pub freed_bytes: i64,
+    #[serde(default)]
+    pub freed_screenshots: i64,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -648,7 +653,10 @@ impl TimelineStore {
         let p: Vec<P> = sources.iter().map(text).collect();
         let mut kinds = p.clone();
         kinds.extend(DESKTOP_KINDS.iter().map(|k| text(*k)));
+        let (freed_bytes, freed_screenshots) = self.screenshot_space_freed()?;
         let stats = AppStats {
+            freed_bytes,
+            freed_screenshots,
             record_count: self.db.scalar(&format!("SELECT COUNT(*) FROM events WHERE source_id IN ({ph}) AND kind IN ({})", placeholders(DESKTOP_KINDS.len())), &kinds)?,
             screenshot_count: self.db.scalar(&format!("SELECT COUNT(*) FROM events WHERE source_id IN ({ph}) AND kind='screen.shot'"), &p)?,
             storage_bytes: self.db.scalar(
