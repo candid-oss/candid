@@ -12,11 +12,14 @@ const INTERVAL: Duration = Duration::from_secs(60);
 #[derive(Default)]
 pub(crate) struct Compactor {
     last: Option<Instant>,
+    /// The one-time compression of derived JSON originals rides on the same background tick.
+    json: crate::json_compaction::Converter,
 }
 
 impl Compactor {
     /// At most once a minute, a few parts per pass.
     pub fn tick(&mut self, store: &SharedStore) {
+        self.json.tick(store);
         if self.last.is_some_and(|t| t.elapsed() < INTERVAL) {
             return;
         }

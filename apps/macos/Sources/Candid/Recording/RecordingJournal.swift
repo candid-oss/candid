@@ -7,6 +7,11 @@ import Foundation
 /// Mac-local outbox, independent of the timeline database and device capture contract.
 /// Every .wav has a durable intent before its first sample. A receipt is written only
 /// after the existing media service confirms the stable segment ID.
+/// How a recording's parts are written. `aac` (fragmented MP4) is written progressively and stays readable up to
+/// its last fragment after a crash, so parts can be long and need no conversion later; `wav` is the original
+/// format (absent in older journals).
+enum RecordingCodec: String, Codable, Sendable { case wav, aac }
+
 struct RecordingSession: Codable, Sendable {
     var version = 1
     let id: UUID
@@ -15,6 +20,7 @@ struct RecordingSession: Codable, Sendable {
     let segmentSeconds: Int
     var input: RecordingInput?
     var state = "recording"
+    var codec: RecordingCodec?
 }
 
 struct RecordingSegment: Codable, Identifiable, Sendable, Equatable {
@@ -32,8 +38,11 @@ struct RecordingSegment: Codable, Identifiable, Sendable, Equatable {
     var byteCount: Int = 0
     var endReason = "segment_limit"
     var recovered = false
+    var codec: RecordingCodec?
 
     var stem: String { String(format: "%06d", index) }
+    /// The sealed original's suffix in the journal.
+    var mediaSuffix: String { codec == .aac ? ".m4a" : ".wav" }
 }
 
 struct RecordingInventory: Sendable {
@@ -61,9 +70,12 @@ struct RecordingJournal: Sendable {
         directory(segment.recordingID).appendingPathComponent(segment.stem + suffix)
     }
 
-    func begin(sampleRate: Int, seconds: Int, startedAt: Date, input: RecordingInput = .microphone) throws -> RecordingSession {
-        guard (8_000...192_000).contains(sampleRate), [30, 60].contains(seconds) else { throw RecordingJournalError.invalid }
-        let session = RecordingSession(id: UUID(), startedAt: startedAt, sampleRate: sampleRate, segmentSeconds: seconds, input: input)
+    static let segmentLengths = [30, 60, 600]
+
+    func begin(sampleRate: Int, seconds: Int, startedAt: Date, input: RecordingInput = .microphone, codec: RecordingCodec = .wav) throws -> RecordingSession {
+        guard (8_000...192_000).contains(sampleRate), Self.segmentLengths.contains(seconds) else { throw RecordingJournalError.invalid }
+        let session = RecordingSession(id: UUID(), startedAt: startedAt, sampleRate: sampleRate, segmentSeconds: seconds, input: input,
+                                       codec: codec == .wav ? nil : codec)
         try Self.ensureDirectory(directory(session.id))
         try save(session)
         return session
@@ -76,7 +88,7 @@ struct RecordingJournal: Sendable {
     func acknowledge(_ segment: RecordingSegment) throws {
         // A crash before the receipt retries the same ID. A crash after it needs no upload.
         try Self.persist(segment.id, at: file(segment, ".receipt"))
-        try? FileManager.default.removeItem(at: file(segment, ".wav"))
+        try? FileManager.default.removeItem(at: file(segment, segment.mediaSuffix))
     }
 
     /// Called off the UI thread, with the active writer excluded. Never opens a microphone.
@@ -88,7 +100,7 @@ struct RecordingJournal: Sendable {
             do {
                 var session = try JSONDecoder().decode(RecordingSession.self, from: Data(contentsOf: directory.appendingPathComponent("session.json")))
                 guard session.version == 1, self.directory(session.id).standardizedFileURL.path == directory.standardizedFileURL.path,
-                      (8_000...192_000).contains(session.sampleRate), [30, 60].contains(session.segmentSeconds) else { throw RecordingJournalError.invalid }
+                      (8_000...192_000).contains(session.sampleRate), Self.segmentLengths.contains(session.segmentSeconds) else { throw RecordingJournalError.invalid }
                 let interrupted = session.id != activeID && session.state == "recording"
                 let wasRecovered = interrupted || session.state == "recovered"
                 let manifests = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
@@ -106,9 +118,10 @@ struct RecordingJournal: Sendable {
                     if FileManager.default.fileExists(atPath: file(segment, ".receipt").path) {
                         guard try JSONDecoder().decode(UUID.self, from: Data(contentsOf: file(segment, ".receipt"))) == segment.id,
                               segment.sampleCount > 0, segment.sha256 != nil else { throw RecordingJournalError.invalid }
-                        try? FileManager.default.removeItem(at: file(segment, ".wav"))
-                    } else if FileManager.default.fileExists(atPath: file(segment, ".wav").path) {
-                        let validated = try Self.validate(file(segment, ".wav"), sampleRate: segment.sampleRate)
+                        try? FileManager.default.removeItem(at: file(segment, segment.mediaSuffix))
+                    } else if FileManager.default.fileExists(atPath: file(segment, segment.mediaSuffix).path)
+                                || (session.id != activeID && segment.codec == .aac && Self.recoverTail(file(segment, ".part"), to: file(segment, ".m4a"))) {
+                        let validated = try Self.validate(file(segment, segment.mediaSuffix), sampleRate: segment.sampleRate)
                         guard validated.frames <= Int64(session.sampleRate * session.segmentSeconds),
                               segment.sha256 == nil || (segment.sha256 == validated.hash && segment.sampleCount == validated.frames && segment.byteCount == validated.bytes)
                         else { throw RecordingJournalError.invalid }
@@ -147,7 +160,39 @@ struct RecordingJournal: Sendable {
         return result
     }
 
+    /// A fragmented AAC part left unfinished by a crash: everything up to its last complete fragment is repackaged as
+    /// a finished `.m4a` (passthrough, no re-encoding). The `.part` goes once the copy is in place.
+    static func recoverTail(_ part: URL, to final: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: part.path) else { return false }
+        let staging = final.deletingPathExtension().appendingPathExtension("recovering.m4a")
+        // AVFoundation picks the reader by file extension and will not open `.part`: read through an `.m4a` link.
+        let source = final.deletingPathExtension().appendingPathExtension("crashed.m4a")
+        try? FileManager.default.removeItem(at: staging)
+        try? FileManager.default.removeItem(at: source)
+        if (try? FileManager.default.linkItem(at: part, to: source)) == nil {
+            guard (try? FileManager.default.copyItem(at: part, to: source)) != nil else { return false }
+        }
+        defer { try? FileManager.default.removeItem(at: source) }
+        guard let export = AVAssetExportSession(asset: AVURLAsset(url: source), presetName: AVAssetExportPresetPassthrough) else { return false }
+        export.outputURL = staging
+        export.outputFileType = .m4a
+        let done = DispatchSemaphore(value: 0)
+        export.exportAsynchronously { done.signal() }
+        done.wait()
+        guard export.status == .completed, (try? AVAudioFile(forReading: staging).length).map({ $0 > 0 }) == true else {
+            try? FileManager.default.removeItem(at: staging)
+            return false
+        }
+        guard (try? FileManager.default.moveItem(at: staging, to: final)) != nil else { return false }
+        try? syncDirectory(final.deletingLastPathComponent())
+        try? FileManager.default.removeItem(at: part)
+        return true
+    }
+
     static func validate(_ url: URL, sampleRate: Int) throws -> (frames: Int64, hash: String, bytes: Int) {
+        if url.pathExtension == "m4a" || url.pathExtension == "part" && (try? FileHandle(forReadingFrom: url).read(upToCount: 8))?.suffix(4) == Data("ftyp".utf8) {
+            return try validateAAC(url, sampleRate: sampleRate)
+        }
         let data = try Data(contentsOf: url)
         guard data.count > 44, (data.count - 44) % 2 == 0 else { throw RecordingJournalError.invalid }
         let frames = Int64((data.count - 44) / 2)
@@ -155,6 +200,24 @@ struct RecordingJournal: Sendable {
         let audio = try AVAudioFile(forReading: url)
         guard audio.length == frames, audio.processingFormat.channelCount == 1,
               audio.processingFormat.sampleRate == Double(sampleRate),
+              let buffer = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 8192)
+        else { throw RecordingJournalError.invalid }
+        var decoded: Int64 = 0
+        while decoded < frames {
+            try audio.read(into: buffer, frameCount: AVAudioFrameCount(min(8192, frames - decoded)))
+            guard buffer.frameLength > 0 else { throw RecordingJournalError.invalid }
+            decoded += Int64(buffer.frameLength)
+        }
+        return (frames, SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(), data.count)
+    }
+
+    /// A finished AAC part: one channel at the recording's rate, every frame decodable. Frames are the valid frames
+    /// (encoder priming and padding excluded), the same count the core reads with `afinfo`.
+    static func validateAAC(_ url: URL, sampleRate: Int) throws -> (frames: Int64, hash: String, bytes: Int) {
+        let data = try Data(contentsOf: url)
+        let audio = try AVAudioFile(forReading: url)
+        let frames = audio.length
+        guard frames > 0, audio.fileFormat.channelCount == 1, audio.fileFormat.sampleRate == Double(sampleRate),
               let buffer = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 8192)
         else { throw RecordingJournalError.invalid }
         var decoded: Int64 = 0

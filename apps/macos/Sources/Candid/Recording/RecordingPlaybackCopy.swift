@@ -11,7 +11,7 @@ enum RecordingPlaybackCopy {
             var cursor: Int64 = 0
             let playlist: [[String: Any]] = try parts.map { part in
                 guard part.sampleRate == first.sampleRate, part.sampleStart >= cursor else { throw RecordingJournalError.invalid }
-                let file = journal.file(part, ".wav")
+                let file = journal.file(part, part.mediaSuffix)
                 let checked = try RecordingJournal.validate(file, sampleRate: part.sampleRate)
                 guard checked.hash == part.sha256 else { throw RecordingJournalError.invalid }
                 cursor = part.sampleStart + part.sampleCount
@@ -42,6 +42,8 @@ enum RecordingPlaybackCopy {
                 try output.write(contentsOf: Data(repeating: 0, count: Int(count * 2)))
                 gap -= count
             }
+            // A flat PCM copy is built only from WAV parts; AAC parts always play through the playlist.
+            guard part.codec != .aac else { throw RecordingJournalError.invalid }
             let input = try FileHandle(forReadingFrom: journal.file(part, ".wav"))
             defer { try? input.close() }
             try input.seek(toOffset: 44)

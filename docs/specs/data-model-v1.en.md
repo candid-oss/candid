@@ -150,7 +150,7 @@ Engineering choices; all values are to be confirmed on real data:
    - Secondary displays and unfocused windows can be stored at lower resolution.
 2. **Screenshot dedup**: perceptual-hash dedup at capture, plus merging of adjacent near-duplicates later.
 3. **Age-based screenshot downgrade (on by default)**: `ephemeral` removed after 7 days; `normal` to thumbnail after 30 days and text only after 90 days; `key` to thumbnail after 90 days. The days are policy and can be changed or turned off in Settings; when the storage limit is exceeded, the budget in section 8 takes precedence.
-4. **Recordings**: WAV is kept only while processing, then deleted; the library stores a compressed format. Measured on a 30-second 48 kHz mono recording: WAV 2.9 MB, Opus 24 kbps 89 KB, AAC 32 kbps 128 KB, MP3 32 kbps 120 KB, all more than 20× smaller.
+4. **Recordings**: Mac recordings are written as AAC while recording (fragmented MP4, a fragment finalized every second) instead of WAV converted later; after a crash everything up to the last finalized fragment is recovered. On disk a recording is stored in ten-minute parts the user never sees. Older WAV parts become AAC once processed. Measured on a 30-second 48 kHz mono recording: WAV 2.9 MB, Opus 24 kbps 89 KB, AAC 32 kbps 128 KB, MP3 32 kbps 120 KB, all more than 20× smaller.
 
    - **AAC (`.m4a`), mono, 48 kbps, sample rate at least 16 kHz**: both macOS and Windows have built-in encoders, and it plays everywhere. Speech recognition models resample to 16 kHz mono anyway, so higher rates are wasted; 48 kbps leaves headroom over the tested 32 kbps and is about 1/15 of WAV.
    - Not MP3: weakest at low bitrates; at 32 kbps it cuts the band to about 8 kHz. Opus is smaller at the same clarity but needs an extra encoder library on macOS.
@@ -230,7 +230,8 @@ v0.1.0 is public, so others may already have v8 libraries. Instead of starting a
 | v10 | Screen inputs and evidence selectors stop repeating the event id and family hash on every line; selectors become `screen-selector/2`, restored to the old shape when the query tools read them | Implemented. On a copy of real data: v8 → v10 is 1,038 MB → 701 MB, 13 s of upgrade on first open; all 478,589 evidence lines restored identical to the text |
 | Next | Evidence embedded in `screen.text` records (about 100 MB) becomes references too | To do; it is part of the record, so the record fingerprint must be unaffected first |
 | Next | AI session entries: file paths and hashes stored once and referenced by id; then convert old-format session cursors | To do. Moving entries row by row as they are grew the table from 82 MB to 221 MB, so duplication goes first |
-| Next | Retire the old desktop ledger and media library, with their migration code | To do, about 539 MB |
+| One-time conversion | Existing screenshots to WebP, derived JSON compressed (raw DEFLATE), old WAV recordings to AAC, WAL size limit | Done. Real library: screenshots 4.91 GB → 1.51 GB (14,610, about 4 minutes), derived JSON 456 MB → 61 MB, WAL 805 MB → 15 MB |
+| Old desktop ledger | Moved out of the library after a byte-for-byte check found no differences | Done on the author's machine, about 540 MB; its migration and reconciliation code is still to be removed |
 | Next | Tables and cleanup job for tiers, fidelity, the reduction log and usage accounting | To do |
 
 Re-encoding existing screenshots to WebP is a separate optional step, previewed first.

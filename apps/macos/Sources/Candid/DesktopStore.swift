@@ -266,7 +266,7 @@ import CandidClient
     private static func method(_ kind: DesktopRecognitionKind) -> String { kind == .ocr ? "ocr" : "vlm" }
 
     private static func result(_ r: AppRecognition) -> DesktopRecognitionResult {
-        if let path = r.result_path, let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        if let path = r.result_path, let data = DesktopEventMapping.derivedJSON(at: URL(fileURLWithPath: path)),
            let full = try? JSONDecoder().decode(DesktopRecognitionResult.self, from: data) { return full }
         return DesktopRecognitionResult(source: r.model, text: r.text, completedAt: Date(timeIntervalSince1970: Double(r.completed_ms) / 1000))
     }
@@ -303,7 +303,7 @@ import CandidClient
               let jpeg = try? Data(contentsOf: URL(fileURLWithPath: path)), DesktopEventMapping.sha256(jpeg) == info.image_hash else {
             throw DesktopStoreError.missingImage
         }
-        let evidence = info.ax_evidence_path.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
+        let evidence = info.ax_evidence_path.flatMap { DesktopEventMapping.derivedJSON(at: URL(fileURLWithPath: $0)) }
             .flatMap { try? JSONDecoder().decode(DesktopAXEvidence.self, from: $0) }
         return (jpeg, evidence)
     }

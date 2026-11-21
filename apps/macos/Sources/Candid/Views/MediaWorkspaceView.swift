@@ -244,7 +244,7 @@ struct MediaWorkspaceView: View {
 
     @ViewBuilder private var detail: some View {
         if let segment = store.recordingInventory.pending.first(where: { $0.id == store.selectedRecordingID }) {
-            SavedRecordingView(segment: segment, url: store.recordingJournal.file(segment, ".wav"), store: store)
+            SavedRecordingView(segment: segment, url: store.recordingJournal.file(segment, segment.mediaSuffix), store: store)
                 .id(segment.id)
         } else if let draft = store.draft, let url = store.draftFile, store.selectedID == nil || store.records.isEmpty {
             MediaDraftView(draft: draft, url: url, busy: store.busy, save: {

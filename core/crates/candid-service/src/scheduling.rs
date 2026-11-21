@@ -12,6 +12,19 @@ pub(crate) fn background() {
     }
 }
 
+/// One-off bulk work the user is waiting for (the library conversion): may use the performance cores, unlike
+/// `background`, which macOS keeps on the efficiency cores and throttles.
+pub(crate) fn utility() {
+    #[cfg(target_os = "macos")]
+    {
+        // Darwin pthread/qos.h: QOS_CLASS_UTILITY = 0x11.
+        unsafe extern "C" {
+            fn pthread_set_qos_class_self_np(class: u32, relative_priority: i32) -> i32;
+        }
+        let _ = unsafe { pthread_set_qos_class_self_np(0x11, 0) };
+    }
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     #[test]

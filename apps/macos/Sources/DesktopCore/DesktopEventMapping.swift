@@ -39,6 +39,15 @@ public enum DesktopEventMapping {
 
     public static func sha256(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
+    /// A derived JSON original from the core (AX evidence, recognition result). The core stores these as raw DEFLATE
+    /// with a `.json.deflate` suffix (data model v1 §9.5); older ones are plain JSON. Nil when unreadable.
+    public static func derivedJSON(at url: URL) -> Data? {
+        guard let stored = try? Data(contentsOf: url) else { return nil }
+        guard url.lastPathComponent.hasSuffix(".deflate") else { return stored }
+        // Foundation's `.zlib` is raw DEFLATE (RFC 1951), the format the core writes.
+        return try? (stored as NSData).decompressed(using: .zlib) as Data
+    }
+
     /// The AX evidence file of a screenshot: the bytes whose hash is `payload.ax_evidence_ref`.
     public static func evidenceData(_ evidence: DesktopAXEvidence) throws -> Data {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]

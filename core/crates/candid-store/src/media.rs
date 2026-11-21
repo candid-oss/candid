@@ -754,7 +754,8 @@ impl TimelineStore {
             || start < 0
             || !(8000..=192000).contains(&rate)
             || count <= 0
-            || count > rate * 60
+            // Up to an hour: parts written as fragmented AAC are ten minutes long; WAV parts were 30–60 s.
+            || count > rate * 3600
             || start > 192000 * 86400
         {
             return Err(bad("样本范围无效"));
@@ -770,34 +771,17 @@ impl TimelineStore {
             }
             return Ok(());
         }
-        // A new link: WAV part coordinates must agree with the original PCM frame count and sample rate. (An existing
-        // link returns above, so a part whose WAV was later compacted to AAC still re-links.)
+        // A new link: part coordinates must agree with the original's frame count and sample rate. AAC parts
+        // (fragmented MP4 written while recording) report exact valid frames through Core Audio. (An existing link
+        // returns above, so a part whose WAV was later compacted to AAC still re-links.)
         let bytes = fs::read(self.media_path(id)?)?;
-        if !bytes.starts_with(b"RIFF") || bytes.get(8..12) != Some(b"WAVE") {
-            return Err(bad("录音分段需要 WAV"));
-        }
-        let mut offset = 12;
-        let mut actual_rate = 0;
-        let mut align = 0;
-        let mut data = 0;
-        while offset + 8 <= bytes.len() {
-            let n = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
-            if offset + 8 + n > bytes.len() {
-                return Err(bad("WAV 分段损坏"));
+        if bytes.get(4..8) == Some(b"ftyp") {
+            match self.media_bounds(id)?.1 {
+                Some((r, frames)) if r as i64 == rate && frames as i64 == count => {}
+                _ => return Err(bad("样本范围与原件不符")),
             }
-            if &bytes[offset..offset + 4] == b"fmt " && n >= 16 {
-                actual_rate =
-                    u32::from_le_bytes(bytes[offset + 12..offset + 16].try_into().unwrap()) as i64;
-                align =
-                    u16::from_le_bytes(bytes[offset + 20..offset + 22].try_into().unwrap()) as i64;
-            }
-            if &bytes[offset..offset + 4] == b"data" {
-                data = n as i64;
-            }
-            offset += 8 + n + (n % 2);
-        }
-        if actual_rate != rate || align == 0 || data / align != count {
-            return Err(bad("样本范围与原件不符"));
+        } else {
+            Self::check_wav_part(&bytes, rate, count)?;
         }
         for sid in self.media_part_ids(rid)? {
             let other = self.media_part(&sid)?;
@@ -944,5 +928,35 @@ impl TimelineStore {
    for id in legacy_deleted{self.db.execute("INSERT OR IGNORE INTO media_deleted VALUES(?)",&[text(id)])?;}
    let receipt=json!({"version":1,"objects":rows.len(),"owner":"rust","old_vault":"retained"});self.db.execute("INSERT OR REPLACE INTO media_migrations VALUES(?,?)",&[text(&origin),text(receipt.to_string())])?;self.db.execute("DELETE FROM store_meta WHERE key='media.migration.pending'",&[])?;Ok(receipt)
   })
+    }
+}
+
+impl TimelineStore {
+    /// A WAV part: its format chunk's rate and its data chunk's frames must match the declared coordinates.
+    fn check_wav_part(bytes: &[u8], rate: i64, count: i64) -> Result<()> {
+        let mut offset = 12;
+        let mut actual_rate = 0;
+        let mut align = 0;
+        let mut data = 0;
+        while offset + 8 <= bytes.len() {
+            let n = u32::from_le_bytes(bytes[offset + 4..offset + 8].try_into().unwrap()) as usize;
+            if offset + 8 + n > bytes.len() {
+                return Err(bad("WAV 分段损坏"));
+            }
+            if &bytes[offset..offset + 4] == b"fmt " && n >= 16 {
+                actual_rate =
+                    u32::from_le_bytes(bytes[offset + 12..offset + 16].try_into().unwrap()) as i64;
+                align =
+                    u16::from_le_bytes(bytes[offset + 20..offset + 22].try_into().unwrap()) as i64;
+            }
+            if &bytes[offset..offset + 4] == b"data" {
+                data = n as i64;
+            }
+            offset += 8 + n + (n % 2);
+        }
+        if actual_rate != rate || align == 0 || data / align != count {
+            return Err(bad("样本范围与原件不符"));
+        }
+        Ok(())
     }
 }

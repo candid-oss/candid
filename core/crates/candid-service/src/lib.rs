@@ -29,6 +29,8 @@ pub mod workflows;
 mod audio_chunks;
 /// WAV → AAC for processed recordings (data model v1 §9.4).
 pub mod audio_compaction;
+pub mod library_conversion;
+pub mod json_compaction;
 mod scheduling;
 
 pub mod voiceprints;

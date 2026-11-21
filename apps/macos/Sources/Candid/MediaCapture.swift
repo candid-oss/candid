@@ -58,7 +58,7 @@ final class MediaCapture {
             guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else { throw MediaCaptureError.screenPermission }
             let startedAt = Date()
             let sink = try await Task.detached(priority: .userInitiated) {
-                try RecordingAudioSink(journal: journal, sampleRate: 48_000, seconds: seconds, startedAt: startedAt, input: recordingInput)
+                try RecordingAudioSink(journal: journal, sampleRate: 48_000, seconds: seconds, startedAt: startedAt, input: recordingInput, codec: .aac)
             }.value
             let system = SystemAudioRecording(sink: sink)
             do {
@@ -80,7 +80,7 @@ final class MediaCapture {
         let startedAt = Date()
         let sampleRate = Int(format.sampleRate)
         let sink = try await Task.detached(priority: .userInitiated) {
-            try RecordingAudioSink(journal: journal, sampleRate: sampleRate, seconds: seconds, startedAt: startedAt)
+            try RecordingAudioSink(journal: journal, sampleRate: sampleRate, seconds: seconds, startedAt: startedAt, codec: .aac)
         }.value
         input.installTap(onBus: 0, bufferSize: 2048, format: format) { buffer, time in
             sink.receive(buffer, sampleTime: time.isSampleTimeValid ? time.sampleTime : nil)

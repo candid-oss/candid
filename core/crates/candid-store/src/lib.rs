@@ -83,6 +83,8 @@ pub mod durable;
 pub mod media;
 pub mod webp;
 pub mod media_compaction;
+pub mod library_conversion;
+pub mod json_blobs;
 
 mod media_projection;
 
