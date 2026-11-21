@@ -104,6 +104,15 @@ impl TimelineStore {
         self.feature_check(step, item, None).is_ok()
     }
 
+    /// `(calls today, daily limit)` for a catalog feature. Every model call counts, local or remote, failed or not;
+    /// the day is the UTC day, like the money budget. This is the one place daily limits are decided.
+    pub fn feature_budget(&self, feature: &str) -> Result<(i64, i64)> {
+        let now = self.clock.now_ms();
+        let used = self.db.scalar("SELECT COUNT(*) FROM ai_calls WHERE feature=? AND started_ms>=?", &[text(feature), int(now - now.rem_euclid(86_400_000))])?;
+        let limit = self.feature_settings()?["items"][feature]["daily_calls"].as_i64().unwrap_or(100);
+        Ok((used, limit))
+    }
+
     pub(crate) fn feature_check(
         &self,
         step: &str,
@@ -162,16 +171,8 @@ impl TimelineStore {
             if p["allow_remote"] != true && !local {
                 return Err(denied("waiting_feature_remote"));
             }
-            let today = self.clock.now_ms() - self.clock.now_ms().rem_euclid(86400000);
-            let calls = self
-                .db
-                .first(
-                    "SELECT COUNT(*) FROM ai_calls WHERE feature=? AND started_ms>=?",
-                    &[text(step), int(today)],
-                    |r| r.opt_int(0).unwrap_or(0),
-                )?
-                .unwrap_or(0);
-            if calls >= p["daily_calls"].as_i64().unwrap_or(100) {
+            let (used, limit) = self.feature_budget(step)?;
+            if used >= limit {
                 return Err(denied("waiting_feature_budget"));
             }
         }

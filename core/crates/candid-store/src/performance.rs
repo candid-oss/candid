@@ -63,13 +63,39 @@ impl TimelineStore {
 
     /// Internal worker input: only due queued work and expired leases, never historical job details.
     pub fn pending_workflow_jobs(&self) -> Result<Value> {
-        let now = self.clock.now_ms();
-        let ids = self.db.query("SELECT job_id FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND ((state='queued' AND (next_run_ms IS NULL OR next_run_ms<=?)) OR (state='running' AND lease_until_ms<=?)) AND (kind='speech.recognize' OR kind='screen.summarize' OR kind GLOB 'workflow.*') ORDER BY created_ms,job_id", &[int(now), int(now)], |r| r.text(0))?;
-        let jobs = ids.iter().map(|id| self.job_command(&json!({"action":"get","id":id}))).collect::<Result<Vec<_>>>()?;
+        let jobs = self.pending_job_queue()?.iter().map(|(id, ..)| self.job_command(&json!({"action":"get","id":id}))).collect::<Result<Vec<_>>>()?;
         Ok(json!({"jobs":jobs}))
     }
 
+    /// Due background jobs as `(job_id, kind, feature)` in the order the worker should try them: priority first,
+    /// then oldest first. Cheap, so the worker can hydrate jobs one by one and stop at the first runnable one.
+    pub fn pending_job_queue(&self) -> Result<Vec<(String, String, Option<String>)>> {
+        let now = self.clock.now_ms();
+        let sql = format!("SELECT job_id,kind,feature,created_ms FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND ((state='queued' AND (next_run_ms IS NULL OR next_run_ms<=?)) OR (state='running' AND lease_until_ms<=?)) AND {}", crate::job_priority::kind_filter());
+        let mut rows = self.db.query(&sql, &[int(now), int(now)], |r| (r.text(0), r.text(1), r.opt_text(2), r.int(3)))?;
+        rows.sort_by(|a, b| (crate::job_priority::job_priority(&a.1), a.3, &a.0).cmp(&(crate::job_priority::job_priority(&b.1), b.3, &b.0)));
+        Ok(rows.into_iter().map(|(id, kind, feature, _)| (id, kind, feature)).collect())
+    }
+
+    /// Abandons queued jobs that waited past their kind's useful age (for example screenshots stuck behind a
+    /// daily limit for more than a day). The reason stays on the job as `expired`. Returns how many.
+    pub fn expire_stale_jobs(&self) -> Result<usize> {
+        let now = self.clock.now_ms();
+        let mut n = 0;
+        for c in crate::job_priority::JOB_CLASSES {
+            let Some(age) = c.max_age_ms else { continue };
+            let pattern = if c.kind.ends_with('.') { format!("{}*", c.kind) } else { c.kind.to_string() };
+            let ids = self.db.query("SELECT job_id FROM jobs WHERE state='queued' AND kind GLOB ? AND created_ms<?", &[text(pattern), int(now - age)], |r| r.text(0))?;
+            for id in ids {
+                self.workflow_invalidate(&id, "expired")?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     pub fn next_workflow_deadline(&self) -> Result<Option<i64>> {
-        self.db.first("SELECT MIN(CASE state WHEN 'queued' THEN next_run_ms ELSE lease_until_ms END) FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND (kind='speech.recognize' OR kind='screen.summarize' OR kind GLOB 'workflow.*') AND CASE state WHEN 'queued' THEN next_run_ms ELSE lease_until_ms END>?", &[int(self.clock.now_ms())], |r| r.opt_int(0)).map(Option::flatten)
+        let sql = format!("SELECT MIN(CASE state WHEN 'queued' THEN next_run_ms ELSE lease_until_ms END) FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND {} AND CASE state WHEN 'queued' THEN next_run_ms ELSE lease_until_ms END>?", crate::job_priority::kind_filter());
+        self.db.first(&sql, &[int(self.clock.now_ms())], |r| r.opt_int(0)).map(Option::flatten)
     }
 }
