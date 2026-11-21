@@ -299,6 +299,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         let _ = s.workflow_scan();
         let _ = s.curated_sync();
         let _ = s.people_sync();
+        if s.people_judge_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         let _ = s.automation_scan();
@@ -475,9 +476,22 @@ fn call_once(store: &SharedStore, r: &Value, audio: Option<Vec<u8>>) -> Result<V
         }
     }
 }
+/// For steps that ask for JSON (`json_repair`): when the reply does not contain a JSON object, ask once more with the
+/// bad reply and a short instruction; the second reply is used as is and judged by the step's own parser.
+fn repair_json_once(store: &SharedStore, r: &Value, output: Value) -> Result<Value, String> {
+    let valid = |o: &Value| o.as_str().and_then(crate::retry::extract_json).is_some_and(|v| v.is_object());
+    if r["json_repair"] != true || valid(&output) {
+        return Ok(output);
+    }
+    let mut again = r.clone();
+    again["messages"] = crate::retry::json_repair_messages(&r["messages"], output.as_str().unwrap_or(""));
+    call_once(store, &again, None)
+}
+
 fn execute_workflow(store: &SharedStore, r: &Value) -> Result<Value, String> {
     if r["speech"] != true {
-        return call_once(store, r, None);
+        let output = call_once(store, r, None)?;
+        return repair_json_once(store, r, output);
     }
     let path = std::path::Path::new(r["path"].as_str().ok_or("missing_source")?);
     let plan = crate::audio_chunks::AudioChunks::open(path)?;

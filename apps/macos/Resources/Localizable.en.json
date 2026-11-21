@@ -2062,5 +2062,9 @@
  "参考了：%@": "Based on: %@",
  "插入": "Insert",
  "屏幕对话与摘录": "Screen conversations and excerpts",
- "截图出现新内容时": "When a screenshot shows new content"
+ "截图出现新内容时": "When a screenshot shows new content",
+ "没能保存：%@": "Could not save: %@",
+ "%@ 和 %@ 可能是同一个人": "%@ and %@ may be the same person",
+ "不是同一人": "Not the same person",
+ "已自动合并：%@ = %@": "Merged automatically: %@ = %@"
 }

@@ -11,7 +11,7 @@ mod activity;
 mod curated;
 mod curated_screen;
 mod people;
-pub use people::{PeopleVerdict, PersonCorrectionRequest, SELF_ENTITY};
+pub use people::{PeopleCandidate, PeopleVerdict, BATCH as PEOPLE_JUDGE_BATCH, PersonCorrectionRequest, SELF_ENTITY};
 mod db;
 mod delete;
 mod derived;

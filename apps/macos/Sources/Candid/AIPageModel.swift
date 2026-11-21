@@ -162,6 +162,8 @@ enum AIRun: Equatable, Sendable {
     private(set) var proposals: [AgendaProposal] = []
     private(set) var commitments: [AgendaCommitment] = []
     private(set) var speakers: [SpeakerToConfirm] = []
+    /// 「可能是同一人」 cards and automatic merges (待你处理).
+    let people: PeopleCandidatesModel
     private(set) var review: AgendaReview?
     private(set) var loading = false
     /// Per item (`proposal:<id>`, `commitment:<id>`, `speaker:<id>`, `agenda`, `core`): what went wrong there.
@@ -248,6 +250,7 @@ enum AIRun: Equatable, Sendable {
          confirmSpeaker: ((SpeakerToConfirm) async throws -> Void)? = nil) {
         self.agenda = agenda
         self.channel = channel
+        self.people = PeopleCandidatesModel(channel: channel)
         self.agent = agent ?? PiAgent(channel: channel)
         self.store = store
         self.workflows = workflows ?? WorkflowControlModel()
@@ -285,7 +288,8 @@ enum AIRun: Equatable, Sendable {
         async let system: Void = refreshSystem()
         async let core: Void = refreshCore()
         async let people: Void = refreshSpeakers()
-        _ = await (system, core, people)
+        async let merges: Void = self.people.refresh()
+        _ = await (system, core, people, merges)
         await workflows.refresh()
     }
 
@@ -346,7 +350,7 @@ enum AIRun: Equatable, Sendable {
 
     /// Proposals that wait for the user (待你处理).
     var waiting: [AgendaProposal] { proposals.filter { $0.open && !($0.payload.memory_id != nil && $0.status == "approved") } }
-    var waitingCount: Int { waiting.count + speakers.count }
+    var waitingCount: Int { waiting.count + speakers.count + people.candidates.count }
     /// Jobs still running or failed, for the footer line.
     var activeJobs: [WorkflowControlModel.Job] { workflows.jobs.filter { ["queued", "running"].contains($0.state) } }
     var failedJobs: [WorkflowControlModel.Job] { workflows.jobs.filter { $0.state == "failed" } }
