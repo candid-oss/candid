@@ -43,7 +43,7 @@ def test_conversation_offsets_and_read_only_identity_lookup(tmp_path, monkeypatc
     from asr.speaker_store import SpeakerStore
 
     monkeypatch.setattr(media_worker, "version", lambda _: "fixture")
-    monkeypatch.setattr(media_worker, "MAX_SECONDS", 1)
+    monkeypatch.setattr(media_worker, "MAX_SECONDS", 10)
     store = SpeakerStore(tmp_path / "library")
     with store.db() as db:
         db.execute("INSERT INTO people VALUES (?, ?, ?)", ("p1", "样例人物", "fixture"))
@@ -58,19 +58,20 @@ def test_conversation_offsets_and_read_only_identity_lookup(tmp_path, monkeypatc
         def __init__(self, store):
             self.store = store
 
-        def analyze(self, _path):
-            identity = self.store.match([1, 0])
-            return {"speakers": [{"speaker_id": "s1", "identity": identity, "vector": [1, 0]}],
+        def analyze(self, path):
+            seconds = min(9, sf.info(path).duration)
+            identity = self.store.match([1, 0], 0.65, 0.05, seconds=seconds)
+            return {"speakers": [{"speaker_id": "s1", "identity": identity, "vector": [1, 0], "seconds": seconds}],
                     "segments": [{"speaker_id": "s1", "start_s": 0.1, "end_s": 0.3, "text": "样例"}]}
 
     monkeypatch.setattr(speaker_pipeline, "SpeakerPipeline", Pipeline)
     source = tmp_path / "original.wav"
-    sf.write(source, np.full(media_worker.SAMPLE_RATE * 2, 0.1), media_worker.SAMPLE_RATE)
+    sf.write(source, np.full(media_worker.SAMPLE_RATE * 12, 0.1), media_worker.SAMPLE_RATE)
     result = media_worker.conversation_result(source, tmp_path)
     assert result["producer"]["identity_kind"] == "candidate"
-    assert [s["start_seconds"] for s in result["segments"]] == [0.1, 1.1]
+    assert [s["start_seconds"] for s in result["segments"]] == [0.1, 10.1]
     assert [s["speaker"] for s in result["segments"]] == ["说话人 1", "说话人 2"]
-    assert {s["identity"] for s in result["segments"]} == {"样例人物"}
+    assert [s["identity"] for s in result["segments"]] == ["样例人物", None]
     match = result["segments"][0]["match"]
     assert match["person_id"] == "p1" and match["name"] == "样例人物" and match["status"] == "matched"
     assert 0.99 <= match["score"] <= 1.0

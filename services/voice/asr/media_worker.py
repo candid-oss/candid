@@ -125,10 +125,10 @@ def conversation_result(decoded: Path, temp: Path) -> dict:
                 yield db
 
     class JobSpeakerStore(SpeakerStore):
-        def match(self, vector, threshold=0.65, margin=0.05):
+        def match(self, vector, threshold=0.65, margin=0.05, *, seconds=None):
             if library is None:
                 return {"status": "unknown", "name": None}
-            return library.match(vector, threshold, margin)
+            return library.match(vector, threshold, margin, seconds=seconds)
 
     from .voiceprint_api import library_path
     candidate_path = library_path()

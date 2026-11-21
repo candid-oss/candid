@@ -11,6 +11,9 @@ use std::{
 fn config(url: &str) -> Value {
     json!({"version":1,"providers":[{"provider_id":"voice","name":"SYNTHETIC route","api":"other","base_url":url,"enabled":true,"destination":"on_device"}],"models":[],"roles":[{"role":"asr","model":{"provider_id":"voice","model_id":"public-voice"}},{"role":"title","model":{"provider_id":"voice","model_id":"text"}}]})
 }
+fn public_voice_url() -> String {
+    std::env::var("CANDID_TEST_VOICE_URL").unwrap_or_else(|_| "http://127.0.0.1:8767/v1".into())
+}
 fn post(socket: &std::path::Path, path: &str, v: Value) -> Value {
     let (code, b) = local_request(socket, "POST", path, &serde_json::to_vec(&v).unwrap()).unwrap();
     assert_eq!(code, 200, "{}", String::from_utf8_lossy(&b));
@@ -70,7 +73,7 @@ fn public_voice_is_consumed_searched_and_located() {
     post(
         &socket,
         "/local/models",
-        json!({"action":"save","config":config("http://127.0.0.1:8767/v1")}),
+        json!({"action":"save","config":config(&public_voice_url())}),
     );
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../data/asr/sample-zh.wav");
     if !path.exists() { eprintln!("SKIP: public sample {} not downloaded (see services/voice/README.md)", path.display()); return; }
@@ -475,7 +478,7 @@ fn timeout_and_offline_are_recorded_once_without_fallback() {
 #[ignore = "explicit public two-speaker model acceptance; independently running voice API"]
 fn public_conversation_preserves_anonymous_speakers_and_estimated_positions() {
     let (svc, dir, socket) = start();
-    let mut c = config("http://127.0.0.1:8767/v1");
+    let mut c = config(&public_voice_url());
     c["roles"].as_array_mut().unwrap().push(
         json!({"role":"diarization","model":{"provider_id":"voice","model_id":"public-voice"}}),
     );
