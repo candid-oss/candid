@@ -212,7 +212,7 @@
         "*"
       ],
       "default_enabled": false,
-      "default_daily_calls": 24,
+      "default_daily_calls": 60,
       "allow_remote": false,
       "notifications": false,
       "job_kind": "screen.summarize",

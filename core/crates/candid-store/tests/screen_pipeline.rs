@@ -23,6 +23,145 @@ fn enable_screen(store: &TimelineStore) {
     config["items"]["screen-episodes"]["enabled"] = json!(true);
     store.workflow_command(&json!({"action":"features","config":config})).unwrap();
 }
+/// A chat message and an excerpt of app `notes` (the app of `screen_text` events), both read off `src`.
+fn seed_curated(fx: &Fx, src: &str, at: i64, app: &str) {
+    fx.store.raw_db().script(&format!(
+        "INSERT OR IGNORE INTO conversations VALUES('chat:t','chat','{app}','项目群',{at},{at},'test',{at});
+         INSERT INTO messages(message_id,conversation_id,sent_ms,actor,sender,text,producer,created_ms) VALUES('m-1','chat:t',{at},'other','张三','预算改成 200 元，周五前确认',  'test',{at});
+         INSERT INTO messages(message_id,conversation_id,sent_ms,actor,sender,text,producer,created_ms) VALUES('m-2','chat:t',{at2},'self',NULL,'好的，我周五前回复',  'test',{at});
+         INSERT INTO message_sources VALUES('m-1','{src}');
+         INSERT INTO message_sources VALUES('m-2','{src}');
+         INSERT INTO excerpts(excerpt_id,key,app,title,url,start_ms,end_ms,text,producer,created_ms) VALUES('ex:1','k','{app}','预算方案',NULL,{at},{at},'{body}','test',{at});
+         INSERT INTO excerpt_sources VALUES('ex:1','{src}');",
+        at2 = at + 1000,
+        body = "预算正文".repeat(300),
+    )).unwrap();
+}
+fn ep_id(fx: &Fx) -> String {
+    fx.store.screen_command(&json!({"action":"status"})).unwrap()["episodes"][0]["id"].as_str().unwrap().to_string()
+}
+fn model_role(fx: &Fx) {
+    let model = json!({"version":1,"providers":[{"provider_id":"s","name":"SYNTHETIC","api":"openai-chat","base_url":"http://127.0.0.1:1/v1","destination":"on_device","enabled":true}],"models":[{"provider_id":"s","model_id":"synthetic"}],"roles":[{"role":"episode","model":{"provider_id":"s","model_id":"synthetic"}}]});
+    fx.store.model_command(&json!({"action":"save","config":model})).unwrap();
+}
+fn ingest_block(fx: &Fx, key: &str, at: i64) {
+    let a = screen_text(&format!("{key}1"), at, "org.synthetic.notes", "Synthetic doc", "RAWONLY 屏幕原文第一行\n预算是 100 元", None, None);
+    let b = screen_text(&format!("{key}2"), at + 30000, "org.synthetic.notes", "Synthetic doc", "RAWONLY 屏幕原文第二行\n预算是 200 元", None, None);
+    fx.store.ingest(&IngestBatch::events(&fx.source, vec![a, b])).unwrap();
+}
+fn claim(fx: &Fx) -> serde_json::Value {
+    fx.store.job_command(&json!({"action":"claim","kind":"screen.summarize","owner":"synthetic","lease_ms":60000})).unwrap()
+}
+
+#[test]
+fn activity_input_is_the_curated_layer_only_and_blocks_without_it_never_call_the_model() {
+    let fx = Fx::make("activity-input");
+    enable_screen(&fx.store);
+    model_role(&fx);
+    let at = fixtures::FIXED_NOW_MS - 3600000;
+    ingest_block(&fx, "s", at);
+    // No messages or excerpts yet: a rule title and summary from the statistics, nothing queued, a run refused.
+    fx.store.screen_scan().unwrap();
+    let id = ep_id(&fx);
+    let st = fx.store.screen_command(&json!({"action":"status"})).unwrap();
+    assert_eq!(st["episodes"][0]["title"], "notes · Synthetic doc");
+    assert!(st["episodes"][0]["summary"].as_str().unwrap().contains("分钟"));
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM jobs WHERE kind='screen.summarize'"), 0);
+    fx.store.screen_command(&json!({"action":"run","id":&id})).unwrap();
+    let job = claim(&fx);
+    assert!(fx.store.screen_prepare(&job).unwrap_err().message().contains("no_curated_content"));
+    // With curated rows the model reads them and nothing from the raw screen text.
+    let src = fx.texts("SELECT event_id FROM events WHERE kind='screen.text' ORDER BY start_ms")[0].clone();
+    seed_curated(&fx, &src, at + 10000, "notes");
+    // Another app's chat in the same minutes is not this block's.
+    fx.store.raw_db().script(&format!("INSERT INTO conversations VALUES('chat:o','chat','other','别的群',{at},{at},'test',{at}); INSERT INTO messages(message_id,conversation_id,sent_ms,actor,sender,text,producer,created_ms) VALUES('m-x','chat:o',{at},'other','路人','OTHERAPP 无关消息','test',{at}); INSERT INTO message_sources VALUES('m-x','{src}');")).unwrap();
+    fx.store.screen_command(&json!({"action":"run","id":&id})).unwrap();
+    let job = claim(&fx);
+    let r = fx.store.screen_prepare(&job).unwrap();
+    let content = r["content"].as_str().unwrap();
+    assert!(content.contains("「项目群」张三：预算改成 200 元"), "{content}");
+    assert!(content.contains("我：好的"), "{content}");
+    assert!(content.contains("《预算方案》"), "{content}");
+    assert!(content.chars().count() < 1200, "excerpt body is truncated: {}", content.chars().count());
+    assert!(!content.contains("RAWONLY") && !content.contains("OTHERAPP"), "{content}");
+    assert_eq!(r["refs"]["m1"], "m-1");
+    assert_eq!(r["refs"]["x1"], "ex:1");
+    assert!(r["prompt"].as_str().unwrap().contains("citations"));
+    // Citations must be the input's own references.
+    let bad = json!({"title":"t","summary":"s","citations":["m9"]}).to_string();
+    assert!(fx.store.screen_complete(&r, &json!(bad)).is_err());
+    let good = json!({"title":"和张三确认预算","summary":"预算改成 200 元，周五前确认。","citations":["m1","x1"]}).to_string();
+    let done = fx.store.screen_complete(&r, &json!(good)).unwrap();
+    assert_eq!(done["citations"], json!(["m-1","ex:1"]));
+    let st = fx.store.screen_command(&json!({"action":"status"})).unwrap();
+    assert_eq!(st["episodes"][0]["title"], "和张三确认预算");
+}
+
+#[test]
+fn activity_summary_is_cached_until_the_input_changes_and_edits_survive() {
+    let fx = Fx::make("activity-cache");
+    enable_screen(&fx.store);
+    model_role(&fx);
+    let at = fixtures::FIXED_NOW_MS - 3600000;
+    ingest_block(&fx, "s", at);
+    let src = fx.texts("SELECT event_id FROM events WHERE kind='screen.text' ORDER BY start_ms")[0].clone();
+    seed_curated(&fx, &src, at + 10000, "notes");
+    // Automatic work starts from the opt-in; let this block count.
+    fx.store.raw_db().script(&format!("INSERT OR REPLACE INTO store_meta VALUES('screen.automatic-since/1','{at}');")).unwrap();
+    fx.store.screen_scan().unwrap();
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM jobs WHERE kind='screen.summarize' AND state='queued'"), 1);
+    let id = ep_id(&fx);
+    let job = claim(&fx);
+    let r = fx.store.screen_prepare(&job).unwrap();
+    let first_job = job.clone();
+    let out = json!({"title":"标题一","summary":"概括一","citations":["m1"]}).to_string();
+    fx.store.screen_complete(&r, &json!(out)).unwrap();
+    let revs = fx.scalar("SELECT COUNT(*) FROM episodes");
+    // Same input, prompt and model: a rebuild neither queues a job nor loses the model text.
+    fx.store.screen_command(&json!({"action":"rebuild"})).unwrap();
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM jobs WHERE kind='screen.summarize' AND state='queued'"), 0);
+    let st = fx.store.screen_command(&json!({"action":"status"})).unwrap();
+    assert_eq!(st["episodes"][0]["title"], "标题一");
+    assert!(fx.scalar("SELECT COUNT(*) FROM episodes") >= revs);
+    assert!(fx.store.screen_prepare(&first_job).unwrap_err().message().contains("cache_hit"));
+    // A new message changes the input: a new job and a new revision.
+    fx.store.raw_db().script(&format!("INSERT INTO messages(message_id,conversation_id,sent_ms,actor,sender,text,producer,created_ms) VALUES('m-3','chat:t',{},'other','张三','补充：改到周四','test',{at}); INSERT INTO message_sources VALUES('m-3','{src}');", at + 20000)).unwrap();
+    fx.store.screen_scan().unwrap();
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM jobs WHERE kind='screen.summarize' AND state='queued'"), 1);
+    let job = claim(&fx);
+    let r = fx.store.screen_prepare(&job).unwrap();
+    assert!(r["content"].as_str().unwrap().contains("改到周四"));
+    // A user edit wins over every later model result and rebuild.
+    fx.store.screen_command(&json!({"action":"edit","id":&id,"title":"我改的","summary":"我的概括"})).unwrap();
+    assert!(fx.store.screen_complete(&r, &json!(json!({"title":"新","summary":"新","citations":[]}).to_string())).is_err());
+    fx.store.screen_command(&json!({"action":"rebuild"})).unwrap();
+    let st = fx.store.screen_command(&json!({"action":"status"})).unwrap();
+    assert_eq!(st["episodes"][0]["title"], "我改的");
+}
+
+#[test]
+fn day_lists_blocks_in_time_order_with_related_ids_and_the_daily_summary() {
+    let fx = Fx::make("activity-day");
+    enable_screen(&fx.store);
+    let at = fixtures::FIXED_NOW_MS - 3600000;
+    ingest_block(&fx, "s", at);
+    let src = fx.texts("SELECT event_id FROM events WHERE kind='screen.text' ORDER BY start_ms")[0].clone();
+    seed_curated(&fx, &src, at + 10000, "notes");
+    fx.store.screen_scan().unwrap();
+    fx.store.raw_db().script(&format!("INSERT INTO digests VALUES('day:2000-01-01',1,'day',946684800000,946771200000,'{{\"text\":\"当天回顾\"}}','draft','workflow.daily',NULL,NULL,NULL,{at});")).unwrap();
+    let day = fx.store.call_tool("day", br#"{"start":"-2h"}"#, &fx.client).unwrap();
+    let blocks = day["blocks"].as_array().unwrap();
+    assert_eq!(blocks.len(), 1, "{day}");
+    assert_eq!(blocks[0]["app"], "notes");
+    assert_eq!(blocks[0]["by"], "rule");
+    assert_eq!(blocks[0]["conversations"], json!(["chat:t"]));
+    assert_eq!(blocks[0]["excerpts"], json!(["ex:1"]));
+    assert!(blocks[0]["summary"].as_str().unwrap().contains("分钟"));
+    let all = fx.store.call_tool("day", br#"{"start":"1999-12-31","end":"2100-01-01"}"#, &fx.client).unwrap();
+    assert_eq!(all["daily"][0]["text"], "当天回顾");
+    assert!(candid_store::TOOL_NAMES.contains(&"day"));
+}
+
 #[test]
 fn cleanup_keeps_numeric_changes_and_context_and_all_original_selectors() {
     let source = vec![
@@ -119,6 +258,8 @@ fn ended_projection_idempotency_model_citations_and_revocation() {
     fx.store
         .ingest(&IngestBatch::events(&fx.source, vec![a, b]))
         .unwrap();
+    let src = fx.texts("SELECT event_id FROM events WHERE kind='screen.text' ORDER BY start_ms")[0].clone();
+    seed_curated(&fx, &src, at + 10000, "notes");
     let report = fx.store.screen_scan().unwrap();
     assert_eq!(report["ended"], 1);
     let first = fx
@@ -153,14 +294,13 @@ fn ended_projection_idempotency_model_citations_and_revocation() {
     // An explicit retry clears the stop; automatic scans cannot clear it.
     fx.store.screen_command(&json!({"action":"run","id":id})).unwrap();
     assert!(fx.store.screen_prepare(&job).is_ok());
-    assert!(r["content"].as_str().unwrap().contains("100"));
-    assert!(r["content"].as_str().unwrap().contains("200"));
+    assert!(r["content"].as_str().unwrap().contains("200 元"));
     assert!(fx
         .store
         .screen_complete(
             &r,
             &json!(
-                json!({"title":"合成标题","summary":"合成摘要","citations":["invented"]})
+                json!({"title":"合成标题","summary":"合成摘要","citations":["m99"]})
                     .to_string()
             )
         )
@@ -169,12 +309,11 @@ fn ended_projection_idempotency_model_citations_and_revocation() {
         .store
         .screen_command(&json!({"action":"detail","id":id}))
         .unwrap();
-    let eid = &detail["episode"]["frames"][0]["event_id"];
     fx.store
         .screen_complete(
             &r,
             &json!(
-                json!({"title":"合成标题","summary":"预算从100改到200","citations":[eid]})
+                json!({"title":"合成标题","summary":"预算从100改到200","citations":["m1"]})
                     .to_string()
             ),
         )

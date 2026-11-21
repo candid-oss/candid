@@ -21,8 +21,8 @@ impl From<TimelineError> for ToolCallFailure {
 }
 
 /// Names of the query tools (timeline-v1 §5.2).
-pub const TOOL_NAMES: [&str; 19] =
-    ["find", "conversations", "conversation", "evidence", "source_query", "records", "agent", "status", "overview", "search", "timeline", "context", "get_event", "episodes", "episode", "thread", "media", "usage", "propose"];
+pub const TOOL_NAMES: [&str; 20] =
+    ["day", "find", "conversations", "conversation", "evidence", "source_query", "records", "agent", "status", "overview", "search", "timeline", "context", "get_event", "episodes", "episode", "thread", "media", "usage", "propose"];
 
 /// The App's own read tools (internal client only, never listed in the catalog or MCP).
 pub const APP_TOOL_NAMES: [&str; 8] =
@@ -71,6 +71,7 @@ impl TimelineStore {
         }
         if tool=="records" {let args:Value=decode(body)?;let id=args["id"].as_str().filter(|s|!s.is_empty()).ok_or_else(||TimelineError::InvalidInput("缺少修订编号".into()))?;return value(self.record_revision(id,client_id)?);}
         match tool {
+            "day" => value(self.day(&decode(body)?, client_id)?),
             "find" => value(self.find(&decode(body)?, client_id)?),
             "conversations" => value(self.conversations(&decode(body)?, client_id)?),
             "conversation" => value(self.conversation(&decode(body)?, client_id)?),
