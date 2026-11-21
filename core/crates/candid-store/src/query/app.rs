@@ -397,7 +397,7 @@ fn group_rows(rows: &[Row]) -> Vec<Group> {
 
 impl TimelineStore {
     /// Refuses every client but the App's internal one.
-    fn require_internal(&self, client_id: &str) -> QResult<()> {
+    pub(super) fn require_internal(&self, client_id: &str) -> QResult<()> {
         let transport = self.db.first("SELECT transport FROM clients WHERE client_id=?", &[text(client_id)], |r| r.text(0))?;
         if transport.as_deref() != Some("internal") {
             return Err(TimelineError::Denied("internal_only".into()).into());

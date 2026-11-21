@@ -291,6 +291,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         let s = lock(store);
         let _ = s.workflow_scan();
         let _ = s.curated_sync();
+        let _ = s.people_sync();
         if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         let _ = s.automation_scan();

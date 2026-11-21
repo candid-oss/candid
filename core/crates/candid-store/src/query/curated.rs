@@ -29,6 +29,9 @@ pub struct ConversationsRequest {
     pub who: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<String>,
+    /// A person (name, alias or person_id): only conversations where they have messages, across all their aliases.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -57,6 +60,9 @@ pub struct FindRequest {
     /// Only messages of conversations of this kind (`chat`, `mail`, `meeting`, `agent`); excerpts are left out then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conversation_kind: Option<String>,
+    /// A person (name, alias or person_id): only their messages (excerpts have no sender and are skipped).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub person: Option<String>,
     /// `message` or `excerpt`; both when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
@@ -90,7 +96,7 @@ fn like(q: &str) -> String {
 
 impl TimelineStore {
     /// SQL that is true when row `alias` (with key column `key`) of `table` is visible to the client.
-    fn curated_visible(&self, ctx: &ClientContext, alias: &str, table: &str, key: &str) -> (String, Vec<P>) {
+    pub(super) fn curated_visible(&self, ctx: &ClientContext, alias: &str, table: &str, key: &str) -> (String, Vec<P>) {
         let f = self.scope_filter(ctx, "e");
         let mut params = f.params.clone();
         let derived = if ctx.scope.derived { "1" } else { "0" };
@@ -104,7 +110,7 @@ impl TimelineStore {
         )
     }
 
-    fn message_json(&self, row: &(String, String, i64, String, Option<String>, String)) -> Value {
+    pub(super) fn message_json(&self, row: &(String, String, i64, String, Option<String>, String)) -> Value {
         let (id, conversation, at, actor, sender, body) = row;
         // `ref` is the record to cite, so the App can link the answer back to where it was seen.
         let cite = self.db.first("SELECT MIN(event_id) FROM message_sources WHERE message_id=?", &[text(id)], |r| r.opt_text(0)).ok().flatten().flatten();
@@ -122,6 +128,15 @@ impl TimelineStore {
             let (visible, vparams) = self.curated_visible(ctx, "m", "message_sources", "message_id");
             let mut sql = format!("SELECT c.conversation_id,c.kind,c.app,c.title FROM conversations c WHERE EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id=c.conversation_id AND {visible}");
             let mut params = vparams.clone();
+            if let Some(p) = req.person.as_deref().filter(|s| !s.trim().is_empty()) {
+                let _ = self.people_sync();
+                let family = self.people_family(&self.people_matching(p)?)?;
+                if family.is_empty() {
+                    return Ok(json!({"conversations": [], "note": "没有找到这个人"}));
+                }
+                sql += &format!(" AND m.sender_entity_id IN ({})", crate::db::placeholders(family.len()));
+                params.extend(family.iter().map(text));
+            }
             if let Some(s) = ws {
                 sql += " AND m.sent_ms>=?";
                 params.push(int(s));
@@ -231,6 +246,17 @@ impl TimelineStore {
             let limit = req.limit.unwrap_or(10).clamp(1, 50);
             let (ws, we) = self.window(req.start.as_deref(), req.end.as_deref(), None, false)?;
             // Trigram FTS needs three characters per term; shorter queries scan with LIKE.
+            let family = match req.person.as_deref().filter(|s| !s.trim().is_empty()) {
+                Some(p) => {
+                    let _ = self.people_sync();
+                    let f = self.people_family(&self.people_matching(p)?)?;
+                    if f.is_empty() {
+                        return Ok(json!({"results": [], "note": "没有找到这个人"}));
+                    }
+                    Some(f)
+                }
+                None => None,
+            };
             let use_fts = q.split_whitespace().all(|t| t.chars().count() >= 3);
             let mut results: Vec<(i64, Value)> = vec![];
             if let Some(k) = req.conversation_kind.as_deref() {
@@ -252,6 +278,10 @@ impl TimelineStore {
                     sql += " AND c.kind=?";
                     params.push(text(k));
                 }
+                if let Some(f) = &family {
+                    sql += &format!(" AND m.sender_entity_id IN ({})", crate::db::placeholders(f.len()));
+                    params.extend(f.iter().map(text));
+                }
                 if let Some(s) = ws {
                     sql += " AND m.sent_ms>=?";
                     params.push(int(s));
@@ -269,7 +299,7 @@ impl TimelineStore {
                     results.push((at, v));
                 }
             }
-            if req.conversation_kind.is_none() && req.kind.as_deref().is_none_or(|k| k == "excerpt") {
+            if req.conversation_kind.is_none() && family.is_none() && req.kind.as_deref().is_none_or(|k| k == "excerpt") {
                 let (visible, vparams) = self.curated_visible(ctx, "x", "excerpt_sources", "excerpt_id");
                 let (matcher, mp) = if use_fts {
                     ("x.seq IN (SELECT rowid FROM excerpts_fts WHERE excerpts_fts MATCH ?)".to_string(), vec![text(fts_query(q))])
