@@ -45,10 +45,18 @@ impl TimelineStore {
             .into_iter()
             .map(|s| json!([s.source_id, s.status, s.policy]))
             .collect();
+        // Summaries read the AI-readable layer, which changes without new events (screenshot excerpts, re-projection),
+        // so its revision is part of what the throttle compares.
+        let curated = self.db.query(
+            "SELECT (SELECT COALESCE(MAX(seq),0) FROM messages),(SELECT COUNT(*) FROM messages),(SELECT COALESCE(MAX(seq),0) FROM excerpts),(SELECT COUNT(*) FROM excerpts)",
+            &[],
+            |r| [r.int(0), r.int(1), r.int(2), r.int(3)],
+        )?;
         let configuration = sha256_hex(&serde_json::to_vec(&json!([
             scope,
             policy,
-            self.model_config()?
+            self.model_config()?,
+            curated
         ]))?);
         let previous = self.automation_get("screen.scan/1")?;
         if previous["configuration"] == configuration

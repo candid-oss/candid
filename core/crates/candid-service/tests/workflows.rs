@@ -528,7 +528,7 @@ fn screen_episode_summary_runs_through_real_queue_and_mock_model_once() {
         assert_eq!(body["response_format"]["type"],"json_schema");
         assert_eq!(body["response_format"]["json_schema"]["schema"]["additionalProperties"],false);
         let content=body["messages"][1]["content"].as_str().unwrap();assert!(content.contains("100")&&content.contains("200"));
-        let reference=content.split("[[").nth(1).unwrap().split("]]").next().unwrap();
+        assert!(content.contains("[x1]"),"{content}");let reference="x1";
         let result=json!({"title":"合成预算讨论","summary":"预算从100元改成200元，仍待确认。","citations":[reference]});
         let answer=json!({"choices":[{"message":{"content":result.to_string()}}],"usage":{"prompt_tokens":20,"completion_tokens":30}}).to_string();
         write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",answer.len(),answer).unwrap();
@@ -540,6 +540,8 @@ fn screen_episode_summary_runs_through_real_queue_and_mock_model_once() {
     let now=chrono::Utc::now().timestamp_millis()-3600000;
     let events=(0..2).map(|i|{let mut e=IngestEvent::new(&format!("SYNTHETIC-{i}"),"screen.text",Some(now+i*10000));e.title=Some("SYNTHETIC window".into());e.app_name=Some("SYNTHETIC Notes".into());e.text=vec![IngestText{field:"body".into(),content:format!("预算 {} 元，等待确认",100+i*100),visible:Some(true),focus_distance:Some(0),parts:None}];e}).collect();
     store.ingest(&IngestBatch::events(&source,events)).unwrap();
+    // The summary reads the AI-readable layer only, so the block needs an excerpt of its app.
+    store.raw_db().script(&format!("INSERT INTO excerpts(excerpt_id,key,app,title,url,start_ms,end_ms,text,producer,created_ms) VALUES('ex:1','k','SYNTHETIC Notes','预算',NULL,{now},{e},'预算从 100 元改成 200 元，等待确认','test',{now}); INSERT INTO excerpt_sources SELECT 'ex:1',event_id FROM events WHERE kind='screen.text' LIMIT 1;",e=now+10000)).unwrap();
     store.model_command(&json!({"action":"save","config":{"version":1,"providers":[{"provider_id":"mock","name":"SYNTHETIC mock","api":"openai-chat","base_url":format!("http://{address}/v1"),"destination":"on_device","enabled":true}],"models":[{"provider_id":"mock","model_id":"SYNTHETIC"}],"roles":[{"role":"episode","model":{"provider_id":"mock","model_id":"SYNTHETIC"}}]}})).unwrap();
     let mut features=store.feature_settings().unwrap();features["items"]["screen-episodes"]["enabled"]=json!(true);
     store.workflow_command(&json!({"action":"features","config":features})).unwrap();
