@@ -114,6 +114,16 @@ CREATE TABLE item_sources (
 
 AI 页「待你处理」分日程、提醒、备忘三栏，加「可能是同一人」与待批准提案。`items` 工具对外提供（默认只返回 open 的）。
 
+**实现状态（步 4，2026-11-21）**：代码在 `candid-store` 的 `item_extract.rs`（触发、输入、作业）和 `items.rs`（操作应用、去重、状态、提案联动），提示词 `core/prompts/item-extract.md`，功能目录项 `item-extract`（默认关闭，150/天，`summary`，不许远端）。几处具体取舍：
+- 触发：聊天空闲 10 分钟且该会话没有排队中的 `screen.excerpt`；录音转写（`meeting` 会话）静默 1 分钟；邮件只有事件 payload 的 `level=important` 才入队。开启功能后的第一次扫描记下基线，只处理之后到达的消息。每个会话一个游标（`items.cursor/1:<会话>`），一次最多 40 条新消息，超限或排队期间累积的消息合成更大的批次。
+- 对方：会话里除自己外只有一个 `sender_entity_id` 时取这个人，条目的 `counterpart` 存他的别名键（优先 handle，其次 email、name、voice）；查询时展开成这个人的全部别名键，所以人物重算、合并后仍指向同一人。群聊（多人）没有对方，靠会话和「时间相同 + 标题三元组相似度 ≥ 0.5」去重。
+- 时间：模型给带时区的 ISO（无偏移按本机时区，只有日期算全天）；早于依据消息一天以上的时间丢弃——日程因此整条丢弃，提醒/承诺保持无日期；`update` 里这样的时间字段跳过。
+- 已确认且有 `external_ref` 的条目，模型的 update/done/cancel 只生成 `update_*`/`complete_reminder`/`delete_*` 提案（payload 带 `candid_item` 和 `item_set`），App 回报执行后条目才按回执变化（`by=calendar`）；同一条目同类待批提案只留一份最新的。
+- 备忘：`memories(kind=fact, status=candidate)`，来源是依据消息背后的事件；所属的人是别名键，存在 `store_meta` 的 `memo.person/1:<memory_id>`（`entity_mentions` 随人物重算会被级联删除，不适合）。
+- 用户忽略（`review=rejected`、`state=cancelled`）后 30 天内相似的 `create` 丢弃；用户在界面改过的字段进 `user_fields`，模型不再覆盖。
+- 出口：`items` 工具（默认只返回 open；MCP 目录、Pi 工具清单、`pv_items`）、`person` 工具的 `open_items` 和 `memos`、`/local/agenda` 的 `today` 带 `items`（候选）和 `memos`，动作 `item`（confirm/ignore/done/edit）和 `memo`（confirm/ignore）；AI 页「待你处理」分日程、提醒、备忘三组。
+- 回放：`excerpt_replay extract select|apply`。
+
 ## 3. 整理层补齐的来源
 
 | 来源 | 做法 | 模型 |

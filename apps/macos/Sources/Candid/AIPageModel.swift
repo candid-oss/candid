@@ -66,6 +66,39 @@ struct AgendaCommitment: Decodable, Identifiable, Equatable, Sendable {
     var id: String { memory_id }
 }
 
+/// A date, reminder or promise the core found in a conversation and the user has not decided on yet.
+struct AgendaItem: Decodable, Identifiable, Equatable, Sendable {
+    struct Person: Decodable, Equatable, Sendable { var name: String?; var key: String? }
+    struct Conversation: Decodable, Equatable, Sendable { var title: String?; var app: String? }
+    var item_id: String
+    /// `event`, `reminder` or `commitment`.
+    var kind: String
+    /// `self` (I promised) or `other` (waiting for them).
+    var owner: String
+    var title: String
+    var when_text: String?
+    var start: String?
+    var end: String?
+    var all_day: Bool?
+    var person: Person?
+    var conversation: Conversation?
+    var id: String { item_id }
+    var isEvent: Bool { kind == "event" }
+    /// 「张三 · 周六下午三点」 style second line: who, when (their words), where it was said.
+    var origin: String {
+        [person?.name ?? conversation?.title, when_text ?? AgendaDate.parse(start).map { AITodayColumn.dayTime($0) }, owner == "other" ? L("等对方") : nil]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+}
+
+/// A fact about a person or a matter that came up in a conversation (`memories(kind=fact)`, candidate).
+struct AgendaMemo: Decodable, Identifiable, Equatable, Sendable {
+    var memory_id: String
+    var text: String
+    var person: AgendaItem.Person?
+    var id: String { memory_id }
+}
+
 struct AgendaReview: Decodable, Equatable, Sendable {
     var digest_id: String
     var status: String
@@ -79,6 +112,8 @@ struct AgendaSnapshot: Decodable, Sendable {
     var proposals: [AgendaProposal]
     var commitments: [AgendaCommitment]
     var review: AgendaReview?
+    var items: [AgendaItem]?
+    var memos: [AgendaMemo]?
 }
 
 /// A speaker the voice library thinks might be someone (「说话人 4 可能是李娜 · 68%」).
@@ -161,6 +196,9 @@ enum AIRun: Equatable, Sendable {
     private(set) var reminders = ReminderGroups(items: [], tomorrow: 0)
     private(set) var proposals: [AgendaProposal] = []
     private(set) var commitments: [AgendaCommitment] = []
+    /// Dates, reminders and promises found in conversations, waiting for a decision (待你处理: 日程、提醒), and memos (备忘).
+    private(set) var items: [AgendaItem] = []
+    private(set) var memos: [AgendaMemo] = []
     private(set) var speakers: [SpeakerToConfirm] = []
     private(set) var review: AgendaReview?
     private(set) var loading = false
@@ -322,6 +360,8 @@ enum AIRun: Equatable, Sendable {
             let snapshot = try JSONDecoder().decode(AgendaSnapshot.self, from: data)
             proposals = snapshot.proposals
             commitments = snapshot.commitments
+            items = snapshot.items ?? []
+            memos = snapshot.memos ?? []
             review = snapshot.review
             problems["core"] = nil
             syncActionCards()
@@ -346,7 +386,9 @@ enum AIRun: Equatable, Sendable {
 
     /// Proposals that wait for the user (待你处理).
     var waiting: [AgendaProposal] { proposals.filter { $0.open && !($0.payload.memory_id != nil && $0.status == "approved") } }
-    var waitingCount: Int { waiting.count + speakers.count }
+    var waitingCount: Int { waiting.count + speakers.count + items.count + memos.count }
+    var eventItems: [AgendaItem] { items.filter(\.isEvent) }
+    var reminderItems: [AgendaItem] { items.filter { !$0.isEvent } }
     /// Jobs still running or failed, for the footer line.
     var activeJobs: [WorkflowControlModel.Job] { workflows.jobs.filter { ["queued", "running"].contains($0.state) } }
     var failedJobs: [WorkflowControlModel.Job] { workflows.jobs.filter { $0.state == "failed" } }
@@ -448,6 +490,44 @@ enum AIRun: Equatable, Sendable {
             commitments.removeAll { $0.id == commitment.id }
             problems[key] = nil
         } catch { problems[key] = L("没能忽略：%@", error.localizedDescription) }
+    }
+
+    /// 加到日历 / 加到提醒: confirming files the matching create proposal, which this click also approves (and EventKit writes).
+    func add(_ item: AgendaItem) async {
+        let key = "item:" + item.id
+        guard !working.contains(key) else { return }
+        working.insert(key); defer { working.remove(key) }
+        do {
+            struct Answer: Decodable { var proposal: AgendaProposal? }
+            let answer = try JSONDecoder().decode(Answer.self, from: try await agendaCall(["action": "item", "item_id": item.id, "decision": "confirm"]))
+            items.removeAll { $0.id == item.id }
+            problems[key] = nil
+            if let proposal = answer.proposal {
+                replace(proposal)
+                await approve(proposal)
+            }
+        } catch { problems[key] = L("没能加入：%@", error.localizedDescription) }
+    }
+
+    func ignore(_ item: AgendaItem) async {
+        let key = "item:" + item.id
+        working.insert(key); defer { working.remove(key) }
+        do {
+            _ = try await agendaCall(["action": "item", "item_id": item.id, "decision": "ignore"])
+            items.removeAll { $0.id == item.id }
+            problems[key] = nil
+        } catch { problems[key] = L("没能忽略：%@", error.localizedDescription) }
+    }
+
+    /// 记下 / 忽略 a memo.
+    func decide(_ memo: AgendaMemo, keep: Bool) async {
+        let key = "memo:" + memo.id
+        working.insert(key); defer { working.remove(key) }
+        do {
+            _ = try await agendaCall(["action": "memo", "memory_id": memo.id, "decision": keep ? "confirm" : "ignore"])
+            memos.removeAll { $0.id == memo.id }
+            problems[key] = nil
+        } catch { problems[key] = L("没能处理这条备忘：%@", error.localizedDescription) }
     }
 
     func confirm(_ speaker: SpeakerToConfirm) async {

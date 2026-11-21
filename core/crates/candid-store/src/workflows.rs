@@ -463,6 +463,7 @@ impl TimelineStore {
         if job["kind"] == "workflow.speakers" {return self.recording_speakers_prepare(job);}
         if job["kind"] == "screen.summarize" { return self.screen_prepare(job); }
         if job["kind"] == crate::screen_excerpt::JOB_KIND { return self.excerpt_prepare(job); }
+        if job["kind"] == crate::item_extract::JOB_KIND { return self.items_prepare(job); }
         let id = job["input_ref"].as_str().unwrap_or("");
         let item = self.workflow_source(id)?;
         let kind = job["kind"].as_str().unwrap_or("");
@@ -645,6 +646,7 @@ impl TimelineStore {
     pub fn workflow_reply_allowed(&self, r: &Value) -> Result<()> {
         if r["step"] == "screen-episodes" { return self.screen_reply_allowed(r); }
         if r["step"] == crate::screen_excerpt::FEATURE { return self.excerpt_reply_allowed(r); }
+        if r["step"] == crate::item_extract::FEATURE { return self.items_reply_allowed(r); }
         let job = &r["job"];
         let item = self.workflow_source(job["input_ref"].as_str().unwrap_or(""))?;
         if sha256_hex(&serde_json::to_vec(&self.model_config()?)?) != r["config_revision"] {
@@ -720,6 +722,7 @@ impl TimelineStore {
     pub fn workflow_complete(&self, r: &Value, output: &Value) -> Result<Value> {
         if r["step"] == "screen-episodes" { return self.screen_complete(r, output); }
         if r["step"] == crate::screen_excerpt::FEATURE { return self.excerpt_complete(r, output); }
+        if r["step"] == crate::item_extract::FEATURE { return self.items_complete(r, output); }
         let job = &r["job"];
         let id = job["input_ref"].as_str().unwrap_or("");
         let item = self.workflow_source(id)?;

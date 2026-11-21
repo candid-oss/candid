@@ -177,6 +177,9 @@ struct AITodayColumn: View {
     private var waitingCard: some View {
         card(L("待你处理") + (model.waitingCount > 0 ? " · \(model.waitingCount)" : "")) {
             if model.waitingCount == 0 { Text(L("没有要你处理的事")).typography(.secondary).foregroundStyle(.secondary) }
+            foundGroup(L("日程"), items: model.eventItems, addTitle: L("加到日历"))
+            foundGroup(L("提醒"), items: model.reminderItems, addTitle: L("加到提醒"))
+            memoGroup
             ForEach(Array(model.waiting.enumerated()), id: \.element.id) { index, proposal in
                 if index > 0 { HairlineDivider() }
                 ProposalRow(model: model, proposal: proposal, compact: false)
@@ -199,6 +202,73 @@ struct AITodayColumn: View {
                     .disabled(model.working.contains(key))
                     if let problem = model.problems[key] { InlineMessage(kind: .error, text: problem) }
                 }
+            }
+        }
+    }
+
+    // MARK: 从对话里整理出的日程、提醒、备忘
+
+    private func foundGroup(_ title: String, items: [AgendaItem], addTitle: String) -> some View {
+        Group {
+            if !items.isEmpty {
+                groupHeader(title, count: items.count)
+                ForEach(items) { item in foundRow(item, addTitle: addTitle) }
+            }
+        }
+    }
+
+    private func groupHeader(_ title: String, count: Int) -> some View {
+        Text(title + " · \(count)").typography(.caption, .semibold).foregroundStyle(.secondary).padding(.top, Space.xxs)
+    }
+
+    private func foundRow(_ item: AgendaItem, addTitle: String) -> some View {
+        let key = "item:" + item.id
+        return VStack(alignment: .leading, spacing: Space.xxs) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
+                Image(systemName: item.isEvent ? "calendar.badge.clock" : "circle.dashed").foregroundStyle(Palette.ai).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title).typography(.body)
+                    Text(item.origin).typography(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            HStack(spacing: Space.xxs) {
+                ChipButton(title: L("问 AI"), systemImage: "sparkle") { model.ask(AIContextItem(id: key, kind: item.isEvent ? L("日程") : L("提醒"), title: item.title, detail: item.origin)) }
+                Spacer(minLength: 0)
+                ChipButton(title: L("忽略")) { Task { await model.ignore(item) } }
+                PrimaryButton(title: addTitle) { Task { await model.add(item) } }
+            }
+            .disabled(model.working.contains(key))
+            if let problem = model.problems[key] { InlineMessage(kind: .error, text: problem) }
+        }
+        .padding(Space.xs)
+        .background(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous).fill(Palette.ai.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous)
+            .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3])).foregroundStyle(Palette.ai.opacity(0.6)))
+    }
+
+    @ViewBuilder private var memoGroup: some View {
+        if !model.memos.isEmpty {
+            groupHeader(L("备忘"), count: model.memos.count)
+            ForEach(model.memos) { memo in
+                let key = "memo:" + memo.id
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
+                        Image(systemName: "note.text").foregroundStyle(Palette.ai).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(memo.text).typography(.body)
+                            if let name = memo.person?.name { Text(name).typography(.caption).foregroundStyle(.tertiary) }
+                        }
+                    }
+                    HStack(spacing: Space.xxs) {
+                        Spacer(minLength: 0)
+                        ChipButton(title: L("忽略")) { Task { await model.decide(memo, keep: false) } }
+                        SecondaryButton(title: L("记下")) { Task { await model.decide(memo, keep: true) } }
+                    }
+                    .disabled(model.working.contains(key))
+                    if let problem = model.problems[key] { InlineMessage(kind: .error, text: problem) }
+                }
+                .padding(Space.xs)
+                .background(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous).fill(Palette.ai.opacity(0.07)))
             }
         }
     }

@@ -19,6 +19,8 @@ const DAY: i64 = 86_400_000;
 pub const JOB_CLASSES: &[JobClass] = &[
     // P1: feeds everything downstream (conversations, items), so it goes first.
     JobClass { kind: "screen.excerpt", priority: 1, max_age_ms: Some(DAY) },
+    // Entry extraction is never dropped for age: over the daily limit it waits, and a later job covers more messages.
+    JobClass { kind: "items.extract", priority: 1, max_age_ms: None },
     // P2: existing recording flows.
     JobClass { kind: "speech.recognize", priority: 2, max_age_ms: None },
     JobClass { kind: "workflow.", priority: 2, max_age_ms: None },

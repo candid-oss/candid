@@ -73,7 +73,7 @@ impl TimelineStore {
                             json!("mac_system_audio"),
                             json!("mac_region"),
                         ]
-                        .contains(v) && !((id == "screen-episodes" || id == crate::screen_excerpt::FEATURE) && (v == "*" || self.sources().map(|s|s.iter().any(|s|json!(s.source_id)==*v)).unwrap_or(false)))
+                        .contains(v) && !((id == "screen-episodes" || id == crate::screen_excerpt::FEATURE || id == crate::item_extract::FEATURE) && (v == "*" || self.sources().map(|s|s.iter().any(|s|json!(s.source_id)==*v)).unwrap_or(false)))
                     })
                 })
             {

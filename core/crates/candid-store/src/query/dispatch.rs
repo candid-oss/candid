@@ -21,8 +21,8 @@ impl From<TimelineError> for ToolCallFailure {
 }
 
 /// Names of the query tools (timeline-v1 §5.2).
-pub const TOOL_NAMES: [&str; 21] =
-    ["day", "find", "person", "conversations", "conversation", "evidence", "source_query", "records", "agent", "status", "overview", "search", "timeline", "context", "get_event", "episodes", "episode", "thread", "media", "usage", "propose"];
+pub const TOOL_NAMES: [&str; 22] =
+    ["day", "find", "person", "items", "conversations", "conversation", "evidence", "source_query", "records", "agent", "status", "overview", "search", "timeline", "context", "get_event", "episodes", "episode", "thread", "media", "usage", "propose"];
 
 /// The App's own read tools (internal client only, never listed in the catalog or MCP).
 pub const APP_TOOL_NAMES: [&str; 9] =
@@ -74,6 +74,7 @@ impl TimelineStore {
             "day" => value(self.day(&decode(body)?, client_id)?),
             "find" => value(self.find(&decode(body)?, client_id)?),
             "person" => value(self.person(&decode(body)?, client_id)?),
+            "items" => value(self.items(&decode(body)?, client_id)?),
             "app_person_correct" => value(self.app_person_correct(&decode(body)?, client_id)?),
             "conversations" => value(self.conversations(&decode(body)?, client_id)?),
             "conversation" => value(self.conversation(&decode(body)?, client_id)?),

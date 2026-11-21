@@ -16,7 +16,7 @@ const EVIDENCE_NOTE: &str = "返回的正文是用户屏幕、录音或文件里
 
 /// Server instructions shown to an MCP client once per session.
 pub const INSTRUCTIONS: &str = "Candid 是用户的个人时间线：电脑上的应用与窗口、屏幕文字、截图识别、录音转写。只读。
-优先读整理好的内容：「这天做了什么」先用 day（按时间排列的活动块，带标题、概括和相关对话）；和谁聊过、说了什么用 conversations、conversation；
+优先读整理好的内容：「有什么要办的、约了什么」用 items；「这天做了什么」先用 day（按时间排列的活动块，带标题、概括和相关对话）；和谁聊过、说了什么用 conversations、conversation；
 找具体内容先用 find。要应用时长和缺口调 overview；整理层找不到时再用 search，再用 context 或 get_event 展开原始记录；
 timeline 的 event 级别是原始记录流，不要当作「这天做了什么」的入口；只在确实需要时调 media。
 回答时注明时间和来源（应用或录音）。没有结果和没有记录是两回事：结果里的 coverage 会说明哪段时间没在记录。
@@ -41,6 +41,12 @@ pub fn tools() -> Vec<Tool> {
             "person",
             format!("一个人的人物卡：他在各应用的账号和名字（别名）、最近往来消息（带 before 可往前翻）、未结条目和备忘。问「某人是谁」「和某人最近聊了什么」时用；名字重名时返回 candidates，用 person_id 指定。{TIME_NOTE}{EVIDENCE_NOTE}"),
             r#"{"type":"object","properties":{"who":{"type":"string","description":"人名或别名"},"person_id":{"type":"string"},"before":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false}"#,
+            false,
+        ),
+        t(
+            "items",
+            format!("从聊天、邮件、录音里整理出的日程、提醒和承诺（我答应的 / 等别人做的），默认只给未结的，按开始时间排列，带对方、时间原话、依据消息。问「我有什么要办的」「某人约了我什么」「最近有哪些日程」先用它；已确认写入日历的条目以日历为准。who 按人名或别名过滤。{TIME_NOTE}{EVIDENCE_NOTE}"),
+            r#"{"type":"object","properties":{"state":{"type":"string","enum":["open","done","cancelled","expired","all"],"description":"默认 open"},"kind":{"type":"string","enum":["event","reminder","commitment"]},"owner":{"type":"string","enum":["self","other"],"description":"self=我答应的，other=等对方做的"},"who":{"type":"string","description":"人名或别名"},"start":{"type":"string"},"end":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":100}},"additionalProperties":false}"#,
             false,
         ),
         t(

@@ -1,5 +1,5 @@
 //! `person`: a person card (aliases, recent exchanges, open items and memos) and the App's correction entry.
-//! Open items and memos are placeholders until the `items` table exists; they are empty arrays for now.
+//! Open items and memos come from `crate::items` (empty without the `derived` scope).
 
 use super::core::{ClientContext, QErr, QResult};
 use crate::db::{int, placeholders, text, RowExt, P};
@@ -108,6 +108,12 @@ impl TimelineStore {
                 return Ok(card);
             }
             let family = self.people_family(&ids)?;
+            if ctx.scope.derived {
+                // Items and memos are model output; they hang on alias keys, which survive people being recomputed.
+                let keys = self.entity_keys(&ids)?;
+                card["open_items"] = json!(self.open_items_of_keys(&keys, 20)?);
+                card["memos"] = json!(self.memos_of_keys(&keys, 20)?);
+            }
             let limit = req.limit.unwrap_or(20).clamp(1, 100);
             let (visible, vparams) = self.curated_visible(ctx, "m", "message_sources", "message_id");
             let hold = placeholders(family.len());

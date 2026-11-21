@@ -300,6 +300,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         let _ = s.curated_sync();
         let _ = s.people_sync();
         if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
+        if s.items_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
         let _ = s.automation_scan();
         // Kinds that hit their daily limit this round; their remaining jobs are skipped without preparing.
@@ -477,7 +478,18 @@ fn call_once(store: &SharedStore, r: &Value, audio: Option<Vec<u8>>) -> Result<V
 }
 fn execute_workflow(store: &SharedStore, r: &Value) -> Result<Value, String> {
     if r["speech"] != true {
-        return call_once(store, r, None);
+        let output = call_once(store, r, None)?;
+        // A reply that is not a JSON object gets one more try with the bad reply and a short instruction (plan §4.5).
+        if r["repair_json"] == true {
+            let reply = output.as_str().unwrap_or("");
+            if !crate::retry::extract_json(reply).is_some_and(|v| v.is_object()) {
+                let base = r.get("messages").filter(|v| !v.is_null()).cloned().unwrap_or(json!([{"role":"system","content":r["prompt"]},{"role":"user","content":r["content"]}]));
+                let mut again = r.clone();
+                again["messages"] = crate::retry::json_repair_messages(&base, reply);
+                return call_once(store, &again, None);
+            }
+        }
+        return Ok(output);
     }
     let path = std::path::Path::new(r["path"].as_str().ok_or("missing_source")?);
     let plan = crate::audio_chunks::AudioChunks::open(path)?;
