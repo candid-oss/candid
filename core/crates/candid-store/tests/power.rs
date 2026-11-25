@@ -1,4 +1,4 @@
-//! The power gate (power v1 §2.1, §3.1, §9.1): pace, report, staleness, thermal and Low Power Mode, the manual
+//! The power gate (power v1 §2.1, §3.1, §9.1): pace, report, thermal and Low Power Mode, the manual
 //! bypass, the app's own work, 「现在处理」 and the energy ledger. Synthetic data, fixed clock.
 mod common;
 use candid_store::fixtures::{temp_root, test_clock};
@@ -34,16 +34,17 @@ fn unknown_power_counts_as_battery_and_only_heavy_work_waits_in_saver() {
 }
 
 #[test]
-fn reports_go_stale_after_ten_minutes_and_declared_states_do_not() {
+fn a_report_holds_until_the_next_one() {
     let root = temp_root("power-stale");
     let now = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(fixtures::FIXED_NOW_MS));
     let clock = { let now = now.clone(); Clock::with(move || now.load(std::sync::atomic::Ordering::SeqCst), Zone::named("UTC").unwrap()) };
     let s = TimelineStore::open(&root, "candid/test", true, clock).unwrap();
     s.power_report(&json!({"external_power": true})).unwrap();
-    now.fetch_add(10 * 60_000, std::sync::atomic::Ordering::SeqCst);
-    assert_eq!(s.power_status().unwrap()["power_state"], "ac");
-    now.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    assert_eq!((s.power_status().unwrap()["power_state"].as_str(), s.power_status().unwrap()["reason"].as_str()), (Some("unknown"), Some("waiting_power")));
+    // No clock: a day later the report still holds (the app reports every change; the core lives only with it).
+    now.fetch_add(86_400_000, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!((s.power_status().unwrap()["power_state"].as_str(), s.power_status().unwrap()["stale"].as_bool()), (Some("ac"), Some(false)));
+    s.power_report(&json!({"external_power": false})).unwrap();
+    assert_eq!((s.power_status().unwrap()["power_state"].as_str(), s.power_status().unwrap()["reason"].as_str()), (Some("battery"), Some("waiting_power")));
     s.power_declare(Some(true)).unwrap();
     now.fetch_add(86_400_000, std::sync::atomic::Ordering::SeqCst);
     assert_eq!(s.power_status().unwrap()["power_state"], "ac");

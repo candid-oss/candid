@@ -17,8 +17,6 @@ use serde_json::{json, Value};
 
 pub const STATE_KEY: &str = "power.state/1";
 pub const PACE_KEY: &str = "power.pace/1";
-/// A report older than this is unknown, and unknown counts as battery.
-pub const STALE_MS: i64 = 10 * 60_000;
 pub const PACES: [&str; 3] = ["anytime", "saver", "manual"];
 pub const DEFAULT_PACE: &str = "saver";
 /// Waiting reasons the gate gives; the pending-job query re-checks them whenever the gate changes.
@@ -43,7 +41,9 @@ impl TimelineStore {
 
     /// Stores a report from the platform layer (or `candid serve --power`). Fields: `external_power: bool|null`,
     /// `battery_percent: int|null`, `low_power_mode: bool`, `thermal: nominal|fair|serious|critical|null`,
-    /// `idle_seconds: int|null`; `declared: true` (command line only) never goes stale. Returns the status and
+    /// `idle_seconds: int|null`; `declared: true` marks a `candid serve --power` declaration. A report holds until
+    /// the next one: the app reports on every change and the core lives only as long as the app, so no clock is
+    /// involved and nothing has to wake up to notice a report getting old. Returns the status and
     /// whether the gate's decision changed (the caller then wakes the background worker).
     pub fn power_report(&self, v: &Value) -> Result<Value> {
         let invalid = |what: &str| TimelineError::InvalidInput(format!("电源状态无效：{what}"));
@@ -106,7 +106,7 @@ impl TimelineStore {
         Ok(status)
     }
 
-    /// The stored report plus `pace`, `stale`, `power_state` (`ac`, `battery`, `unknown`), `heavy_allowed` and the
+    /// The stored report plus `pace`, `stale` (nothing reported yet), `power_state` (`ac`, `battery`, `unknown`), `heavy_allowed` and the
     /// `reason` heavy work waits for (`waiting_power`, `waiting_thermal`, `waiting_manual`, or null).
     pub fn power_status(&self) -> Result<Value> {
         let mut state: Value = self.power_meta(STATE_KEY)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_else(|| {
@@ -122,8 +122,9 @@ impl TimelineStore {
         Ok(state)
     }
 
+    /// Nothing reported or declared yet; unknown counts as battery.
     fn power_stale(&self, state: &Value) -> bool {
-        state["declared"] != true && state["reported_ms"].as_i64().is_none_or(|t| self.clock.now_ms() - t > STALE_MS)
+        state["declared"] != true && state["reported_ms"].is_null()
     }
 
     /// `ac`, `battery` or `unknown` right now; stored on each job when it runs.

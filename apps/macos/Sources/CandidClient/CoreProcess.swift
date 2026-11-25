@@ -123,11 +123,13 @@ public struct CoreLaunch: Sendable, Equatable {
         var failures = 0
         while !Task.isCancelled && !stopping {
             if let health = try? await channel.health(), health.ok {
-                // Someone else's core (another instance of the App): use it while it answers.
+                // Someone else's core (another instance of the App): use it while it answers. Its change feed stays open
+                // until that core goes away, so following it replaces polling its health.
                 state = .running(pid: health.pid, owned: false)
-                while !Task.isCancelled && !stopping, (try? await channel.health()) != nil {
-                    try? await Task.sleep(for: .seconds(2))
-                }
+                let followed = ContinuousClock.now
+                for await _ in channel.events() where Task.isCancelled || stopping { break }
+                // A feed refused at once (too many subscribers) must not become a busy loop.
+                if ContinuousClock.now - followed < .seconds(2) { try? await Task.sleep(for: .seconds(2)) }
                 continue
             }
             guard FileManager.default.isExecutableFile(atPath: launch.executable.path) else {

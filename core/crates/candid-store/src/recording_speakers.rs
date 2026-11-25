@@ -80,11 +80,15 @@ impl TimelineStore {
         self.job_command(&json!({"action":"enqueue","kind":RECORDING_JOB,"feature":"transcribe","input_ref":id,"config_version":config}))
     }
 
-    /// An explicit request to transcribe again (button, speaker settings): queues, or restarts a finished job.
+    /// An explicit request to transcribe again (button, speaker settings): queues, or restarts a finished job. The
+    /// user asked for it, so it is a manual run (power v1 §2.2): it passes the power gate, never authorization,
+    /// sources or daily limits.
     pub(crate) fn rerun_recording(&self, id: &str, mode: Option<&str>) -> Result<Value> {
         let mode = mode.map(str::to_string).unwrap_or_else(|| self.recording_mode(id));
         let job = self.enqueue_recording(id, &mode)?;
-        if matches!(job["state"].as_str(), Some("done"|"failed"|"cancelled")) { self.job_command(&json!({"action":"restart","id":job["id"]})) } else { Ok(job) }
+        let job = if matches!(job["state"].as_str(), Some("done"|"failed"|"cancelled")) { self.job_command(&json!({"action":"restart","id":job["id"]}))? } else { job };
+        self.job_run_now(&json!({"id": job["id"]}))?;
+        self.job_command(&json!({"action":"get","id":job["id"]}))
     }
 
     /// The mode the recording was last transcribed in, else the automatic setting (conversation by default).

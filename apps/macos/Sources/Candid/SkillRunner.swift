@@ -3,6 +3,8 @@ import CandidLocalization
 import CandidClient
 
 /// App lifetime worker; skill jobs survive page changes. The core owns leases, permission checks and deduplication.
+/// Idle, it waits for the change feed (a queued run is a data change); only while a run holds its lease does it
+/// wake every 10 s, to renew it.
 @MainActor final class SkillRunner {
     static let shared = SkillRunner()
     private let channel: () -> LocalChannel?
@@ -14,17 +16,25 @@ import CandidClient
     private var stopping = false
     private var finishing = false
     private let skills: () -> [AISkill]
+    private let changes: () -> AsyncStream<Int>
     init(channel: @escaping () -> LocalChannel? = { TimelineService.shared.channel }, agent: AIChatAgent? = nil,
          notifier: AutomationNotifying = AutomationNotifier.shared,
-         skills: @escaping () -> [AISkill] = { AISkill.load(from: AISkill.folders(for: .resolved())) }) {
+         skills: @escaping () -> [AISkill] = { AISkill.load(from: AISkill.folders(for: .resolved())) },
+         changes: @escaping () -> AsyncStream<Int> = { TimelineService.shared.changes() }) {
         self.channel = channel; self.agent = agent ?? PiAgent(channel: channel)
-        self.notifier = notifier; self.skills = skills
+        self.notifier = notifier; self.skills = skills; self.changes = changes
         self.agent.onEvent = { [weak self] in self?.receive($0) }
     }
     func runLoop() async {
+        var feed = changes().makeAsyncIterator()
         while !Task.isCancelled {
             await tick()
-            try? await Task.sleep(for: .seconds(10))
+            if active != nil {
+                // The lease heartbeat: only while a run is in progress.
+                try? await Task.sleep(for: .seconds(10))
+            } else if await feed.next() == nil {
+                break
+            }
         }
         await agent.stop()
     }

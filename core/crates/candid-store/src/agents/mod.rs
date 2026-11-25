@@ -157,13 +157,31 @@ fn failure(code: &str) -> TimelineError {
     TimelineError::InvalidInput(code.into())
 }
 fn files(c: &AgentConsent) -> Result<Vec<PathBuf>> { Ok(file_page(c)?.0) }
-/// Enumeration itself is bounded, including non-transcript entries and directories.
+/// The last walk of an agent's folders: every folder it read with that folder's modification time, the transcript
+/// files found, and whether the walk hit its cap.
+type Listing = (Vec<(PathBuf, Option<std::time::SystemTime>)>, Vec<PathBuf>, bool);
+fn listings() -> &'static std::sync::Mutex<std::collections::HashMap<String, Listing>> {
+    static L: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, Listing>>> = std::sync::OnceLock::new();
+    L.get_or_init(Default::default)
+}
+fn modified(p: &Path) -> Option<std::time::SystemTime> {
+    fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+fn max_depth(c: &AgentConsent) -> usize {
+    if c.agent == "codex" { 8 } else { 2 }
+}
+/// Transcript files under the consented folders, newest first. Enumeration itself is bounded, including
+/// non-transcript entries and directories. A folder's modification time moves when an entry is added, removed or
+/// renamed in it, so while no folder read last time has moved the previous listing is reused without reading any
+/// directory (appends to a file are found by its own size and time, see `sync_agent`).
 fn file_page(c: &AgentConsent) -> Result<(Vec<PathBuf>, bool)> {
     c.require_read()?;
     // Folders below the known layout (Claude Code keeps subagent sessions one level down) are not the person's
     // conversations: they are skipped, never a reason to stop the whole source.
-    fn visit(p: &Path, depth: usize, max: usize, out: &mut Vec<PathBuf>, remaining: &mut usize, limited: &mut bool) -> Result<()> {
+    fn visit(p: &Path, depth: usize, max: usize, out: &mut Vec<PathBuf>, dirs: &mut Vec<(PathBuf, Option<std::time::SystemTime>)>, remaining: &mut usize, limited: &mut bool) -> Result<()> {
         if depth > max { return Ok(()); }
+        // Taken before reading, so an entry added meanwhile moves it again for the next pass.
+        dirs.push((p.to_path_buf(), modified(p)));
         if !p.exists() { return Ok(()); }
         for e in fs::read_dir(p).map_err(|_| failure("unreadable"))? {
             if *remaining == 0 { *limited = true; break; }
@@ -171,18 +189,43 @@ fn file_page(c: &AgentConsent) -> Result<(Vec<PathBuf>, bool)> {
             let e = e.map_err(|_| failure("unreadable"))?;
             let ft = e.file_type().map_err(|_| failure("unreadable"))?;
             if ft.is_dir() && !e.file_name().to_string_lossy().starts_with('.') {
-                visit(&e.path(), depth + 1, max, out, remaining, limited)?;
+                visit(&e.path(), depth + 1, max, out, dirs, remaining, limited)?;
             } else if ft.is_file() && e.path().extension().is_some_and(|x| x == "jsonl") { out.push(e.path()); }
         }
         Ok(())
     }
-    // Listing is cheap; the cap only guards against pointing a source at a huge tree by mistake.
-    let mut out = vec![]; let mut remaining = 50_000; let mut limited = false;
-    for root in c.roots().into_iter().take(32) { visit(&root, 1, if c.agent == "codex" { 8 } else { 2 }, &mut out, &mut remaining, &mut limited)?; }
-    limited |= c.roots().len() > 32;
-    out.sort(); out.dedup();
-    out.sort_by_key(|p| std::cmp::Reverse(fs::metadata(p).and_then(|m|m.modified()).ok()));
+    let roots = c.roots();
+    let key = format!("{}\u{1f}{:?}", c.agent, roots);
+    let cached = listings().lock().unwrap_or_else(|p| p.into_inner()).get(&key)
+        .filter(|(dirs, ..)| dirs.iter().all(|(d, m)| modified(d) == *m))
+        .map(|(_, files, limited)| (files.clone(), *limited));
+    let (mut out, limited) = match cached {
+        Some(listing) => listing,
+        None => {
+            // Listing is cheap; the cap only guards against pointing a source at a huge tree by mistake.
+            let mut out = vec![]; let mut dirs = vec![]; let mut remaining = 50_000; let mut limited = false;
+            for root in roots.iter().take(32) { visit(root, 1, max_depth(c), &mut out, &mut dirs, &mut remaining, &mut limited)?; }
+            limited |= roots.len() > 32;
+            out.sort(); out.dedup();
+            listings().lock().unwrap_or_else(|p| p.into_inner()).insert(key, (dirs, out.clone(), limited));
+            (out, limited)
+        }
+    };
+    // Each file's time is read once (a plain sort reads it on every comparison).
+    out.sort_by_cached_key(|p| std::cmp::Reverse(modified(p)));
     Ok((out, limited))
+}
+/// Whether `path` is a transcript file the walk in [`file_page`] would list for this consent.
+fn listed(c: &AgentConsent, path: &Path) -> bool {
+    if path.extension().is_none_or(|x| x != "jsonl") {
+        return false;
+    }
+    c.roots().iter().any(|root| {
+        let Ok(rest) = path.strip_prefix(root) else { return false };
+        let parts: Vec<_> = rest.components().collect();
+        // depth 1 is the root itself: a file directly in it has one component, and so on.
+        !parts.is_empty() && parts.len() <= max_depth(c) && parts[..parts.len() - 1].iter().all(|p| !p.as_os_str().to_string_lossy().starts_with('.'))
+    })
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

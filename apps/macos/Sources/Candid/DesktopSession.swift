@@ -44,6 +44,7 @@ final class DesktopSession {
     private(set) var error: String?
     private(set) var notice: String?
     private(set) var statistics = DesktopStatistics()
+    @ObservationIgnored private var statisticsLoaded: Date?
     private(set) var systemRows: [DesktopInfoRow] = []
     private(set) var applications: [DesktopApplication] = []
     private(set) var allowedBundleIDs: Set<String> = []
@@ -1314,8 +1315,16 @@ final class DesktopSession {
             try? await Task.sleep(for: .seconds(1))
             deliveryReloadPending = false
             if timelineVisible { await reload() }
-            else if let stats = try? await store?.statistics() { statistics = stats }
+            else { await refreshStatistics(maxAge: 60) }
         }
+    }
+    /// The library counts. While the timeline is hidden they only feed the screenshot storage limit and the settings
+    /// pages, so deliveries refresh them at most once a minute (each refresh counts the whole desktop library);
+    /// a settings page on screen asks with a shorter age.
+    func refreshStatistics(maxAge: TimeInterval = 5) async {
+        if let last = statisticsLoaded, Date().timeIntervalSince(last) < maxAge { return }
+        statisticsLoaded = Date()
+        if let stats = try? await store?.statistics(), stats != statistics { statistics = stats }
     }
     /// Only the selected activity's detail; the list and the timeline drawn from it stay as they are.
     private func scheduleDetail() {
@@ -1350,7 +1359,7 @@ final class DesktopSession {
             // Unchanged lists are not reassigned, so views drawn from them do not rebuild on every delivery.
             if items != timelineEvents { timelineEvents = items }
             if detail != selectedDetail { selectedDetail = detail }
-            updateLoadedRecords(); if stats != statistics { statistics = stats }
+            updateLoadedRecords(); statisticsLoaded = Date(); if stats != statistics { statistics = stats }
             selectedID = selection
             applyingList = false
             loadSelectedImage()

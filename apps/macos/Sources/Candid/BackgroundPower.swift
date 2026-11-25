@@ -54,22 +54,16 @@ final class BackgroundPower {
     private(set) var error: String?
 
     @ObservationIgnored private var observation: DesktopRecognitionPowerObservation?
-    @ObservationIgnored private var heartbeat: Task<Void, Never>?
     @ObservationIgnored private var lastReport: DesktopRecognitionPower?
 
     private var channel: LocalChannel? { TimelineService.shared.channel }
 
-    /// Starts reporting: on every power, thermal or Low Power Mode change, on wake, and every 5 minutes so the core's
-    /// copy never goes stale (it counts a report older than 10 minutes as unknown, which it treats as battery).
+    /// Starts reporting: once now, then on every power, thermal or Low Power Mode change, on wake, and whenever the
+    /// change feed reconnects. A report holds in the core until the next one, so there is no heartbeat.
     func start() {
         guard observation == nil, !AIRuntime.isTesting else { return }
         observation = DesktopRecognitionPowerObservation { [weak self] _ in Task { await self?.report() } }
-        heartbeat = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.report(force: true)
-                try? await Task.sleep(for: .seconds(300))
-            }
-        }
+        Task { [weak self] in await self?.report(force: true) }
     }
 
     /// The change feed said `hello` or `power`.

@@ -74,9 +74,7 @@ struct ScreenProcessingView: View {
             }
 
         }
-        .task {
-            guard refreshOnAppear else { return }
-            while !Task.isCancelled { await model.refresh(); try? await Task.sleep(for: .seconds(5)) }
-        }
+        // Refreshes when the core reports new data or job progress, not on a timer.
+        .refresh(on: TimelineService.shared.jobsVersion) { if refreshOnAppear { await model.refresh() } }
     }
 }

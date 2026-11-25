@@ -54,8 +54,8 @@
 
 ### 3.1 电源状态：平台层报，核心存
 
-- App 读 IOKit 与 `ProcessInfo`（已有 `DesktopRecognitionPowerSource`），在变化时和每 5 分钟向核心报一次 `power.report`：`{external_power, battery_percent, low_power_mode, thermal, idle_seconds}`。核心存一条当前状态（`store_meta`），带时间戳。
-- 超过 10 分钟没有更新视为「未知」；未知按用电池处理（保守）。命令行单独 `candid serve` 时可用 `--power ac|battery` 声明，默认未知。
+- App 读 IOKit 与 `ProcessInfo`（已有 `DesktopRecognitionPowerSource`），在启动、变化和重连时向核心报一次 `power.report`：`{external_power, battery_percent, low_power_mode, thermal, idle_seconds}`。核心存一条当前状态（`store_meta`），带时间戳。
+- 一次报告一直有效到下一次，不按时间过期：App 在每次变化时上报，核心随 App 存亡；按时间过期会迫使后台定时醒来检查。从未收到报告时视为「未知」，未知按用电池处理（保守）。命令行单独 `candid serve` 时可用 `--power ac|battery` 声明，默认未知。
 - 时间线里已有的 `system.state` 电源事件继续作为证据存在，闸门不读它们：证据层和控制状态分开。
 
 ### 3.2 一处决定：`feature_check` 加 `waiting_power`
@@ -177,7 +177,7 @@ quick 模式（只要文字）仍用小模型按分段，成本仍算「重」�
 **电源状态**（工作流 A 落地，B、C 只读）
 - 写：`TimelineStore::power_report(&Value)`，本地通道 `POST /local/power {"action":"report", ...}`；字段 `external_power: bool|null`、`battery_percent: int|null`、`low_power_mode: bool`、`thermal: "nominal"|"fair"|"serious"|"critical"|null`、`idle_seconds: int|null`。核心补 `reported_ms`。存在 `store_meta` 的 `power.state/1`。
 - 档位：`store_meta` 的 `power.pace/1`，取值 `anytime`、`saver`、`manual`，缺省 `saver`。`POST /local/power {"action":"set_pace","pace":...}`。
-- 读：`TimelineStore::power_status() -> Value`，`POST /local/power {"action":"status"}` 与 `candid power status`：上面的状态加 `pace`、`stale: bool`（超过 10 分钟未更新）、`heavy_allowed: bool`、`reason: null|"waiting_power"|"waiting_thermal"|"waiting_manual"`。
+- 读：`TimelineStore::power_status() -> Value`，`POST /local/power {"action":"status"}` 与 `candid power status`：上面的状态加 `pace`、`stale: bool`（尚未收到任何报告）、`heavy_allowed: bool`、`reason: null|"waiting_power"|"waiting_thermal"|"waiting_manual"`。
 - 许可：`TimelineStore::power_allows(cost: Cost, manual: bool) -> Result<()>`，拒绝时返回上面的 reason。`feature_check` 和平台层查询都只调它，这是全仓库唯一的「能不能花电」判断。
 - 状态或档位变化后，核心发布 change feed 事件 `power`，并唤醒后台线程（工作流 C 提供唤醒，A 调用：`Core::wake_background()`；C 合并前 A 可先用 `feed.publish("power")` 加已有的 `trigger.request()`）。
 

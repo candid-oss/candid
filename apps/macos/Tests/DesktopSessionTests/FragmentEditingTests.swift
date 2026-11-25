@@ -74,21 +74,27 @@ import CandidClient
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("synthetic-timeline-search-" + UUID().uuidString)
     defer { TestCore.finish(root) }
     let channel = try #require(try await TestCore.ready(root).channel)
-    // This fixture supplies its own quick transcript; don't race the default conversation worker.
-    _ = try await channel.send("POST", "/local/workflows", body: JSONSerialization.data(withJSONObject: ["action": "settings", "settings": ["version": 1, "automatic": false, "titles": false, "summary": false]])).checked()
+    // This fixture answers for the voice service itself, as an outside worker would: the recording's one automatic
+    // job (quick mode, text only) is queued by the core and held by the power gate (a test core has no power report,
+    // and unknown counts as battery), so the core's own worker never races this claim.
+    let models: [String: Any] = ["version": 1, "providers": [["provider_id": "voice", "name": "SYNTHETIC", "api": "other", "base_url": "http://127.0.0.1:1/v1", "destination": "on_device", "enabled": true]],
+                                 "models": [["provider_id": "voice", "model_id": "SYNTHETIC"]], "roles": [["role": "asr", "model": ["provider_id": "voice", "model_id": "SYNTHETIC"]]]]
+    _ = try await channel.send("POST", "/local/models", body: JSONSerialization.data(withJSONObject: ["action": "save", "config": models])).checked()
+    _ = try await channel.send("POST", "/local/workflows", body: JSONSerialization.data(withJSONObject: ["action": "settings", "settings": ["version": 1, "automatic": true, "mode": "quick", "titles": false, "summary": false]])).checked()
+    struct Job: Decodable { var id: String; var attempt: Int }
     let client = MediaLibraryClient(channel: channel)
     let wav = root.appendingPathComponent("SYNTHETIC.wav")
     try (RecordingJournal.wavHeader(frames: 8000, rate: 8000) + Data(repeating: 0, count: 16000)).write(to: wav)
     let audioID = UUID()
     _ = try await client.upload(.init(id: audioID, filename: "SYNTHETIC.wav", storedName: "SYNTHETIC.wav", kind: "audio", source: "import", occurredAt: Date(), needsReview: false), file: wav)
     _ = try await client.edit(audioID, title: "sharedneedle audio", notes: "noteneedle")
-    struct Job: Decodable { var id: String; var attempt: Int }
-    // The recording's one transcription job, answered as a local voice service would (quick mode, text only).
-    let models: [String: Any] = ["version": 1, "providers": [["provider_id": "voice", "name": "SYNTHETIC", "api": "other", "base_url": "http://127.0.0.1:1/v1", "destination": "on_device", "enabled": true]],
-                                 "models": [["provider_id": "voice", "model_id": "SYNTHETIC"]], "roles": [["role": "asr", "model": ["provider_id": "voice", "model_id": "SYNTHETIC"]]]]
-    _ = try await channel.send("POST", "/local/models", body: JSONSerialization.data(withJSONObject: ["action": "save", "config": models])).checked()
-    _ = try await channel.send("POST", "/local/media", body: JSONSerialization.data(withJSONObject: ["action": "recognize", "id": audioID.uuidString.lowercased(), "mode": "quick"])).checked()
-    let job: Job = try await channel.post("/local/jobs", body: ["action": CoreJSON.string("claim"), "owner": .string("SYNTHETIC"), "kind": .string("speech.recording")])
+    var claimed: Job?
+    for _ in 0..<100 where claimed == nil {
+        let data = try await channel.send("POST", "/local/jobs", body: JSONSerialization.data(withJSONObject: ["action": "claim", "owner": "SYNTHETIC", "kind": "speech.recording"])).checked()
+        claimed = try? JSONDecoder().decode(Job.self, from: data)
+        if claimed == nil { try await Task.sleep(for: .milliseconds(50)) }
+    }
+    let job = try #require(claimed, "the automatic recording job was never queued")
     let payload: [String: Any] = ["action": "result", "format": "candid-recording-result/1", "job_id": job.id, "attempt": job.attempt, "owner": "SYNTHETIC",
                                   "result": ["speaker_count": 0, "unresolved_segments": 0, "producer": ["model_id": "SYNTHETIC", "model_revision": "fixture/1"],
                                              "segments": [["start_seconds": 0.0, "end_seconds": 0.5, "text": "transcriptonlyneedle"]]]]

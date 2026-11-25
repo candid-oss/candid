@@ -645,7 +645,12 @@ impl TimelineStore {
         })
     }
 
+    /// Counts for the App's status line. Cached until a desktop record, a blob, a source policy or the freed-space
+    /// counters change; a repeated call with nothing written runs no SQL.
     pub fn app_stats(&self) -> Result<AppStats> {
+        if self.desktop_read_cache_current() {
+            if let Some(stats) = &self.desktop_read_cache.borrow().stats { return Ok(stats.clone()); }
+        }
         let sources = self.desktop_sources()?;
         self.refresh_desktop_read_cache(&sources)?;
         if let Some(stats) = &self.desktop_read_cache.borrow().stats { return Ok(stats.clone()); }

@@ -58,11 +58,10 @@ struct ManualWorkflowView: View {
         .task(id: workflows.selectedID) {
             guard refreshOnAppear else { return }
             workflows.drafts = [:]
-            while !Task.isCancelled {
-                await workflows.loadDrafts()
-                try? await Task.sleep(for: .seconds(3))
-            }
+            await workflows.loadDrafts()
         }
+        // A finished step changes the drafts: reload when the core reports job progress, not on a timer.
+        .refresh(on: TimelineService.shared.jobsVersion) { if refreshOnAppear { await workflows.loadDrafts() } }
     }
 
     private func action(_ title: String, step: String) -> some View {

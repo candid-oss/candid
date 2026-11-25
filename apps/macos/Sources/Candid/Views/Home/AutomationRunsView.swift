@@ -43,12 +43,8 @@ struct AutomationRunsView: View {
                 }
             }
         }
-        .task {
-            while !Task.isCancelled {
-                await model.refresh()
-                try? await Task.sleep(for: .seconds(5))
-            }
-        }
+        // Refreshes when the core reports a run changing state, not on a timer.
+        .refresh(on: TimelineService.shared.jobsVersion) { await model.refresh() }
         .task(id: requestedRun) {
             if let requestedRun {
                 selectedRun = requestedRun

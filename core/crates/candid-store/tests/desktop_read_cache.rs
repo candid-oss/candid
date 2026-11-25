@@ -68,3 +68,24 @@ fn annotations_policy_changes_and_client_revocation_apply_to_previously_cached_p
     assert!(s.app_activities(&request(None), &app).is_err());
     assert!(s.app_activity(&detail, &app).is_err());
 }
+
+#[test]
+fn repeated_stats_with_nothing_written_run_no_sql_and_a_new_record_refreshes_them() {
+    let fx = Fx::make("desktop-cache-stats");
+    let s = &fx.store;
+    let app = s.register_client("App", "internal", &ClientScope::unbounded(), None).unwrap().client_id;
+    s.ingest(&IngestBatch::events(&fx.source, vec![text_event("a", 1000, "SYNTHETIC words")])).unwrap();
+    assert_eq!(s.app_stats().unwrap().record_count, 1);
+    let before = s.statement_count();
+    for _ in 0..5 {
+        assert_eq!(s.app_stats().unwrap().record_count, 1);
+    }
+    assert_eq!(s.statement_count(), before, "cached stats asked SQLite again");
+    // Audited App reads write to access_log only; that does not invalidate the desktop answers.
+    s.app_activities(&request(None), &app).unwrap();
+    let after_read = s.statement_count();
+    s.app_stats().unwrap();
+    assert_eq!(s.statement_count(), after_read);
+    s.ingest(&IngestBatch::events(&fx.source, vec![text_event("b", 2000, "SYNTHETIC more")])).unwrap();
+    assert_eq!(s.app_stats().unwrap().record_count, 2);
+}

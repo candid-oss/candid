@@ -110,6 +110,9 @@ impl TimelineStore {
         )?;
         let busy = self.excerpt_busy_conversations()?;
         let mut queued = 0;
+        // When the clock alone makes a conversation ready (or an item expire), so the worker sleeps until then.
+        let mut next_due = self.items_next_expiry()?;
+        let mut due_at = |t: i64| next_due = Some(next_due.map_or(t, |n: i64| n.min(t)));
         for (conversation, max_seq, last, kind) in rows {
             let cursor = self.extract_cursor(&conversation)?;
             if max_seq <= cursor || self.automation_get(&format!("{QUEUED}{conversation}"))?.as_i64() == Some(max_seq) {
@@ -125,6 +128,11 @@ impl TimelineStore {
                 _ => false,
             };
             if !ready {
+                match kind.as_str() {
+                    "chat" if !busy.contains(&conversation) => due_at(last + CHAT_IDLE_MS),
+                    "meeting" => due_at(last + MEETING_SETTLE_MS),
+                    _ => {}
+                }
                 continue;
             }
             let version = self.extract_version(&conversation, cursor, max_seq)?;
@@ -132,7 +140,7 @@ impl TimelineStore {
             self.automation_put(&format!("{QUEUED}{conversation}"), &json!(max_seq))?;
             queued += 1;
         }
-        Ok(json!({"changed": queued > 0, "queued": queued}))
+        Ok(json!({"changed": queued > 0, "queued": queued, "next_due_ms": next_due}))
     }
 
     fn day_label(&self, ms: i64) -> String {

@@ -226,6 +226,10 @@ impl TimelineStore {
                     if job["kind"] != crate::RECORDING_JOB || job["owner"] != v["owner"] || job["attempt"] != v["attempt"] {
                         return Err(TimelineError::Denied("stale_job_lease".into()));
                     }
+                    // The work is already done: the power gate decides whether to start work, never whether to accept
+                    // its result, so the check runs as a manual one (authorization, sources and limits still apply).
+                    let mut job = job;
+                    job["manual"] = json!(true);
                     let request = self.workflow_prepare(&job)?;
                     let mut output = v["result"].clone();
                     if output.get("format").is_none() { output["format"] = json!("recording-speakers/2"); }

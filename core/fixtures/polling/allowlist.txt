@@ -1,0 +1,50 @@
+# Loops that sleep, and repeating timers, that are allowed (checked by core/crates/candid-service/tests/no_polling.rs).
+# Background work must wake on an event or a computed due time; a line here needs a reason that holds up:
+# a bounded wait or retry, a deadline the code computed, or something that runs only while visible or active.
+# Format: path | the trimmed source line | why it is acceptable
+
+# Core (Rust)
+core/crates/candid-service/src/background.rs | pending = self.signal.wait_timeout(pending, left).unwrap_or_else(|p| p.into_inner()).0; | The wake primitive itself: a condition-variable wait that ends on wake(), stop or the caller's deadline.
+core/crates/candid-service/src/background.rs | if !sleeper.sleep(timeout) { | The background loop's only sleep: until a wake, the earliest due time, or the 10-minute fallback.
+core/crates/candid-service/src/background.rs | fn sleep(&mut self, timeout: Duration) -> bool { | Definition of the loop's sleep (WakeSleep), not a loop.
+core/crates/candid-service/src/local.rs | requested = self.signal.wait_timeout(requested, left).unwrap_or_else(|p| p.into_inner()).0; | Sync thread wait: ends on a request (App folder watcher, sync now) or the full-pass fallback (10 minutes).
+core/crates/candid-service/src/workflows.rs | std::thread::sleep(Duration::from_millis(50)); | Interactive model call waiting up to 5 s for the interactive lane; bounded, only while a person waits.
+core/crates/candid-service/src/library_conversion.rs | std::thread::sleep(pause); | One-time conversion: a 5 ms pause between screenshots while converting a batch; ends with the batch.
+core/crates/candid-cli/src/main.rs | std::thread::sleep(Duration::from_millis(200)); | Non-macOS fallback of wait_for_stop (macOS waits in kqueue for signals and the parent's exit).
+core/crates/candid-cli/src/migrate.rs | std::thread::sleep(Duration::from_millis(200)); | Library migration waiting for the library lock, bounded by LOCK_WAIT; a one-off command.
+
+# Mac App (Swift)
+apps/macos/Sources/CandidClient/CoreProcess.swift | while process.isRunning && Date() < deadline { usleep(20_000) } | Stopping the core: waits at most `wait` seconds for it to exit.
+apps/macos/Sources/CandidClient/CoreProcess.swift | if ContinuousClock.now - followed < .seconds(2) { try? await Task.sleep(for: .seconds(2)) } | Another App's core refused our feed at once: back off instead of a busy loop.
+apps/macos/Sources/CandidClient/CoreProcess.swift | try? await Task.sleep(for: .milliseconds(100)) | Core startup: checks health until it answers, bounded by startupTimeout.
+apps/macos/Sources/CandidClient/CoreProcess.swift | try? await Task.sleep(for: .seconds(delay)) | Restart backoff after the core exited.
+apps/macos/Sources/DesktopDiagnostics/RecognitionEnergyProbe.swift | try await Task.sleep(for: .seconds(3)) | Diagnostics command run by hand to measure energy; never part of the App.
+apps/macos/Sources/DesktopDiagnostics/Diagnostics.swift | try await Task.sleep(for: .milliseconds(50)) | Diagnostics command run by hand; never part of the App.
+apps/macos/Sources/DesktopPlatform/DesktopSystemMonitor.swift | do { try await Task.sleep(for: .seconds(remaining)) } catch { break } | Sleeps to the computed end of the focus quiet period, then stops (a deadline, not a sampler).
+apps/macos/Sources/DesktopPlatform/DesktopInteractionTap.swift | do { try await Task.sleep(for: .seconds(remaining)) } catch { break } | Sleeps to the computed end of a scroll burst, then stops (a deadline, not a sampler).
+apps/macos/Sources/Candid/AIPageModel.swift | try? await Task.sleep(for: .seconds(10)) | Lease heartbeat of a foreground skill run, only while that run is active.
+apps/macos/Sources/Candid/SkillRunner.swift | try? await Task.sleep(for: .seconds(10)) | Lease heartbeat, only while a background skill run is active; idle, the runner waits for the change feed.
+apps/macos/Sources/Candid/MediaWorkspaceStore.swift | try? await Task.sleep(for: drawing ? .milliseconds(80) : .seconds(1)) | Only while recording: the waveform at 80 ms while one is on screen, otherwise the clock and silence check once a second.
+apps/macos/Sources/Candid/Recording/SegmentedRecordingWriter.swift | usleep(2_000) | Waits for the audio encoder to accept data, at most 2 s, only while recording.
+apps/macos/Sources/Candid/Recording/CallRecordingReminder.swift | try? await Task.sleep(for: .seconds(2)) | Only while a call app holds the microphone, a call is recorded or the prompt is up; otherwise it waits on Core Audio listeners.
+apps/macos/Sources/Candid/DesktopStore.swift | try? await Task.sleep(for: .milliseconds(100)) | First launch: waits for the core to read old preferences, bounded by a deadline.
+apps/macos/Sources/Candid/DesktopStore.swift | try? await Task.sleep(for: self.retryDelay(failures)) | Outbox delivery retry with growing delay, only while records wait and delivery fails.
+apps/macos/Sources/Candid/MediaLibraryClient.swift | try await Task.sleep(for: .milliseconds(150)) | Retries a media request while the core restarts, bounded to 15 s.
+apps/macos/Sources/Candid/PlaybackController.swift | do { try await Task.sleep(for: .milliseconds(200)) } catch { return } | Playback position, only while audio plays.
+apps/macos/Sources/Candid/System/RecordingControl.swift | try? await Task.sleep(for: .milliseconds(200)) | An intent or link launched the App: waits up to 10 s for the session to be ready.
+apps/macos/Sources/Candid/System/RecordingControl.swift | try? await Task.sleep(for: .milliseconds(250)) | Waits up to 10 s for the core channel when a shortcut asks for the day summary.
+apps/macos/Sources/Candid/PiAgent.swift | while process.isRunning && Date() < deadline { try? await Task.sleep(for: .milliseconds(30)) } | Stopping Pi: waits a bounded time for it to exit.
+apps/macos/Sources/Candid/Components.swift | while process.isRunning && Date() < deadline { usleep(10_000) } | Waits a bounded time for a helper process to exit.
+apps/macos/Sources/Candid/DesktopSession.swift | try await Task.sleep(for: .seconds(2)) | Send-proof check after typing in a chat app: at most 15 tries, only while recording.
+apps/macos/Sources/Candid/DesktopPeriodicSampler.swift | do { try await sleep(.seconds(interval)) } catch { return } | The capture's own sampling interval while recording is on (capture policy; its pace follows the power setting, workflow A).
+apps/macos/Sources/Candid/Views/Home/HomeStyle.swift | TimelineView(.animation(minimumInterval: 1 / 12)) { context in | Optional drifting background, off by default; SwiftUI runs it only while on screen.
+apps/macos/Sources/Candid/Views/Home/TimelineSceneScheduler.swift | do { try await Task.sleep(for: self.delay) } catch { break } | Rate limit between timeline rebuilds; the loop ends when no rebuild is queued.
+apps/macos/Sources/Candid/Views/Home/TimelineHomeView.swift | do { try await Task.sleep(for: wait) } catch { return } | Woken by the change feed; waits out the 5 s minimum between interaction reloads.
+apps/macos/Sources/Candid/Views/Home/TimelineHomeView.swift | do { try await Task.sleep(for: .seconds(20)) } catch { return } | Moves the "now" end of today's timeline, only while it is on screen and following the present.
+apps/macos/Sources/Candid/Views/Home/TimelineHomeView.swift | try? await Task.sleep(for: .milliseconds(33)) | Timeline playback animation, only while the user plays it.
+apps/macos/Sources/Candid/Views/DeviceControlView.swift | TimelineView(.periodic(from: .now, by: 0.25)) { context in | Live telemetry on the device page; SwiftUI runs it only while on screen.
+apps/macos/Sources/Candid/Views/Desktop/DesktopTimelineVisibility.swift | try? await Task.sleep(for: gap) | After the window is seen as hidden: six re-checks with doubling gaps (about 5 minutes), then none.
+apps/macos/Sources/Candid/QASnapshot.swift | timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in | QA launches only (--qa-snapshot-dir); never in a normal launch.
+apps/macos/Sources/ConsoleCore/ConsoleStore.swift | do { try await Task.sleep(nanoseconds: delay * 1_000_000_000) } catch { break } | Device console reconnect backoff (up to 8 s), only while the console view is on screen.
+apps/macos/Sources/ConsoleCore/DebugClient.swift | do { try await Task.sleep(for: .seconds(2)) } catch { return } | Heartbeat watchdog of the device console WebSocket, only while it is connected.
+apps/macos/Sources/ConsoleCore/MockService.swift | try await Task.sleep(for: .milliseconds(250)) | Synthetic device service for demo and tests; never talks to real hardware.

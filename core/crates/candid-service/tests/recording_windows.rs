@@ -380,3 +380,32 @@ fn a_restarted_job_resumes_after_its_saved_windows() {
     drop(core);
     let _ = std::fs::remove_dir_all(PathBuf::from(&dir));
 }
+
+/// Power v1 §2.2: on battery (no report: unknown counts as battery) automatic work waits, but a transcription the
+/// user asked for is a manual run, and a result an outside worker hands back is accepted whatever the power state.
+#[test]
+fn an_explicit_transcription_is_manual_and_outside_results_are_accepted_on_battery() {
+    let dir = std::env::temp_dir().join(format!("rw-manual-{}", &uuid_v4()[..8]));
+    std::fs::create_dir_all(&dir).unwrap();
+    let audio = dir.join("SYNTHETIC-30s.wav");
+    synthetic_wav(&audio, 30);
+    let store = TimelineStore::open(&dir.join("root"), "recording-manual", true, Clock::default()).unwrap();
+    store.model_command(&json!({"action":"save","config":voice_config("http://127.0.0.1:1/v1")})).unwrap();
+    store.workflow_command(&json!({"action":"settings","settings":{"version":1,"automatic":false,"titles":false,"summary":false}})).unwrap();
+    let id = uuid_v4();
+    store.media_command(&json!({"action":"import","id":id,"filename":"SYNTHETIC.wav","source":"import","kind":"audio","path":audio})).unwrap();
+    assert_eq!(store.power_status().unwrap()["reason"], "waiting_power");
+    store.media_command(&json!({"action":"recognize","id":id,"mode":"quick"})).unwrap();
+    let jobs = store.job_command(&json!({"action":"list"})).unwrap()["jobs"].as_array().unwrap().clone();
+    let job = jobs.iter().find(|j| j["kind"] == RECORDING_JOB).expect("the recording job");
+    assert_eq!((job["state"].as_str(), job["manual"].as_bool()), (Some("queued"), Some(true)), "{job}");
+    // An outside worker answers; the result is taken although the Mac is on battery.
+    let claimed = store.job_command(&json!({"action":"claim","id":job["id"],"kind":RECORDING_JOB,"owner":"SYNTHETIC"})).unwrap();
+    store.media_command(&json!({"action":"result","format":"candid-recording-result/1","job_id":claimed["id"],"attempt":claimed["attempt"],"owner":"SYNTHETIC",
+        "result":{"speaker_count":0,"unresolved_segments":0,"producer":{"model_id":"SYNTHETIC","model_revision":"fixture/1"},
+            "segments":[{"start_seconds":0.0,"end_seconds":1.0,"text":"SYNTHETIC 手动"}]}})).unwrap();
+    let item = store.media_command(&json!({"action":"item","id":id})).unwrap();
+    assert_eq!((item["processing_status"].as_str(), item["segments"][0]["text"].as_str()), (Some("ready"), Some("SYNTHETIC 手动")), "{item}");
+    drop(store);
+    let _ = std::fs::remove_dir_all(dir);
+}

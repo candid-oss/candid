@@ -42,11 +42,14 @@ impl TimelineStore {
 
     /// When the next part becomes a candidate (its grace period ends), if any is only waiting for time to pass.
     /// Parts of running recordings or with audio jobs in flight are not counted: their end is an event of its own.
-    pub fn media_compaction_next_ms(&self, grace_ms: i64) -> Result<Option<i64>> {
-        Ok(self.compaction_scan(grace_ms, usize::MAX)?.1)
+    /// Also whether any WAV is still waiting to be compacted at all: when none is, only a new audio original can
+    /// give compaction work, so the background loop stops watching jobs for it.
+    pub fn media_compaction_next_ms(&self, grace_ms: i64) -> Result<(Option<i64>, bool)> {
+        let (_, next, waiting) = self.compaction_scan(grace_ms, usize::MAX)?;
+        Ok((next, waiting))
     }
 
-    fn compaction_scan(&self, grace_ms: i64, limit: usize) -> Result<(Vec<CompactionCandidate>, Option<i64>)> {
+    fn compaction_scan(&self, grace_ms: i64, limit: usize) -> Result<(Vec<CompactionCandidate>, Option<i64>, bool)> {
         let now = self.clock.now_ms();
         let mut next: Option<i64> = None;
         let rows = self.db.query(
@@ -56,6 +59,7 @@ impl TimelineStore {
             &[text(COMPACT_AUDIO_MIME)],
             |r| (r.text(0), r.text(1), r.text(2), r.text(3), r.opt_text(4), r.opt_text(5)),
         )?;
+        let waiting = !rows.is_empty();
         let mut out = Vec::new();
         for (id, rel, digest, metadata, recording, part) in rows {
             if out.len() >= limit {
@@ -99,7 +103,7 @@ impl TimelineStore {
                 id,
             });
         }
-        Ok((out, next))
+        Ok((out, next, waiting))
     }
 
     /// Replaces a candidate's WAV with `encoded` (already verified by the caller to decode to the same frames):

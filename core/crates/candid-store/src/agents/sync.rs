@@ -44,6 +44,14 @@ impl TimelineStore {
         Ok(())
     }
     pub fn sync_agents(&self) -> Result<Value> {
+        self.sync_agents_only(None)
+    }
+    /// Like [`TimelineStore::sync_agents`], but reads only these files (the App reports what its folder watcher saw
+    /// change); paths outside every consented folder are ignored. No folder is listed.
+    pub fn sync_agent_files(&self, paths: &[PathBuf]) -> Result<Value> {
+        self.sync_agents_only(Some(paths))
+    }
+    fn sync_agents_only(&self, only: Option<&[PathBuf]>) -> Result<Value> {
         // Rebuildable query accelerator, independent of the database contract version.
         self.db.execute("CREATE INDEX IF NOT EXISTS agent_message_time_scan ON events(kind,json_extract(payload_json,'$.last_message_ms'),ingest_seq) WHERE kind='ai.prompt'",&[])?;
         let mut inserted = 0;
@@ -56,7 +64,11 @@ impl TimelineStore {
             }
             let sid=self.agent_source_id(agent)?.ok_or_else(||failure("missing_agent_source"))?;
             let before=self.db.first("SELECT last_sync_ms FROM sources WHERE source_id=?",&[text(&sid)],|r|r.opt_int(0))?.flatten();
-            let successful=match self.sync_agent(&c) {
+            let files: Option<Vec<PathBuf>> = only.map(|paths| paths.iter().filter(|p| listed(&c, p)).cloned().collect());
+            if files.as_ref().is_some_and(|f| f.is_empty()) {
+                continue;
+            }
+            let successful=match self.sync_agent(&c, files.as_deref()) {
                 Ok((i, r, errors)) => {
                     inserted += i;
                     revised += r;
@@ -71,7 +83,7 @@ impl TimelineStore {
         }
         Ok(json!({"inserted":inserted,"revised":revised,"issues":issues}))
     }
-    fn sync_agent(&self, c: &AgentConsent) -> Result<(usize, usize, Vec<Value>)> {
+    fn sync_agent(&self, c: &AgentConsent, only: Option<&[PathBuf]>) -> Result<(usize, usize, Vec<Value>)> {
         c.require_read()?;
         if !c.activity {
             return Err(TimelineError::Denied("activity_required".into()));
@@ -83,7 +95,10 @@ impl TimelineStore {
         // Files are ordered by modification time, not by conversation time.
         // Stage every fragment of a session before constructing prompts/work.
         let mut sessions: BTreeMap<String, (Session, Vec<IngestCursor>, CheckpointDelta)> = BTreeMap::new();
-        let (paths, limited) = file_page(c)?;
+        let (paths, limited) = match only {
+            Some(files) => (files.to_vec(), false),
+            None => file_page(c)?,
+        };
         if limited { return Err(failure("source_enumeration_incomplete")); }
         // Files unchanged since their last successful pass are skipped before any read: a pass over a large
         // history with nothing new stays cheap (the store is locked while it runs).

@@ -2,60 +2,38 @@
 //! §9.4: `.m4a`, mono, 48 kbps, the part's own sample rate). Encoding and verification run without the store lock;
 //! the store swaps the original only if the part is still idle, and deletes the WAV.
 use crate::router::{lock, SharedStore};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Quiet time after the last import or job before a part counts as processed.
 pub const GRACE: Duration = Duration::from_secs(10 * 60);
 const PER_PASS: usize = 8;
 
-/// Runs on events, not on a clock: once at start (parts left from before), and once `GRACE` after the media or
-/// the jobs changed (a recording stopped, its job chain ended, a file was imported). When a pass leaves parts that
-/// are only waiting out their grace period, it schedules itself once more for the moment the first one is due.
+/// One pass at a time. When it runs is decided by the background loop (`background.rs`: once at start, then once
+/// `GRACE` after media or jobs last changed, on the store clock); this only runs a pass and says when parts left
+/// waiting out their grace period become due, so the loop can sleep until then.
 pub(crate) struct Compactor {
-    due: Option<Instant>,
-    seen: Option<(i64, i64)>,
-    /// The one-time compression of derived JSON originals rides on the same background tick.
-    json: crate::json_compaction::Converter,
+    /// Whether some WAV may still be compacted. Until the first pass we do not know, so it starts true. When it is
+    /// false only a new audio original can bring work, so the loop watches the media tables alone, not every job.
+    pub waiting: bool,
 }
 
 impl Default for Compactor {
     fn default() -> Self {
-        Compactor { due: Some(Instant::now()), seen: None, json: Default::default() }
+        Compactor { waiting: true }
     }
 }
 
 impl Compactor {
-    pub fn tick(&mut self, store: &SharedStore) {
-        self.json.tick(store);
-        let now = Instant::now();
-        let revision = {
-            let s = lock(store);
-            (s.background_revision("workflows").unwrap_or(0), s.background_revision("jobs").unwrap_or(0))
-        };
-        if self.seen.is_some_and(|seen| seen != revision) {
-            self.due = Some(self.due.map_or(now + GRACE, |d| d.min(now + GRACE)));
-        }
-        self.seen = Some(revision);
-        if self.due.is_none_or(|d| d > now) {
-            return;
-        }
+    /// Runs one pass; returns the store-clock time a further pass is due, if any.
+    pub fn run(&mut self, store: &SharedStore) -> Option<i64> {
         let done = pass(store, GRACE, PER_PASS);
-        self.due = if done >= PER_PASS {
-            Some(now)
-        } else {
-            let next = lock(store).media_compaction_next_ms(GRACE.as_millis() as i64).ok().flatten();
-            let wall = lock(store).clock.now_ms();
-            next.map(|ms| now + Duration::from_millis((ms - wall).max(0) as u64))
-        };
-        // The pass itself changed media; that is not a new event to wait for.
         let s = lock(store);
-        self.seen = Some((s.background_revision("workflows").unwrap_or(0), s.background_revision("jobs").unwrap_or(0)));
-    }
-
-    /// When the next pass is due, for a worker loop that sleeps until its next event.
-    #[allow(dead_code)]
-    pub fn next_due(&self) -> Option<Instant> {
-        self.due
+        let (next, waiting) = s.media_compaction_next_ms(GRACE.as_millis() as i64).unwrap_or((None, true));
+        self.waiting = waiting;
+        if done >= PER_PASS {
+            return Some(s.clock.now_ms());
+        }
+        next
     }
 }
 

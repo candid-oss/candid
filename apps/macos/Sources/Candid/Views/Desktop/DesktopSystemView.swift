@@ -22,6 +22,7 @@ struct DesktopSystemView: View {
             } accessory: {
                 QuietButton(title: L("刷新"), action: session.refresh)
             }
+            .refresh(on: TimelineService.shared.dataVersion) { await session.refreshStatistics() }
             SettingsGroup(title: L("采样")) {
                 let d = session.samplingDiagnostics
                 value(L("触发信号"), "\(d.signals)"); HairlineDivider()
