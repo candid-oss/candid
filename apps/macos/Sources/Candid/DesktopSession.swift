@@ -10,6 +10,14 @@ import CandidClient
 
 @MainActor @Observable
 final class DesktopSession {
+    /// The 后台处理 pace that capture throttling follows (power v1 §5: no separate battery switch). Tests replace it.
+    @ObservationIgnored var capturePace: @MainActor () -> BackgroundPace = { BackgroundPower.shared.pace }
+
+    /// Sample sparingly on battery (or unknown power) unless the pace is 随时, and always in Low Power Mode.
+    private func capturesSparingly(onBattery: Bool?, lowPower: Bool?) -> Bool {
+        lowPower == true || (capturePace() != .anytime && onBattery != false)
+    }
+
     var records: [DesktopRecord] = []
     /// The day's activities as summaries. Selecting one never changes this list (the timeline is drawn from it).
     private(set) var timelineEvents: [DesktopTimelineEvent] = []
@@ -696,7 +704,7 @@ final class DesktopSession {
         periodicSampler.stop()
         guard !isDemo, isRecording, monitor.isSessionActive, preferences.periodicEnabled, desiredPreferences.periodicEnabled else { return }
         let state = monitor.snapshot()
-        let interval = preferences.samplingOptions.conserveBattery && (state.lowPower || state.onBattery != false) ? max(60, preferences.periodicInterval) : preferences.periodicInterval
+        let interval = capturesSparingly(onBattery: state.onBattery, lowPower: state.lowPower) ? max(60, preferences.periodicInterval) : preferences.periodicInterval
         periodicSampler.start(interval: interval) { [weak self] in await self?.samplePeriodicContext() }
     }
     func samplePeriodicContext() async {
@@ -813,7 +821,7 @@ final class DesktopSession {
             do { try await captureSleep(.milliseconds(750)) } catch { return }
             while !Task.isCancelled, expected == balancedCheckGeneration, let pending = pendingBalancedCheck {
                 let state = monitor.currentContextState()
-                let lowPower = preferences.samplingOptions.conserveBattery && (state.lowPower == true || state.onBattery != false)
+                let lowPower = capturesSparingly(onBattery: state.onBattery, lowPower: state.lowPower)
                 let delay = contentLimiter.nextAvailableDelay(now: captureClock(), automatic: true, interval: preferences.samplingOptions.minimumContentInterval,
                     lowPower: lowPower, automaticCapacity: preferences.samplingOptions.contentCapacity, source: samplingWindow)
                 if contextBusy || delay > 0 {
@@ -831,7 +839,7 @@ final class DesktopSession {
               effectiveWindowScope.contains(app.bundleID), app.bundleID != Bundle.main.bundleIdentifier,
               !contextBusy, store != nil else { return }
         let state = monitor.currentContextState()
-        let lowPower = preferences.samplingOptions.conserveBattery && (state.lowPower == true || state.onBattery != false)
+        let lowPower = capturesSparingly(onBattery: state.onBattery, lowPower: state.lowPower)
         guard !monitor.snapshot().thermalBlocked,
               contentLimiter.admit(now: captureClock(), automatic: true, interval: preferences.samplingOptions.minimumContentInterval, lowPower: lowPower, automaticCapacity: preferences.samplingOptions.contentCapacity, source: samplingWindow) else { return }
         let epoch = eventGate.currentEpoch()
@@ -1052,7 +1060,7 @@ final class DesktopSession {
                 let state = monitor.currentContextState()
                 var delay = max(0, pendingCaptureReadyAt - captureClock())
                 delay = max(delay, limiter.nextAvailableDelay(now: captureClock(), automatic: automatic,
-                    interval: preferences.minimumCaptureInterval, lowPower: preferences.samplingOptions.conserveBattery && (state.lowPower == true || state.onBattery != false),
+                    interval: preferences.minimumCaptureInterval, lowPower: capturesSparingly(onBattery: state.onBattery, lowPower: state.lowPower),
                     automaticCapacity: preferences.samplingOptions.imageCapacity, source: samplingWindow))
                 let cooldownDelay = cooldownUntil.timeIntervalSinceNow
                 delay = max(delay, cooldownDelay)
@@ -1108,7 +1116,7 @@ final class DesktopSession {
         }
         let source = automatic ? samplingWindow : nil
         let now = captureClock()
-        let lowPower = preferences.samplingOptions.conserveBattery && (state.lowPower || state.onBattery != false)
+        let lowPower = capturesSparingly(onBattery: state.onBattery, lowPower: state.lowPower)
         let interval = preferences.minimumCaptureInterval
         let capacity = preferences.samplingOptions.imageCapacity
         guard limiter.admit(now: now, automatic: automatic, interval: interval, lowPower: lowPower, automaticCapacity: capacity, source: source) else {

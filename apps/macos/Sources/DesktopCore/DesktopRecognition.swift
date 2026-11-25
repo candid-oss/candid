@@ -7,79 +7,57 @@ public enum DesktopRecognitionKind: String, CaseIterable, Codable, Sendable {
     public var title: String { self == .ocr ? L("OCR 文字识别") : L("VLM 图像分析") }
 }
 
+/// When screenshots are recognised automatically. *When power may be spent* is not decided here: the core's
+/// one power gate (后台处理 随时 / 省电 / 手动) answers that for every automatic run (power v1 §3.2).
 public enum DesktopRecognitionMode: String, CaseIterable, Codable, Sendable {
-    case manual, immediate, batch
+    case manual, immediate
 
     public var title: String {
         switch self {
         case .manual: L("仅手动")
         case .immediate: L("新截图自动处理")
-        case .batch: L("定时批处理")
         }
+    }
+
+    /// The removed scheduled-batch mode becomes automatic processing; the power gate now paces it.
+    public init(from decoder: any Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = raw == "manual" ? .manual : .immediate
     }
 }
 
 public struct DesktopRecognitionPolicy: Codable, Equatable, Sendable {
     public var mode: DesktopRecognitionMode = .manual
-    public var requireExternalPower = false
-    public var minimumBatteryPercent = 0
-    public var pluggedMinutes = 0
-    public var pauseInLowPower = true
-    public var batchIntervalMinutes = 30
-    public var batchLimit = 10
     public var includeHistory = false
     public var automaticSince = Date()
 
     public init() {}
 
     public var earliestAutomaticDate: Date { includeHistory ? .distantPast : automaticSince }
-    public var batchInterval: TimeInterval { TimeInterval(min(max(batchIntervalMinutes, 1), 1440) * 60) }
-    public var batchSize: Int { min(max(batchLimit, 1), 100) }
 }
 
-public struct DesktopRecognitionPower: Sendable {
+/// One reading of the Mac's power state, reported to the core (`POST /local/power` `report`).
+public struct DesktopRecognitionPower: Sendable, Equatable {
     public let onExternalPower: Bool?
     public let hasInternalBattery: Bool?
     public let batteryPercent: Int?
     public let lowPower: Bool
-    public let thermalBlocked: Bool
+    /// `nominal`, `fair`, `serious` or `critical`.
+    public let thermal: String
 
-    public init(onExternalPower: Bool?, hasInternalBattery: Bool?, batteryPercent: Int?, lowPower: Bool, thermalBlocked: Bool) {
+    public init(onExternalPower: Bool?, hasInternalBattery: Bool?, batteryPercent: Int?, lowPower: Bool, thermal: String) {
         self.onExternalPower = onExternalPower
         self.hasInternalBattery = hasInternalBattery
         self.batteryPercent = batteryPercent
         self.lowPower = lowPower
-        self.thermalBlocked = thermalBlocked
-    }
-}
-
-public struct DesktopRecognitionPowerGate: Sendable {
-    private var pluggedSince: TimeInterval?
-
-    public init() {}
-
-    public mutating func reset() { pluggedSince = nil }
-
-    public func remainingPluggedWait(policy: DesktopRecognitionPolicy, uptime: TimeInterval) -> TimeInterval? {
-        guard policy.requireExternalPower, let pluggedSince else { return nil }
-        let remaining = Double(policy.pluggedMinutes) * 60 - (uptime - pluggedSince)
-        return remaining > 0 ? remaining : nil
+        self.thermal = thermal
     }
 
-    public mutating func blockReason(policy: DesktopRecognitionPolicy, power: DesktopRecognitionPower, uptime: TimeInterval) -> String? {
-        if power.onExternalPower == true { pluggedSince = pluggedSince ?? uptime }
-        else { reset() }
-        if power.thermalBlocked { return L("等待 Mac 降温") }
-        if policy.pauseInLowPower && power.lowPower { return L("低电量模式已开启") }
-        if policy.requireExternalPower && power.onExternalPower != true { return L("等待接入外部电源") }
-        if policy.minimumBatteryPercent > 0 && power.hasInternalBattery != false {
-            guard let percent = power.batteryPercent else { return L("无法读取当前电量") }
-            if percent < policy.minimumBatteryPercent { return L("等待电量达到 %@%%", policy.minimumBatteryPercent) }
-        }
-        if let remaining = remainingPluggedWait(policy: policy, uptime: uptime) {
-            return L("还需持续插电约 %@ 分钟", Int(ceil(remaining / 60)))
-        }
-        return nil
+    /// The core's report fields. A Mac without an internal battery is on external power by definition.
+    public func report(idleSeconds: Int?) -> [String: Any] {
+        let external: Any = hasInternalBattery == false ? true : (onExternalPower.map { $0 as Any } ?? NSNull())
+        return ["action": "report", "external_power": external, "battery_percent": batteryPercent.map { $0 as Any } ?? NSNull(),
+                "low_power_mode": lowPower, "thermal": thermal, "idle_seconds": idleSeconds.map { $0 as Any } ?? NSNull()]
     }
 }
 

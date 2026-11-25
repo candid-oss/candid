@@ -171,8 +171,9 @@ impl TimelineStore {
         Ok(PowerGate::default())
     }
 
-    /// `POST /local/power`: `report`, `status`, `set_pace`, and `allows` for the platform layer
-    /// (`{"kind":"app.ocr","manual":false,"local":true}` → `{"allowed":bool,"reason":...}`).
+    /// `POST /local/power`: `report`, `status`, `set_pace`; for the platform layer `allows`
+    /// (`{"kind":"app.ocr","manual":false,"local":true}` → `{"allowed":bool,"reason":...}`) and `account`
+    /// (`{"kind":"app.ocr","subject":<screenshot id>,"cpu_ms":..,"wall_ms":..}`).
     pub fn power_command(&self, v: &Value) -> Result<Value> {
         match v["action"].as_str().unwrap_or("status") {
             "report" => self.power_report(v),
@@ -184,6 +185,11 @@ impl TimelineStore {
                 let cost = resolve(crate::job_priority::job_cost(kind), v["local"].as_bool());
                 let result = self.power_allows(cost, v["manual"] == true);
                 Ok(json!({"allowed": result.is_ok(), "reason": result.err().map(|e| e.code())}))
+            }
+            // The app's own run of an `app.` kind, for the energy ledger.
+            "account" => {
+                self.app_work_account(v["kind"].as_str().unwrap_or(""), v["subject"].as_str().unwrap_or(""), v["cpu_ms"].as_i64().unwrap_or(0), v["wall_ms"].as_i64().unwrap_or(0))?;
+                Ok(json!({"accounted": true}))
             }
             _ => Err(TimelineError::InvalidInput("未知电源操作".into())),
         }

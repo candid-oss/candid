@@ -41,6 +41,7 @@ struct AIFunctionSettingsView: View {
 
     var body: some View {
         SettingsPage(title: L("AI 功能")) {
+            BackgroundPaceSettings().padding(.bottom, Space.m)
             PillSwitcher(items: Tab.allCases.map { ($0, $0.title) }, selection: $tab).offset(x: -13)
             if let error = models.error { InlineMessage(kind: .error, text: error) }
             if tab == .features || tab == .permissions {

@@ -156,9 +156,12 @@ import CandidClient
                     if !AIRuntime.isTesting { Task { await ConnectorsModel().pushSecrets() } }
                     await self.refreshClients()
                     self.desktopStore?.coreChanged()
+                    BackgroundPower.shared.start()
+                    BackgroundPower.shared.coreChanged()
                     Task { await self.ensureCutover() }
                 case "status": self.refreshStatus()
                 case "clients": await self.refreshClients()
+                case "power": BackgroundPower.shared.coreChanged()
                 case "data": self.dataVersion += 1; self.refreshStatus(); self.desktopStore?.coreChanged()
                 default: break
                 }

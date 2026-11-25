@@ -42,6 +42,7 @@ There is no Developer ID signing or notarization yet. The build script signs wit
 - Capture settings and the write-ahead queue: `~/Library/Application Support/Candid/capture/`.
 - Every launch starts paused. Automatic screenshots are off until you enable them and choose apps. Password fields, private windows and excluded apps are skipped.
 - No telemetry. Nothing leaves the machine unless you configure a remote model provider for a feature.
+- Background processing (AI settings → Background Processing: Anytime / Power Saver / Manual) decides when screenshot recognition and every other automatic job may spend power. The app reports the Mac's power state to the core and asks the core's gate before its own OCR and vision runs; there are no per-feature power options ([power v1](../../docs/plans/power-v1.md)).
 
 ## Tests
 
@@ -65,6 +66,6 @@ SwiftUI 客户端：菜单栏状态、时间线、录音、截图与文字识别
 
 **签名**：目前没有 Developer ID 签名和公证。构建脚本用**固定的本地证书**签名（`script/local_signing.py`），首次构建时生成在 `~/Library/Application Support/Candid/Signing/`（目录 0700、文件 0600，不进 Git）。证书不变，重新构建后屏幕录制和辅助功能权限会保留。如果使用未签名的下载包，需要在「系统设置 → 隐私与安全性」里点「仍要打开」，并且每次更新后可能要重新授权。
 
-**数据与隐私**：时间线库在 `~/Library/Application Support/Candid/timeline/`（截图在 `blobs/sha256/`，入库时校验 hash）；采集设置与待写队列在 `Candid/capture/`。每次启动默认暂停；自动截图需要你主动开启并选择应用；密码框、隐私窗口和排除的应用不会记录。没有遥测；除非你为某个功能配置了远程模型，否则数据不会离开本机。
+**数据与隐私**：时间线库在 `~/Library/Application Support/Candid/timeline/`（截图在 `blobs/sha256/`，入库时校验 hash）；采集设置与待写队列在 `Candid/capture/`。每次启动默认暂停；自动截图需要你主动开启并选择应用；密码框、隐私窗口和排除的应用不会记录。没有遥测；除非你为某个功能配置了远程模型，否则数据不会离开本机。「AI 功能 → 后台处理」（随时 / 省电 / 手动）决定截图识别和其他自动作业何时可以花电：App 向核心上报电源状态，自己的 OCR 与视觉识别开跑前也问核心的闸门，没有各功能各自的电源选项（见[功耗 v1](../../docs/plans/power-v1.md)）。
 
 **测试**：`apps/macos/script/test.sh` 运行样式检查、录音恢复检查，构建核心并在隔离的运行目录下运行全部 Swift 测试。agent 相关测试需要先在 [agents/pi-extension](../../agents/README.md) 执行 `npm ci`。

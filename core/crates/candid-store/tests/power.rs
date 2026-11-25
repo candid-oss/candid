@@ -87,7 +87,7 @@ fn the_app_asks_by_registered_kind_and_its_runs_are_accounted() {
     assert_eq!(allows(json!({"action": "allows", "kind": "app.ocr"}))["allowed"], true, "system OCR is light");
     assert!(s.power_command(&json!({"action": "allows", "kind": "app.unregistered"})).is_err());
     s.app_work_account("app.ocr", "shot-1", 120, 300).unwrap();
-    s.app_work_account("app.ocr", "shot-1", 30, 100).unwrap();
+    s.power_command(&json!({"action": "account", "kind": "app.ocr", "subject": "shot-1", "cpu_ms": 30, "wall_ms": 100})).unwrap();
     let client = s.register_client("SYNTHETIC agent", "mcp", &ClientScope::unbounded(), None).unwrap().client_id;
     let summary = s.energy_summary(&json!({}), &client).unwrap();
     let kinds = &summary["days"][0]["kinds"];
