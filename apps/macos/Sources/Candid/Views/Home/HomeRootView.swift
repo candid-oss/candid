@@ -49,6 +49,7 @@ struct HomeRootView: View {
         .overlayPreferenceValue(WindowOverlayKey.self) { overlay in
             if let overlay { overlay.view.transition(.opacity) }
         }
+        .overlay { OnboardingGate(session: session, media: media) }
         .animation(Motion.snappy, value: overlayID)
         .onPreferenceChange(WindowOverlayKey.self) { overlayID = $0?.id }
         .ignoresSafeArea()

@@ -85,6 +85,7 @@ struct MenuBarPanel: View {
             if !alerts.isEmpty {
                 VStack(spacing: 6) { ForEach(alerts) { alert($0) } }
             }
+            HealthProblemsCard(excluding: Set(alerts.map(\.id)), openApp: openMain)
             if media.isRecording { recording.transition(.move(edge: .top).combined(with: .opacity)) }
             controls
             today
@@ -92,6 +93,7 @@ struct MenuBarPanel: View {
             HStack {
                 Button(L("打开 Candid")) { openMain() }.buttonStyle(.borderless)
                 Spacer()
+                Button { openMain(); OnboardingLinks.showGuide() } label: { Image(systemName: "questionmark.circle") }.buttonStyle(.borderless).help(L("打开引导"))
                 SettingsLink { Image(systemName: "gearshape") }.buttonStyle(.borderless).help(L("设置"))
                 Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }.buttonStyle(.borderless).help(L("退出 Candid"))
             }
