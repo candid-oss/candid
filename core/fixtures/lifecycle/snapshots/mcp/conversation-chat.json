@@ -1,0 +1,60 @@
+{
+  "arguments": {
+    "conversation_id": "chat:<hex>"
+  },
+  "result": {
+    "app": "微信",
+    "before": null,
+    "conversation_id": "chat:<hex>",
+    "kind": "chat",
+    "messages": [
+      {
+        "actor": "other",
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "周四下午三点开评审会可以吗？",
+        "time": "2026-11-23T10:00:20.000+08:00"
+      },
+      {
+        "actor": "self",
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "可以，我准时到",
+        "time": "2026-11-23T10:00:20.001+08:00"
+      },
+      {
+        "actor": "other",
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "报价单记得周三前发我",
+        "time": "2026-11-23T10:00:20.002+08:00"
+      },
+      {
+        "actor": "self",
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "好的，周三上午发你",
+        "time": "2026-11-23T10:02:20.000+08:00"
+      },
+      {
+        "actor": "other",
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "顺便把合同草稿也带上",
+        "time": "2026-11-23T10:02:20.001+08:00"
+      }
+    ],
+    "title": "张三"
+  },
+  "tool": "conversation"
+}

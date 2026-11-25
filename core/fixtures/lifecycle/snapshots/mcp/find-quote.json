@@ -1,0 +1,55 @@
+{
+  "arguments": {
+    "q": "报价单"
+  },
+  "result": {
+    "results": [
+      {
+        "actor": "self",
+        "conversation": {
+          "app": "claude_code",
+          "kind": "agent",
+          "title": "quote-tool"
+        },
+        "conversation_id": "agent:claude_code:lifecycle-s1",
+        "message_id": "ev:<id>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "帮我把 Q4 报价单 v3 整理成对比表格，列出和 v2 的差异",
+        "time": "2026-11-25T15:00:00.000+08:00",
+        "type": "message"
+      },
+      {
+        "actor": "other",
+        "conversation": {
+          "app": "邮件",
+          "kind": "mail",
+          "title": "Q4 报价确认"
+        },
+        "conversation_id": "mail:<id>",
+        "message_id": "ev:<id>",
+        "ref": "<id>",
+        "sender": "张三",
+        "text": "报价单已更新到 v3，请在周五（11 月 27 日）前确认，确认后我安排签合同。",
+        "time": "2026-11-25T09:10:00.000+08:00",
+        "type": "message"
+      },
+      {
+        "actor": "other",
+        "conversation": {
+          "app": "微信",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "报价单记得周三前发我",
+        "time": "2026-11-23T10:00:20.002+08:00",
+        "type": "message"
+      }
+    ]
+  },
+  "tool": "find"
+}

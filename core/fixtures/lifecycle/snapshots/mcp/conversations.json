@@ -1,0 +1,111 @@
+{
+  "arguments": {},
+  "result": {
+    "conversations": [
+      {
+        "app": "claude_code",
+        "conversation_id": "agent:claude_code:lifecycle-s1",
+        "first": "2026-11-25T15:00:00.000+08:00",
+        "kind": "agent",
+        "last": "2026-11-25T15:12:00.000+08:00",
+        "last_message": {
+          "actor": "self",
+          "conversation_id": "agent:claude_code:lifecycle-s1",
+          "message_id": "ev:<id>",
+          "ref": "<id>",
+          "sender": null,
+          "text": "再加一列：每项的负责人",
+          "time": "2026-11-25T15:12:00.000+08:00"
+        },
+        "messages": 2,
+        "participants": [],
+        "title": "quote-tool"
+      },
+      {
+        "app": "邮件",
+        "conversation_id": "mail:ev:<id>",
+        "first": "2026-11-25T10:15:00.000+08:00",
+        "kind": "mail",
+        "last": "2026-11-25T10:15:00.000+08:00",
+        "last_message": {
+          "actor": "other",
+          "conversation_id": "mail:ev:<id>",
+          "message_id": "ev:<id>",
+          "ref": "<id>",
+          "sender": "技术周刊",
+          "text": "本期内容：向量数据库选型、Rust 异步运行时对比。",
+          "time": "2026-11-25T10:15:00.000+08:00"
+        },
+        "messages": 1,
+        "participants": [
+          "技术周刊"
+        ],
+        "title": "本周技术周刊"
+      },
+      {
+        "app": "邮件",
+        "conversation_id": "mail:<id>",
+        "first": "2026-11-25T09:10:00.000+08:00",
+        "kind": "mail",
+        "last": "2026-11-25T09:40:00.000+08:00",
+        "last_message": {
+          "actor": "self",
+          "conversation_id": "mail:<id>",
+          "message_id": "ev:<id>",
+          "ref": "<id>",
+          "sender": "我",
+          "text": "收到，我周四评审会后回复你。",
+          "time": "2026-11-25T09:40:00.000+08:00"
+        },
+        "messages": 2,
+        "participants": [
+          "张三",
+          "我"
+        ],
+        "title": "Q4 报价确认"
+      },
+      {
+        "app": "录音",
+        "conversation_id": "rec:<id>",
+        "first": "2026-11-24T14:01:00.000+08:00",
+        "kind": "meeting",
+        "last": "2026-11-24T14:05:00.000+08:00",
+        "last_message": {
+          "actor": "unknown",
+          "conversation_id": "rec:<id>",
+          "message_id": "ev:<id>",
+          "ref": "<id>",
+          "sender": "张三",
+          "text": "好，那评审会还是周四下午三点。",
+          "time": "2026-11-24T14:05:00.000+08:00"
+        },
+        "messages": 3,
+        "participants": [
+          "张三",
+          "李四"
+        ],
+        "title": "周会"
+      },
+      {
+        "app": "微信",
+        "conversation_id": "chat:<hex>",
+        "first": "2026-11-23T10:00:20.000+08:00",
+        "kind": "chat",
+        "last": "2026-11-23T10:02:20.001+08:00",
+        "last_message": {
+          "actor": "other",
+          "conversation_id": "chat:<hex>",
+          "message_id": "sx:<hex>",
+          "ref": "<id>",
+          "sender": null,
+          "text": "顺便把合同草稿也带上",
+          "time": "2026-11-23T10:02:20.001+08:00"
+        },
+        "messages": 5,
+        "participants": [],
+        "title": "张三"
+      }
+    ]
+  },
+  "tool": "conversations"
+}

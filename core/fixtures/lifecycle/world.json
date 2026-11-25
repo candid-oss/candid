@@ -1,0 +1,56 @@
+{
+  "comment": "全流程测试（core/crates/candid-service/tests/lifecycle.rs）的固定假数据。三天，Asia/Shanghai。所有人名、邮箱、内容都是编的。screen.shot 带 ocr 时，加载器会补一张合成截图和一条 image.text 子记录。",
+  "time_zone": "Asia/Shanghai",
+  "days": ["2026-11-23", "2026-11-24", "2026-11-25"],
+  "threads": [
+    {"source_key": "t-quote", "kind": "mail_thread", "title": "Q4 报价确认"}
+  ],
+  "events": [
+    {"day": 1, "at": "09:30", "source_key": "d1-notes-1", "kind": "screen.text", "app_name": "备忘录", "app_bundle_id": "com.apple.Notes", "title": "Q4 预算草稿",
+     "text": [{"field": "body", "content": "Q4 预算草稿\n差旅 3000 元\n设备 12000 元", "visible": true, "focus_distance": 0}]},
+    {"day": 1, "at": "09:34", "source_key": "d1-notes-2", "kind": "screen.text", "app_name": "备忘录", "app_bundle_id": "com.apple.Notes", "title": "Q4 预算草稿",
+     "text": [{"field": "body", "content": "Q4 预算草稿\n差旅 3000 元\n设备 15000 元（含显示器）", "visible": true, "focus_distance": 0}]},
+
+    {"day": 1, "at": "10:00", "source_key": "d1-wx-text-1", "kind": "screen.text", "app_name": "微信", "app_bundle_id": "com.tencent.xinWeChat", "title": "微信",
+     "text": [{"field": "body", "content": "微信\n张三\n周四下午三点开评审会可以吗？", "visible": true, "focus_distance": 0}]},
+    {"day": 1, "at": "10:00:20", "source_key": "d1-wx-shot-1", "kind": "screen.shot", "app_name": "微信", "title": "微信",
+     "ocr": "通讯录\n张三\n周四下午三点开评审会可以吗？\n可以，我准时到\n报价单记得周三前发我"},
+    {"day": 1, "at": "10:02", "source_key": "d1-wx-text-2", "kind": "screen.text", "app_name": "微信", "app_bundle_id": "com.tencent.xinWeChat", "title": "微信",
+     "text": [{"field": "body", "content": "微信\n张三\n好的，周三上午发你", "visible": true, "focus_distance": 0}]},
+    {"day": 1, "at": "10:02:20", "source_key": "d1-wx-shot-2", "kind": "screen.shot", "app_name": "微信", "title": "微信",
+     "ocr": "通讯录\n张三\n报价单记得周三前发我\n好的，周三上午发你\n顺便把合同草稿也带上"},
+
+    {"day": 1, "at": "11:00", "source_key": "d1-web-1", "kind": "screen.text", "app_name": "Safari", "app_bundle_id": "com.apple.Safari", "title": "梯度压缩综述 - Safari", "url": "https://example.com/gradient-compression",
+     "text": [{"field": "body", "content": "梯度压缩综述\n分布式训练里，梯度压缩可以把通信量降低一个数量级，但会带来收敛变慢的问题。\n常见做法包括量化、稀疏化和误差反馈。", "visible": true, "focus_distance": 0}]},
+    {"day": 1, "at": "11:04", "source_key": "d1-web-2", "kind": "screen.text", "app_name": "Safari", "app_bundle_id": "com.apple.Safari", "title": "梯度压缩综述 - Safari", "url": "https://example.com/gradient-compression",
+     "text": [{"field": "body", "content": "梯度压缩综述\n误差反馈把被丢掉的梯度累积到下一轮，能补回大部分精度。\n实验表明 Top-k 稀疏化在 1% 密度下仍能收敛。", "visible": true, "focus_distance": 0}]},
+
+    {"day": 2, "at": "14:00", "until": "14:30", "source_key": "d2-rec", "kind": "audio.recording", "title": "周会", "payload": {"codec": "aac"}},
+    {"day": 2, "at": "14:01", "until": "14:02", "source_key": "d2-seg-1", "kind": "speech.segment", "parent_key": "d2-rec",
+     "payload": {"recording_event_id": "file-weekly", "speaker_label": "S1", "speaker_display_label": "张三"},
+     "text": [{"field": "transcript", "content": "合同终稿下周二之前发给法务，我来跟进。"}]},
+    {"day": 2, "at": "14:03", "until": "14:04", "source_key": "d2-seg-2", "kind": "speech.segment", "parent_key": "d2-rec",
+     "payload": {"recording_event_id": "file-weekly", "speaker_label": "S2", "speaker_display_label": "李四"},
+     "text": [{"field": "transcript", "content": "设备预算从一万二提到一万五，我周五前把采购单提交。"}]},
+    {"day": 2, "at": "14:05", "until": "14:06", "source_key": "d2-seg-3", "kind": "speech.segment", "parent_key": "d2-rec",
+     "payload": {"recording_event_id": "file-weekly", "speaker_label": "S1", "speaker_display_label": "张三"},
+     "text": [{"field": "transcript", "content": "好，那评审会还是周四下午三点。"}]},
+
+    {"day": 3, "at": "09:10", "source_key": "d3-mail-1", "kind": "mail.message", "actor": "other", "app_name": "邮件", "title": "Q4 报价确认", "thread_key": "t-quote",
+     "payload": {"from": {"name": "张三", "address": "zhangsan@example.com"}, "direction": "in", "level": "important"},
+     "text": [{"field": "subject", "content": "Q4 报价确认"}, {"field": "body", "content": "报价单已更新到 v3，请在周五（11 月 27 日）前确认，确认后我安排签合同。"}, {"field": "quoted", "content": "> 上一版报价单"}]},
+    {"day": 3, "at": "09:40", "source_key": "d3-mail-2", "kind": "mail.message", "actor": "self", "app_name": "邮件", "title": "Q4 报价确认", "thread_key": "t-quote",
+     "payload": {"from": {"name": "我"}, "direction": "out"},
+     "text": [{"field": "subject", "content": "Re: Q4 报价确认"}, {"field": "body", "content": "收到，我周四评审会后回复你。"}]},
+    {"day": 3, "at": "10:15", "source_key": "d3-mail-3", "kind": "mail.message", "actor": "other", "app_name": "邮件", "title": "本周技术周刊",
+     "payload": {"from": {"name": "技术周刊", "address": "news@example.org"}, "direction": "in"},
+     "text": [{"field": "subject", "content": "本周技术周刊"}, {"field": "body", "content": "本期内容：向量数据库选型、Rust 异步运行时对比。"}]},
+
+    {"day": 3, "at": "15:00", "source_key": "d3-ai-1", "kind": "ai.prompt",
+     "payload": {"agent": "claude_code", "session_ref": "agent:claude_code:lifecycle-s1", "message_ref": "d3-ai-1", "project": "/work/quote-tool", "followups": 0, "truncated": false, "origin": "transcript"},
+     "text": [{"field": "prompt", "content": "帮我把 Q4 报价单 v3 整理成对比表格，列出和 v2 的差异"}]},
+    {"day": 3, "at": "15:12", "source_key": "d3-ai-2", "kind": "ai.prompt",
+     "payload": {"agent": "claude_code", "session_ref": "agent:claude_code:lifecycle-s1", "message_ref": "d3-ai-2", "project": "/work/quote-tool", "followups": 0, "truncated": false, "origin": "transcript"},
+     "text": [{"field": "prompt", "content": "再加一列：每项的负责人"}]}
+  ]
+}

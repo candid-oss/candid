@@ -1,0 +1,40 @@
+{
+  "comment": "桩模型的固定回复。step 由请求本身判断（截图摘录 / 活动块 / 人物判断 / 条目抽取），when 里的字符串都出现在用户输入里才算匹配，按顺序取第一条。没有匹配的请求会让测试失败并列出输入。",
+  "rules": [
+    {"step": "excerpt", "when": ["可以，我准时到", "报价单记得周三前发我"],
+     "reply": {"kind": "chat", "title": "张三", "excerpt": "", "messages": [
+       {"from": "other", "sender": "", "text": "周四下午三点开评审会可以吗？"},
+       {"from": "me", "sender": "", "text": "可以，我准时到"},
+       {"from": "other", "sender": "", "text": "报价单记得周三前发我"}]}},
+    {"step": "excerpt", "when": ["好的，周三上午发你"],
+     "reply": {"kind": "chat", "title": "张三", "excerpt": "", "messages": [
+       {"from": "other", "sender": "", "text": "报价单记得周三前发我"},
+       {"from": "me", "sender": "", "text": "好的，周三上午发你"},
+       {"from": "other", "sender": "", "text": "顺便把合同草稿也带上"}]}},
+
+    {"step": "activity", "when": ["张三", "评审会"],
+     "reply": {"title": "和张三约评审会、催报价单", "summary": "张三约周四下午三点评审会，要求周三前发报价单和合同草稿；已答应周三上午发。", "citations": ["m1"]}},
+    {"step": "activity", "when": ["梯度压缩"],
+     "reply": {"title": "阅读梯度压缩综述", "summary": "读了梯度压缩的综述：量化、稀疏化与误差反馈。", "citations": ["x1"]}},
+
+    {"step": "people", "when": ["张三"],
+     "reply": {"results": [
+       {"id": 1, "verdict": "same", "reason": "都在谈 Q4 报价单和周四评审会"},
+       {"id": 2, "verdict": "same", "reason": "都在谈 Q4 报价单和周四评审会"},
+       {"id": 3, "verdict": "same", "reason": "都在谈 Q4 报价单和周四评审会"}]}},
+
+    {"step": "items", "when": ["对话：「张三」", "周四下午三点开评审会可以吗"],
+     "reply": {"ops": [
+       {"op": "create", "kind": "event", "owner": "self", "title": "和张三开评审会", "when_text": "周四下午三点", "start": "2026-11-26T15:00:00+08:00", "end": "2026-11-26T16:00:00+08:00", "all_day": false, "basis": [1, 2]},
+       {"op": "create", "kind": "commitment", "owner": "self", "title": "周三上午给张三发报价单和合同草稿", "when_text": "周三上午", "start": "2026-11-25T10:00:00+08:00", "all_day": false, "basis": [3, 4]}]}},
+    {"step": "items", "when": ["会议录音", "合同终稿"],
+     "reply": {"ops": [
+       {"op": "create", "kind": "commitment", "owner": "other", "title": "张三下周二前把合同终稿发法务", "when_text": "下周二之前", "start": "2026-12-01", "all_day": true, "basis": [1]},
+       {"op": "create", "kind": "commitment", "owner": "other", "title": "李四周五前提交设备采购单", "when_text": "周五前", "start": "2026-11-27", "all_day": true, "basis": [2]}]}},
+    {"step": "items", "when": ["邮件", "报价单已更新到 v3"],
+     "reply": {"ops": [
+       {"op": "create", "kind": "reminder", "owner": "self", "title": "周五前确认张三的 Q4 报价单 v3", "when_text": "周五（11 月 27 日）前", "start": "2026-11-27", "all_day": true, "basis": [1]}]}},
+    {"step": "items", "when": [],
+     "reply": {"ops": []}}
+  ]
+}

@@ -1,0 +1,334 @@
+{
+  "arguments": {
+    "who": "张三"
+  },
+  "result": {
+    "aliases": [
+      {
+        "alias": "zhangsan@example.com",
+        "key": "email:zhangsan@example.com",
+        "kind": "email",
+        "source": "model"
+      },
+      {
+        "alias": "wechat/张三",
+        "key": "handle:wechat/张三",
+        "kind": "handle",
+        "source": "rule"
+      },
+      {
+        "alias": "张三",
+        "key": "name:张三",
+        "kind": "name",
+        "source": "model"
+      }
+    ],
+    "auto_merged": [
+      {
+        "a": "email:zhangsan@example.com",
+        "a_person": {
+          "aliases": [
+            "email:zhangsan@example.com",
+            "handle:wechat/张三",
+            "name:张三"
+          ],
+          "key": "email:zhangsan@example.com",
+          "name": "张三",
+          "person_id": "ppl-<id>"
+        },
+        "at_ms": 1795601700000,
+        "b": "handle:wechat/张三",
+        "b_person": {
+          "aliases": [
+            "email:zhangsan@example.com",
+            "handle:wechat/张三",
+            "name:张三"
+          ],
+          "key": "handle:wechat/张三",
+          "name": "张三",
+          "person_id": "ppl-<id>"
+        },
+        "model": "stub-text",
+        "person_id": "ppl-<id>",
+        "reason": "都在谈 Q4 报价单和周四评审会（佐证：邮箱前缀 zhangsan 与名字「张三」吻合）"
+      },
+      {
+        "a": "email:zhangsan@example.com",
+        "a_person": {
+          "aliases": [
+            "email:zhangsan@example.com",
+            "handle:wechat/张三",
+            "name:张三"
+          ],
+          "key": "email:zhangsan@example.com",
+          "name": "张三",
+          "person_id": "ppl-<id>"
+        },
+        "at_ms": 1795601700000,
+        "b": "name:张三",
+        "b_person": {
+          "aliases": [
+            "email:zhangsan@example.com",
+            "handle:wechat/张三",
+            "name:张三"
+          ],
+          "key": "name:张三",
+          "name": "张三",
+          "person_id": "ppl-<id>"
+        },
+        "model": "stub-text",
+        "person_id": "ppl-<id>",
+        "reason": "都在谈 Q4 报价单和周四评审会（佐证：邮箱前缀 zhangsan 与名字「张三」吻合）"
+      }
+    ],
+    "before": null,
+    "memos": [],
+    "messages": [
+      {
+        "actor": "self",
+        "conversation": {
+          "app": "邮件",
+          "kind": "mail",
+          "title": "Q4 报价确认"
+        },
+        "conversation_id": "mail:<id>",
+        "message_id": "ev:<id>",
+        "ref": "<id>",
+        "sender": "我",
+        "text": "收到，我周四评审会后回复你。",
+        "time": "2026-11-25T09:40:00.000+08:00"
+      },
+      {
+        "actor": "other",
+        "conversation": {
+          "app": "邮件",
+          "kind": "mail",
+          "title": "Q4 报价确认"
+        },
+        "conversation_id": "mail:<id>",
+        "message_id": "ev:<id>",
+        "ref": "<id>",
+        "sender": "张三",
+        "text": "报价单已更新到 v3，请在周五（11 月 27 日）前确认，确认后我安排签合同。",
+        "time": "2026-11-25T09:10:00.000+08:00"
+      },
+      {
+        "actor": "unknown",
+        "conversation": {
+          "app": "录音",
+          "kind": "meeting",
+          "title": "周会"
+        },
+        "conversation_id": "rec:<id>",
+        "message_id": "ev:<id>",
+        "ref": "<id>",
+        "sender": "张三",
+        "text": "好，那评审会还是周四下午三点。",
+        "time": "2026-11-24T14:05:00.000+08:00"
+      },
+      {
+        "actor": "unknown",
+        "conversation": {
+          "app": "录音",
+          "kind": "meeting",
+          "title": "周会"
+        },
+        "conversation_id": "rec:<id>",
+        "message_id": "ev:<id>",
+        "ref": "<id>",
+        "sender": "张三",
+        "text": "合同终稿下周二之前发给法务，我来跟进。",
+        "time": "2026-11-24T14:01:00.000+08:00"
+      },
+      {
+        "actor": "other",
+        "conversation": {
+          "app": "微信",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "顺便把合同草稿也带上",
+        "time": "2026-11-23T10:02:20.001+08:00"
+      },
+      {
+        "actor": "self",
+        "conversation": {
+          "app": "微信",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "好的，周三上午发你",
+        "time": "2026-11-23T10:02:20.000+08:00"
+      },
+      {
+        "actor": "other",
+        "conversation": {
+          "app": "微信",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "报价单记得周三前发我",
+        "time": "2026-11-23T10:00:20.002+08:00"
+      },
+      {
+        "actor": "self",
+        "conversation": {
+          "app": "微信",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "可以，我准时到",
+        "time": "2026-11-23T10:00:20.001+08:00"
+      },
+      {
+        "actor": "other",
+        "conversation": {
+          "app": "微信",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "conversation_id": "chat:<hex>",
+        "message_id": "sx:<hex>",
+        "ref": "<id>",
+        "sender": null,
+        "text": "周四下午三点开评审会可以吗？",
+        "time": "2026-11-23T10:00:20.000+08:00"
+      }
+    ],
+    "name": "张三",
+    "open_items": [
+      {
+        "all_day": false,
+        "conversation": {
+          "app": "微信",
+          "conversation_id": "chat:<hex>",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "created": "2026-11-23T11:00:30.000+08:00",
+        "end": null,
+        "external_ref": null,
+        "in_calendar": false,
+        "item_id": "it-<hex>",
+        "kind": "commitment",
+        "owner": "self",
+        "person": {
+          "key": "handle:wechat/张三",
+          "name": "张三",
+          "person_id": "ppl-<id>"
+        },
+        "producer": "item-extract/1:stub-text",
+        "review": "candidate",
+        "sources": [
+          {
+            "message_id": "sx:<hex>",
+            "ref": "<id>"
+          },
+          {
+            "message_id": "sx:<hex>",
+            "ref": "<id>"
+          }
+        ],
+        "start": "2026-11-25T10:00:00.000+08:00",
+        "state": "open",
+        "title": "周三上午给张三发报价单和合同草稿",
+        "updated": "2026-11-23T11:00:30.000+08:00",
+        "user_fields": [],
+        "when_text": "周三上午"
+      },
+      {
+        "all_day": false,
+        "conversation": {
+          "app": "微信",
+          "conversation_id": "chat:<hex>",
+          "kind": "chat",
+          "title": "张三"
+        },
+        "created": "2026-11-23T11:00:30.000+08:00",
+        "end": "2026-11-26T16:00:00.000+08:00",
+        "external_ref": null,
+        "in_calendar": false,
+        "item_id": "it-<hex>",
+        "kind": "event",
+        "owner": "self",
+        "person": {
+          "key": "handle:wechat/张三",
+          "name": "张三",
+          "person_id": "ppl-<id>"
+        },
+        "producer": "item-extract/1:stub-text",
+        "review": "candidate",
+        "sources": [
+          {
+            "message_id": "sx:<hex>",
+            "ref": "<id>"
+          },
+          {
+            "message_id": "sx:<hex>",
+            "ref": "<id>"
+          }
+        ],
+        "start": "2026-11-26T15:00:00.000+08:00",
+        "state": "open",
+        "title": "和张三开评审会",
+        "updated": "2026-11-23T11:00:30.000+08:00",
+        "user_fields": [],
+        "when_text": "周四下午三点"
+      },
+      {
+        "all_day": true,
+        "conversation": {
+          "app": "邮件",
+          "conversation_id": "mail:<id>",
+          "kind": "mail",
+          "title": "Q4 报价确认"
+        },
+        "created": "2026-11-25T09:10:30.000+08:00",
+        "end": null,
+        "external_ref": null,
+        "in_calendar": false,
+        "item_id": "it-<hex>",
+        "kind": "reminder",
+        "owner": "self",
+        "person": {
+          "key": "email:zhangsan@example.com",
+          "name": "张三",
+          "person_id": "ppl-<id>"
+        },
+        "producer": "item-extract/1:stub-text",
+        "review": "candidate",
+        "sources": [
+          {
+            "message_id": "ev:<id>",
+            "ref": "<id>"
+          }
+        ],
+        "start": "2026-11-27T00:00:00.000+08:00",
+        "state": "open",
+        "title": "周五前确认张三的 Q4 报价单 v3",
+        "updated": "2026-11-25T09:10:30.000+08:00",
+        "user_fields": [],
+        "when_text": "周五（11 月 27 日）前"
+      }
+    ],
+    "person_id": "ppl-<id>",
+    "status": "candidate"
+  },
+  "tool": "person"
+}

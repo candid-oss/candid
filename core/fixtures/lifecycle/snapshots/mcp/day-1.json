@@ -1,0 +1,56 @@
+{
+  "arguments": {
+    "date": "2026-11-23"
+  },
+  "result": {
+    "blocks": [
+      {
+        "app": "备忘录",
+        "by": "rule",
+        "conversations": [],
+        "end": "2026-11-23T09:34:00.000+08:00",
+        "episode_id": "screen:<hex>",
+        "excerpts": [],
+        "start": "2026-11-23T09:30:00.000+08:00",
+        "summary": "09:30–09:34 在 备忘录 的「Q4 预算草稿」约 4 分钟。",
+        "title": "备忘录 · Q4 预算草稿",
+        "window": "Q4 预算草稿"
+      },
+      {
+        "app": "微信",
+        "by": "model",
+        "conversations": [
+          "chat:<hex>"
+        ],
+        "end": "2026-11-23T10:02:20.000+08:00",
+        "episode_id": "screen:<hex>",
+        "excerpts": [],
+        "start": "2026-11-23T10:00:00.000+08:00",
+        "summary": "张三约周四下午三点评审会，要求周三前发报价单和合同草稿；已答应周三上午发。",
+        "title": "和张三约评审会、催报价单",
+        "window": "微信"
+      },
+      {
+        "app": "Safari",
+        "by": "model",
+        "conversations": [],
+        "end": "2026-11-23T11:04:00.000+08:00",
+        "episode_id": "screen:<hex>",
+        "excerpts": [
+          "ax:<hex>"
+        ],
+        "start": "2026-11-23T11:00:00.000+08:00",
+        "summary": "读了梯度压缩的综述：量化、稀疏化与误差反馈。",
+        "title": "阅读梯度压缩综述",
+        "window": "梯度压缩综述 - Safari"
+      }
+    ],
+    "daily": [],
+    "note": "blocks 是按时间排列的活动块，by=rule 的块只有应用时长，没有内容概括；相关对话用 conversation 展开，摘录和消息用 evidence 核对出处；daily 是已有的天级汇总（录音日回顾）。",
+    "window": {
+      "end": "2026-11-24T00:00:00.000+08:00",
+      "start": "2026-11-23T00:00:00.000+08:00"
+    }
+  },
+  "tool": "day"
+}
