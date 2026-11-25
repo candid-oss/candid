@@ -80,6 +80,8 @@ class Models:
 
     def load(self):
         import time
+        if self.moss is not None and self.voice is not None:
+            return
         started = time.monotonic()
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -88,6 +90,10 @@ class Models:
         self.moss = load(MOSS_DIR, strict=True)
         self.load_voice()
         self.load_seconds = time.monotonic() - started
+
+    def unload(self):
+        self.moss = None
+        self.voice = None
 
     def load_voice(self):
         import onnxruntime as ort

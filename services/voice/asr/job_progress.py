@@ -1,16 +1,19 @@
-"""Optional per-process progress sink, enabled only by the service's isolated worker."""
-import json
-import os
-from pathlib import Path
-import time
+"""Progress and cancellation points for the inference running in this thread.
+
+A job installs a sink; `report()` at each chunk or window boundary forwards progress to it, and the sink raises
+`Cancelled` once the job was cancelled, so cancellation takes effect at the next boundary. Without a sink (plain
+requests) `report()` does nothing.
+"""
+import contextvars
+
+SINK = contextvars.ContextVar("candid_voice_progress", default=None)
+
+
+class Cancelled(Exception):
+    """The job was cancelled; raised at the next progress point."""
 
 
 def report(stage, completed_seconds=None, total_seconds=None):
-    path = os.environ.get('CANDID_VOICE_PROGRESS')
-    if not path:
-        return
-    value = {'stage': stage, 'updated_ms': int(time.time() * 1000)}
-    if completed_seconds is not None: value['completed_seconds'] = completed_seconds
-    if total_seconds is not None: value['total_seconds'] = total_seconds
-    target = Path(path); temp = target.with_suffix('.tmp')
-    temp.write_text(json.dumps(value)); temp.replace(target)
+    sink = SINK.get()
+    if sink is not None:
+        sink(stage, completed_seconds, total_seconds)

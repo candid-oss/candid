@@ -83,9 +83,15 @@ import CandidClient
     _ = try await client.upload(.init(id: audioID, filename: "SYNTHETIC.wav", storedName: "SYNTHETIC.wav", kind: "audio", source: "import", occurredAt: Date(), needsReview: false), file: wav)
     _ = try await client.edit(audioID, title: "sharedneedle audio", notes: "noteneedle")
     struct Job: Decodable { var id: String; var attempt: Int }
-    let _: Job = try await channel.post("/local/jobs", body: ["action": "enqueue", "kind": "speech.recognize", "input_ref": audioID.uuidString.lowercased(), "config_version": "external-api/1:quick"])
-    let job: Job = try await channel.post("/local/jobs", body: ["action": CoreJSON.string("claim"), "owner": .string("SYNTHETIC"), "kind": .string("speech.recognize")])
-    let payload: [String: Any] = ["action": "result", "job_id": job.id, "attempt": job.attempt, "owner": "SYNTHETIC", "mode": "quick", "result": ["producer": ["model_id": "SYNTHETIC", "revision": "fixture/1"], "segments": [["start_seconds": 0.0, "end_seconds": 0.5, "text": "transcriptonlyneedle"]]]]
+    // The recording's one transcription job, answered as a local voice service would (quick mode, text only).
+    let models: [String: Any] = ["version": 1, "providers": [["provider_id": "voice", "name": "SYNTHETIC", "api": "other", "base_url": "http://127.0.0.1:1/v1", "destination": "on_device", "enabled": true]],
+                                 "models": [["provider_id": "voice", "model_id": "SYNTHETIC"]], "roles": [["role": "asr", "model": ["provider_id": "voice", "model_id": "SYNTHETIC"]]]]
+    _ = try await channel.send("POST", "/local/models", body: JSONSerialization.data(withJSONObject: ["action": "save", "config": models])).checked()
+    _ = try await channel.send("POST", "/local/media", body: JSONSerialization.data(withJSONObject: ["action": "recognize", "id": audioID.uuidString.lowercased(), "mode": "quick"])).checked()
+    let job: Job = try await channel.post("/local/jobs", body: ["action": CoreJSON.string("claim"), "owner": .string("SYNTHETIC"), "kind": .string("speech.recording")])
+    let payload: [String: Any] = ["action": "result", "format": "candid-recording-result/1", "job_id": job.id, "attempt": job.attempt, "owner": "SYNTHETIC",
+                                  "result": ["speaker_count": 0, "unresolved_segments": 0, "producer": ["model_id": "SYNTHETIC", "model_revision": "fixture/1"],
+                                             "segments": [["start_seconds": 0.0, "end_seconds": 0.5, "text": "transcriptonlyneedle"]]]]
     _ = try await channel.send("POST", "/local/media", body: JSONSerialization.data(withJSONObject: payload)).checked()
 
     let png = root.appendingPathComponent("SYNTHETIC.png")

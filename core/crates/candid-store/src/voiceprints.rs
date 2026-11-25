@@ -12,12 +12,16 @@ impl TimelineStore {
         self.db.execute("INSERT INTO store_meta(key,value) VALUES(?,'1') ON CONFLICT(key) DO UPDATE SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT)",&[text(format!("voiceprints.authorization/1:{id}"))])
     }
     pub fn voiceprint_provider(&self) -> Result<Value> {
+        self.local_voice_provider("diarization")
+    }
+    /// The voice service assigned to `role`, accepted only on numeric loopback: it holds voiceprints and audio.
+    pub(crate) fn local_voice_provider(&self, role: &str) -> Result<Value> {
         let c = self.model_config()?;
         let a = c["roles"]
             .as_array()
             .into_iter()
             .flatten()
-            .find(|a| a["role"] == "diarization")
+            .find(|a| a["role"] == role)
             .ok_or_else(|| bad("请先在模型设置中选择多人语音服务"))?;
         let p = c["providers"]
             .as_array()

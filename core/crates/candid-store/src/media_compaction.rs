@@ -37,7 +37,18 @@ impl TimelineStore {
     /// speakers) is queued or running — a title or summary job reads text only and may wait indefinitely — and nothing about them changed for `grace_ms` (so a follow-up step, such as speakers after
     /// the last transcript, has been scheduled if it is going to be).
     pub fn media_compaction_candidates(&self, grace_ms: i64, limit: usize) -> Result<Vec<CompactionCandidate>> {
+        Ok(self.compaction_scan(grace_ms, limit)?.0)
+    }
+
+    /// When the next part becomes a candidate (its grace period ends), if any is only waiting for time to pass.
+    /// Parts of running recordings or with audio jobs in flight are not counted: their end is an event of its own.
+    pub fn media_compaction_next_ms(&self, grace_ms: i64) -> Result<Option<i64>> {
+        Ok(self.compaction_scan(grace_ms, usize::MAX)?.1)
+    }
+
+    fn compaction_scan(&self, grace_ms: i64, limit: usize) -> Result<(Vec<CompactionCandidate>, Option<i64>)> {
         let now = self.clock.now_ms();
+        let mut next: Option<i64> = None;
         let rows = self.db.query(
             "SELECT o.id,o.blob_path,o.digest,o.metadata,p.recording_id,p.metadata FROM media_objects o LEFT JOIN media_parts p USING(id)
              WHERE json_extract(o.metadata,'$.compact_to')=? AND json_extract(o.metadata,'$.mime_type')='audio/wav'
@@ -66,12 +77,17 @@ impl TimelineStore {
             let (pending, last_job) = self
                 .db
                 .first(
-                    "SELECT COUNT(CASE WHEN state IN ('queued','running') AND kind IN ('speech.recognize','workflow.speakers') THEN 1 END),COALESCE(MAX(updated_ms),0) FROM jobs WHERE input_ref IN (?,?)",
+                    "SELECT COUNT(CASE WHEN state IN ('queued','running') AND kind IN ('speech.recording','speech.recognize','workflow.speakers') THEN 1 END),COALESCE(MAX(updated_ms),0) FROM jobs WHERE input_ref IN (?,?)",
                     &[text(&id), text(&rid)],
                     |r| (r.int(0), r.int(1)),
                 )?
                 .unwrap_or((0, 0));
-            if pending > 0 || now - imported.max(last_job) < grace_ms {
+            if pending > 0 {
+                continue;
+            }
+            if now - imported.max(last_job) < grace_ms {
+                let due = imported.max(last_job) + grace_ms;
+                next = Some(next.map_or(due, |n| n.min(due)));
                 continue;
             }
             let part: Option<Value> = part.map(|p| serde_json::from_str(&p)).transpose()?;
@@ -83,7 +99,7 @@ impl TimelineStore {
                 id,
             });
         }
-        Ok(out)
+        Ok((out, next))
     }
 
     /// Replaces a candidate's WAV with `encoded` (already verified by the caller to decode to the same frames):
@@ -124,7 +140,7 @@ impl TimelineStore {
                 .first("SELECT recording_id FROM media_parts WHERE id=?", &[text(&candidate.id)], |r| r.text(0))?
                 .unwrap_or_else(|| candidate.id.clone());
             let busy = self.db.scalar(
-                "SELECT COUNT(*) FROM jobs WHERE input_ref IN (?,?) AND state IN ('queued','running') AND kind IN ('speech.recognize','workflow.speakers')",
+                "SELECT COUNT(*) FROM jobs WHERE input_ref IN (?,?) AND state IN ('queued','running') AND kind IN ('speech.recording','speech.recognize','workflow.speakers')",
                 &[text(&candidate.id), text(&rid)],
             )? > 0;
             if !still || busy {

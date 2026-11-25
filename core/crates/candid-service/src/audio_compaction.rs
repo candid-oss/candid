@@ -7,24 +7,55 @@ use std::time::{Duration, Instant};
 /// Quiet time after the last import or job before a part counts as processed.
 pub const GRACE: Duration = Duration::from_secs(10 * 60);
 const PER_PASS: usize = 8;
-const INTERVAL: Duration = Duration::from_secs(60);
 
-#[derive(Default)]
+/// Runs on events, not on a clock: once at start (parts left from before), and once `GRACE` after the media or
+/// the jobs changed (a recording stopped, its job chain ended, a file was imported). When a pass leaves parts that
+/// are only waiting out their grace period, it schedules itself once more for the moment the first one is due.
 pub(crate) struct Compactor {
-    last: Option<Instant>,
+    due: Option<Instant>,
+    seen: Option<(i64, i64)>,
     /// The one-time compression of derived JSON originals rides on the same background tick.
     json: crate::json_compaction::Converter,
 }
 
+impl Default for Compactor {
+    fn default() -> Self {
+        Compactor { due: Some(Instant::now()), seen: None, json: Default::default() }
+    }
+}
+
 impl Compactor {
-    /// At most once a minute, a few parts per pass.
     pub fn tick(&mut self, store: &SharedStore) {
         self.json.tick(store);
-        if self.last.is_some_and(|t| t.elapsed() < INTERVAL) {
+        let now = Instant::now();
+        let revision = {
+            let s = lock(store);
+            (s.background_revision("workflows").unwrap_or(0), s.background_revision("jobs").unwrap_or(0))
+        };
+        if self.seen.is_some_and(|seen| seen != revision) {
+            self.due = Some(self.due.map_or(now + GRACE, |d| d.min(now + GRACE)));
+        }
+        self.seen = Some(revision);
+        if self.due.is_none_or(|d| d > now) {
             return;
         }
-        self.last = Some(Instant::now());
-        let _ = pass(store, GRACE, PER_PASS);
+        let done = pass(store, GRACE, PER_PASS);
+        self.due = if done >= PER_PASS {
+            Some(now)
+        } else {
+            let next = lock(store).media_compaction_next_ms(GRACE.as_millis() as i64).ok().flatten();
+            let wall = lock(store).clock.now_ms();
+            next.map(|ms| now + Duration::from_millis((ms - wall).max(0) as u64))
+        };
+        // The pass itself changed media; that is not a new event to wait for.
+        let s = lock(store);
+        self.seen = Some((s.background_revision("workflows").unwrap_or(0), s.background_revision("jobs").unwrap_or(0)));
+    }
+
+    /// When the next pass is due, for a worker loop that sleeps until its next event.
+    #[allow(dead_code)]
+    pub fn next_due(&self) -> Option<Instant> {
+        self.due
     }
 }
 

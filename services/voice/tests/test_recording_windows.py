@@ -261,3 +261,40 @@ def test_rematch_uses_stored_speech_length(tmp_path):
     assert matches["long"]["status"] == "matched" and matches["long"]["allow_auto"]
     assert matches["short"]["status"] == "unmatched" and matches["short"]["threshold"] == .62
     assert matches["legacy"]["status"] == "unmatched" and matches["legacy"]["threshold"] == .70
+
+
+class SmallAsr:
+    """Synthetic text-only model: says which 30-second piece it heard, never loads anything real."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def transcribe(self, data, language=None):
+        self.calls += 1
+        return {"text": f"SYNTHETIC 第{self.calls}段"}
+
+
+def test_quick_windows_use_the_small_model_and_stitch_without_speakers(tmp_path):
+    asr = SmallAsr()
+    store = SpeakerStore(tmp_path)
+    audio = np.concatenate([np.full(70 * RATE, .1, np.float32), np.zeros(30 * RATE, np.float32)])
+    with TestClient(create_app(asr, voiceprint_path=store.path, voiceprint_models=Diarizer([]))) as client:
+        assert "recording_windows_quick" in client.get("/v1/voiceprints").json()["capabilities"]
+        meta = json.dumps({"scope": "SYNTHETIC-recording", "index": 0, "mode": "quick"})
+        response = client.post("/v1/voiceprints/window", files={"file": ("w.wav", wav(audio))}, data={"meta": meta})
+        assert response.status_code == 200, response.text
+        window = response.json()
+        # Silence is skipped; the diarization model is never touched in quick mode.
+        assert [(s["start"], s["end"], s["speaker"]) for s in window["segments"]] == [(0, 30, None), (30, 60, None), (60, 90, None)]
+        assert window["cpu_seconds"] >= 0 and asr.calls == 3
+        assert client.get("/health").json()["models_loaded"] == {"asr": True, "speaker": False}
+        request = {"scope": "SYNTHETIC-recording", "revision": "3" * 64, "mode": "quick",
+                   "windows": [{"start": 0, "end": 100, "result": window},
+                               {"start": 40, "end": 140, "result": window}]}
+        stitched = client.post("/v1/voiceprints/stitch", json=request).json()
+        assert stitched["format"] == RESULT_FORMAT and stitched["mode"] == "quick" and stitched["speaker_count"] == 0
+        # Overlap 40–100 s is split at 70 s: pieces whose middle is before it come from the first window.
+        assert [(s["start_seconds"], s["end_seconds"]) for s in stitched["segments"]] == [(0, 30), (30, 60), (70, 100), (100, 130)]
+        assert all(s["speaker"] is None and s["label"] is None for s in stitched["segments"])
+        bad = dict(request, mode="conversation")
+        assert client.post("/v1/voiceprints/stitch", json=bad).status_code == 400

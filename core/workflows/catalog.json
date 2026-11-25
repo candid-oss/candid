@@ -75,7 +75,7 @@
       "implemented": true,
       "trigger": "录音保存后",
       "role": "diarization",
-      "job_kind": "speech.recognize",
+      "job_kind": "speech.recording",
       "sources": [
         "import",
         "mac_microphone",

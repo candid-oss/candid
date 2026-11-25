@@ -131,11 +131,6 @@ impl AudioChunks {
         #[cfg(not(target_os="macos"))]
         {Err("audio_conversion_unavailable".into())}
     }
-    pub fn chunk_frames(&self) -> u64 {
-        (self.rate as u64 * 240)
-            .min(32 * 1024 * 1024 / self.align as u64)
-            .max(1)
-    }
     pub fn bytes(&self, start: u64, count: u64) -> Result<Vec<u8>, String> {
         if start + count > self.frames {
             return Err("chunk_bounds".into());

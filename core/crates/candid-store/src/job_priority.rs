@@ -21,8 +21,9 @@ pub const JOB_CLASSES: &[JobClass] = &[
     JobClass { kind: "screen.excerpt", priority: 1, max_age_ms: Some(DAY) },
     // Entry extraction is never dropped for age: over the daily limit it waits, and a later job covers more messages.
     JobClass { kind: "items.extract", priority: 1, max_age_ms: None },
-    // P2: existing recording flows.
-    JobClass { kind: "speech.recognize", priority: 2, max_age_ms: None },
+    // P2: recordings. One job per stopped recording: transcript, speakers and voiceprints in one windowed pass.
+    // Cost: ByModel (the local voice service is heavy; a remote one would be light).
+    JobClass { kind: "speech.recording", priority: 2, max_age_ms: None },
     JobClass { kind: "workflow.", priority: 2, max_age_ms: None },
     // P3: can wait for a quiet moment or the next day.
     JobClass { kind: "screen.summarize", priority: 3, max_age_ms: None },
