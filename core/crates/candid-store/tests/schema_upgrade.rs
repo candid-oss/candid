@@ -532,3 +532,57 @@ fn v11_upgrade_failure_rolls_back_and_resumes_after_interrupted_metadata_write()
     drop(store);
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A v13 store turned back into v12: no ledger columns, no manual flag, one queued job.
+fn v12_root() -> PathBuf {
+    let root = fixtures::temp_root("v12-upgrade");
+    drop(TimelineStore::open(&root, "SYNTHETIC-v12", true, fixtures::test_clock()).unwrap());
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    db.script("DROP INDEX jobs_updated; ALTER TABLE jobs DROP COLUMN cpu_ms; ALTER TABLE jobs DROP COLUMN wall_ms; ALTER TABLE jobs DROP COLUMN power_state; ALTER TABLE jobs DROP COLUMN manual;").unwrap();
+    db.script("INSERT INTO jobs(job_id,kind,input_ref,config_version,state,created_ms,updated_ms) VALUES('j','workflow.title','media-1','fixed/1:x','queued',7,7); DELETE FROM store_meta WHERE key='schema.upgrade'; PRAGMA user_version=12;").unwrap();
+    drop(db);
+    let mut identity: StoreIdentity = serde_json::from_str(&fs::read_to_string(root.join("store.json")).unwrap()).unwrap();
+    identity.schema_version = 12;
+    fs::write(root.join("store.json"), json::canonical_of(&identity)).unwrap();
+    root
+}
+
+#[test]
+fn v12_upgrade_adds_the_energy_ledger_and_keeps_jobs() {
+    let root = v12_root();
+    let store = open(&root).unwrap();
+    assert_eq!(store.identity.schema_version, SCHEMA_VERSION);
+    let db = store.raw_db();
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM jobs WHERE job_id='j' AND manual=0 AND cpu_ms IS NULL AND wall_ms IS NULL AND power_state IS NULL", &[]).unwrap(), 1);
+    store.job_account("j", 5, 9, "battery").unwrap();
+    assert_eq!(db.scalar("SELECT cpu_ms+wall_ms FROM jobs WHERE job_id='j' AND power_state='battery'", &[]).unwrap(), 14);
+    assert!(db.script("UPDATE jobs SET power_state='solar' WHERE job_id='j'").is_err(), "power_state is checked");
+    assert!(store.integrity_check(false).unwrap().ok);
+    drop(store);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn v12_upgrade_failure_rolls_back_and_resumes_after_interrupted_metadata_write() {
+    let root = v12_root();
+    // A leftover table under the new index's name makes the upgrade fail after the columns were added.
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    db.script("CREATE TABLE jobs_updated(synthetic INTEGER)").unwrap();
+    drop(db);
+    assert!(open(&root).is_err());
+    let db = Db::open(&root.join("timeline.sqlite"), false, false).unwrap();
+    assert_eq!(db.scalar("PRAGMA user_version", &[]).unwrap(), 12);
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name IN ('cpu_ms','wall_ms','power_state','manual')", &[]).unwrap(), 0, "the columns rolled back");
+    assert_eq!(db.scalar("SELECT COUNT(*) FROM jobs WHERE job_id='j'", &[]).unwrap(), 1);
+    db.script("DROP TABLE jobs_updated").unwrap();
+    drop(db);
+    fs::create_dir(root.join(".store.json.tmp")).unwrap();
+    assert!(open(&root).is_err());
+    fs::remove_dir(root.join(".store.json.tmp")).unwrap();
+    let store = open(&root).unwrap();
+    assert_eq!(store.identity.schema_version, SCHEMA_VERSION);
+    assert_eq!(store.raw_db().scalar("SELECT COUNT(*) FROM pragma_table_info('jobs') WHERE name IN ('cpu_ms','wall_ms','power_state','manual')", &[]).unwrap(), 4);
+    assert!(store.integrity_check(false).unwrap().ok);
+    drop(store);
+    fs::remove_dir_all(root).unwrap();
+}

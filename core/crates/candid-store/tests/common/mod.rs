@@ -55,8 +55,12 @@ impl Drop for Fx {
     }
 }
 
+/// Tests run as if plugged in (a declared state, which never goes stale under the fixed clock), so background
+/// work on the loopback model stubs is not held by the power gate; power tests change it themselves.
 pub fn open(root: &std::path::Path) -> TimelineStore {
-    TimelineStore::open(root, "candid/test", true, test_clock()).unwrap()
+    let store = TimelineStore::open(root, "candid/test", true, test_clock()).unwrap();
+    store.power_declare(Some(true)).unwrap();
+    store
 }
 
 pub fn try_open(root: &std::path::Path) -> Result<TimelineStore> {

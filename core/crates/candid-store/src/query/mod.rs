@@ -9,6 +9,7 @@ pub mod items;
 pub mod day;
 pub(crate) mod core;
 pub mod dispatch;
+mod energy;
 mod search;
 mod tools;
 pub mod types;

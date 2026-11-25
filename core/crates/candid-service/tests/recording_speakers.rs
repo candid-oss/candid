@@ -33,7 +33,7 @@ fn selected_recordings_are_reconciled_as_whole_recordings_without_retranscriptio
     let jobs:Vec<_>=records.iter().map(|r|store.enqueue_recording_speakers(r["id"].as_str().unwrap()).unwrap()).collect();
     drop(store);
     let run=root.parent().unwrap().join("run");
-    let mut options=ServeOptions::new(root.clone(),run.clone());options.socket=Some(run.join("core.sock"));
+    let mut options=ServeOptions::new(root.clone(),run.clone()); options.power = Some(true);options.socket=Some(run.join("core.sock"));
     let service=Service::start(&options, |_|{}).unwrap();
     let deadline=Instant::now()+Duration::from_secs(100);
     loop {

@@ -122,6 +122,7 @@ fn a_long_recording_is_processed_in_saved_windows_and_shown_as_one_transcript() 
 
     let root = dir.join("root");
     let store = TimelineStore::open(&root, "recording-windows", true, Clock::default()).unwrap();
+    store.power_declare(Some(true)).unwrap();
     let mut config = json!({"version":1,"providers":[{"provider_id":"voice","name":"SYNTHETIC","api":"other","base_url":url,"destination":"on_device","enabled":true}],
         "models":[{"provider_id":"voice","model_id":"SYNTHETIC"}],"roles":[{"role":"asr","model":{"provider_id":"voice","model_id":"SYNTHETIC"}}]});
     store.model_command(&json!({"action":"save","config":config})).unwrap();
@@ -140,7 +141,7 @@ fn a_long_recording_is_processed_in_saved_windows_and_shown_as_one_transcript() 
     drop(store);
 
     let run = dir.join("run");
-    let mut options = ServeOptions::new(root.clone(), run.clone());
+    let mut options = ServeOptions::new(root.clone(), run.clone()); options.power = Some(true);
     options.socket = Some(run.join("core.sock"));
     let service = Service::start(&options, |_| {}).unwrap();
     let socket = run.join("core.sock");

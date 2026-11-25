@@ -470,7 +470,15 @@ impl TimelineStore {
         Ok(())
     }
     /// Returns a short-lived immutable request; the caller releases the database mutex before HTTP.
+    /// While it runs, `feature_check` knows the job's kind and manual flag and asks the power gate with them.
     pub fn workflow_prepare(&self, job: &Value) -> Result<Value> {
+        let previous = self.preparing.replace(Some((job["kind"].as_str().unwrap_or("").to_string(), job["manual"] == true)));
+        let result = self.workflow_prepare_inner(job);
+        *self.preparing.borrow_mut() = previous;
+        result
+    }
+
+    fn workflow_prepare_inner(&self, job: &Value) -> Result<Value> {
         if job["kind"] == "workflow.speakers" {return self.recording_speakers_prepare(job);}
         if job["kind"] == "screen.summarize" { return self.screen_prepare(job); }
         if job["kind"] == crate::screen_excerpt::JOB_KIND { return self.excerpt_prepare(job); }

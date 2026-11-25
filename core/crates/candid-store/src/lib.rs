@@ -90,6 +90,7 @@ mod media_projection;
 
 pub mod workflows;
 mod feature_settings;
+pub mod power;
 pub mod automation;
 pub mod screen_cleanup;
 mod screenshot_budget;

@@ -20,9 +20,9 @@ impl Snapshot {
         let version: i64 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         // v2 adds AI records, v4 mail/browser source kinds, v5 the derived layer (digests, entities), v9–v10 slimmer
         // stored inputs and selectors, v11 the AI-readable layer and v12 its items and sources.
-        // The desktop tables and columns read below are unchanged by v12.
-        if !(1..=12).contains(&version) {
-            return Err("离线适配器支持时间线库 v1–v12；未知版本须先更新字段映射，不执行迁移".into());
+        // The desktop tables and columns read below are unchanged by v12 and by v13 (the jobs energy ledger).
+        if !(1..=13).contains(&version) {
+            return Err("离线适配器支持时间线库 v1–v13；未知版本须先更新字段映射，不执行迁移".into());
         }
         let mut data = Dataset {
             format: "candid-measurement/1".into(),

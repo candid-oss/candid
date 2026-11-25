@@ -382,10 +382,15 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
     let Some(r) = request else { return };
     on_start();
     let started = Instant::now();
+    // The ledger: this thread's CPU while the job runs, plus what the voice service reports for itself.
+    let cpu_started = crate::scheduling::thread_cpu_ms();
+    VOICE_CPU_MS.with(|c| c.set(0));
+    let power_state = lock(store).power_state_now().unwrap_or("unknown");
     let result = if r["reconcile_speakers"]==true {crate::voiceprints::reconcile_recording_job(store,&r)} else {execute_workflow(store, &r)};
     let unused_refs=result.as_ref().ok().map(|o|o["voice_refs"].clone());
     let s = lock(store);
     let job = &r["job"];
+    let _accounted = Accounting { store: &s, job: job["id"].as_str().unwrap_or(""), cpu_started, started, power_state };
     let error = match result {
         Ok(output) => if r["reconcile_speakers"]==true{s.recording_speakers_complete(&r,&output)}else if r["speech"]==true{s.workflow_complete(&r,&output)}else{s.media_command(&json!({"action":"result","format":"candid-workflow-result/1","request":r,"output":output}))}.err().map(|e|e.message()),
         Err(e) => Some(e),
@@ -405,6 +410,46 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
             Some(delay) => {eprintln!("任务：{kind} 失败 {}（第 {} 次，{}s 后重试）{ms}ms", code_only(&code), attempt + 1, delay / 1000);let _=s.job_command(&json!({"action":"retry","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"delay_ms":delay,"error_code":transient}));}
             None => {eprintln!("任务：{kind} 失败 {}（第 {} 次，不再重试）{ms}ms", code_only(&code), attempt + 1);let _=s.job_command(&json!({"action":"finish","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"error_code":code}));}
         }
+    }
+}
+
+thread_local! {
+    /// CPU the voice service reported (`cpu_seconds`) for the job this thread runs, in milliseconds.
+    static VOICE_CPU_MS: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// Adds a voice service result's own `cpu_seconds` (top level of the output or of the usage) to the running job's
+/// ledger. Missing fields are ignored. Call it for every voice service answer a background job receives.
+pub(crate) fn note_voice_cpu(output: &Value) {
+    if let Some(seconds) = output["cpu_seconds"].as_f64().filter(|s| s.is_finite() && *s >= 0.0) {
+        VOICE_CPU_MS.with(|c| c.set(c.get() + (seconds * 1000.0).round() as i64));
+    }
+}
+
+/// Writes one run's cost onto its job when the run ends, whatever the outcome; then, at most once an hour and only
+/// when the worker is doing something anyway, a count-only summary line for `core.log`.
+struct Accounting<'a> {
+    store: &'a candid_store::TimelineStore,
+    job: &'a str,
+    cpu_started: i64,
+    started: Instant,
+    power_state: &'static str,
+}
+impl Drop for Accounting<'_> {
+    fn drop(&mut self) {
+        let cpu = crate::scheduling::thread_cpu_ms() - self.cpu_started + VOICE_CPU_MS.with(|c| c.replace(0));
+        let _ = self.store.job_account(self.job, cpu, self.started.elapsed().as_millis() as i64, self.power_state);
+        hourly_summary(self.store);
+    }
+}
+
+fn hourly_summary(store: &candid_store::TimelineStore) {
+    static LAST: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(i64::MIN);
+    let now = store.clock.now_ms();
+    let hour = now.div_euclid(3_600_000);
+    let last = LAST.swap(hour, std::sync::atomic::Ordering::Relaxed);
+    if last != hour && last != i64::MIN {
+        if let Ok(line) = store.energy_log_line(now - 3_600_000, now) { eprintln!("{line}"); }
     }
 }
 
@@ -467,6 +512,7 @@ fn call_once(store: &SharedStore, r: &Value, audio: Option<Vec<u8>>) -> Result<V
     let response = if r["speech"] == true {crate::voice_jobs::execute(store,r,audio.as_deref()).unwrap_or_else(||execute_http(r,audio))}else{execute_http(r,audio)};
     match response {
         Ok((output, usage)) => {
+            if r["speech"] == true { note_voice_cpu(&output); note_voice_cpu(&usage); }
             let s = lock(store);
             let allowed = s.workflow_reply_allowed(r).is_ok();
             s.workflow_call_finish(

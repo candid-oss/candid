@@ -132,6 +132,12 @@ pub fn tools() -> Vec<Tool> {
             false,
         ),
         t(
+            "energy_summary",
+            format!("Candid 后台计算的能耗账：按天和作业种类给出次数、CPU 秒、墙钟秒、用电池时的 CPU 秒，以及现在等待中的作业数量和原因（如 waiting_power 等待接入电源）。只有计数，没有内容。默认今天。{TIME_NOTE}"),
+            r#"{"type":"object","properties":{"start":{"type":"string"},"end":{"type":"string"}},"additionalProperties":false}"#,
+            false,
+        ),
+        t(
             "propose",
             "提交一个提案（如新建提醒、修正片段），只进入待批准列表，用户批准前不会执行。附上作为依据的 event_id。".into(),
             r#"{"type":"object","properties":{"kind":{"type":"string","description":"如 create_reminder、create_calendar_event、correct_episode、add_memory"},"payload":{"type":"object"},"evidence":{"type":"array","items":{"type":"string"}}},"required":["kind","payload"],"additionalProperties":false}"#,

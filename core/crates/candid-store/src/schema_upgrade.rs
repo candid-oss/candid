@@ -1,4 +1,4 @@
-//! Transactional upgrades v1 → … → v12. The database commit precedes atomic store.json replacement;
+//! Transactional upgrades v1 → … → v13. The database commit precedes atomic store.json replacement;
 //! a durable marker permits only that particular interrupted replacement to resume.
 use crate::{
     db::{text, Db, RowExt},
@@ -32,7 +32,8 @@ pub(crate) fn upgrade(
         result?;
     } else if version != identity.schema_version {
         let marker = db.first("SELECT value FROM store_meta WHERE key='schema.upgrade'", &[], |r| r.text(0))?;
-        let pending = (version == 12 && identity.schema_version <= 11 && marker.as_deref() == Some("11:12"))
+        let pending = (version == 13 && identity.schema_version <= 12 && marker.as_deref() == Some("12:13"))
+            || (version == 12 && identity.schema_version <= 11 && marker.as_deref() == Some("11:12"))
             || (version == 11 && identity.schema_version <= 10 && marker.as_deref() == Some("10:11"))
             || (version == 10 && identity.schema_version <= 9 && marker.as_deref() == Some("9:10"))
             || (version == 9 && identity.schema_version <= 8 && marker.as_deref() == Some("8:9"))
@@ -209,6 +210,26 @@ pub(crate) fn upgrade(
         db.execute("PRAGMA legacy_alter_table=OFF", &[])?;
         db.execute("PRAGMA foreign_keys=ON", &[])?;
         result?;
+    }
+    if db.scalar("PRAGMA user_version", &[])? == 12 {
+        // v13 (power v1 §9.1): the energy ledger and the manual flag on jobs. Columns are added only when absent,
+        // so a store rebuilt from a newer one by a test (or a resumed upgrade) takes the same path.
+        db.transaction(|| {
+            let columns = db.query("SELECT name FROM pragma_table_info('jobs')", &[], |r| r.text(0))?;
+            for (name, ddl) in [
+                ("cpu_ms", "cpu_ms INTEGER"),
+                ("wall_ms", "wall_ms INTEGER"),
+                ("power_state", "power_state TEXT CHECK (power_state IN ('ac','battery','unknown'))"),
+                ("manual", "manual INTEGER NOT NULL DEFAULT 0"),
+            ] {
+                if !columns.iter().any(|c| c == name) {
+                    db.execute(&format!("ALTER TABLE jobs ADD COLUMN {ddl}"), &[])?;
+                }
+            }
+            db.execute("CREATE INDEX IF NOT EXISTS jobs_updated ON jobs(updated_ms)", &[])?;
+            db.execute("INSERT OR REPLACE INTO store_meta VALUES('schema.upgrade','12:13')", &[])?;
+            db.execute("PRAGMA user_version=13", &[])
+        })?;
     }
     if vacuum {
         // Give the freed pages back once; outside the transactions by necessity.
