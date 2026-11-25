@@ -76,6 +76,7 @@ struct CaptureControls: View {
                     Image(systemName: "stop.fill").typography(.caption, .bold)
                     LiveWaveform(levels: media.recordingLevels.suffix(12), color: .white, quiet: media.microphoneQuiet)
                         .frame(width: 34, height: 14)
+                        .onAppear { media.levelViewers += 1 }.onDisappear { media.levelViewers -= 1 }
                     Text(started, style: .timer).typography(.secondary, .semibold, digits: true)
                 }
                 .foregroundStyle(.white)

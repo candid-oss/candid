@@ -61,6 +61,10 @@ import CandidClient
     private(set) var clients: [ClientInfo] = []
     /// Bumped whenever the core reports added or removed events; views that read the timeline can observe it.
     private(set) var dataVersion = 0
+    /// Bumped on every data change and on job progress (`jobs` events, at most about once a second while a job
+    /// runs). Views that show job states refresh on it instead of polling.
+    private(set) var jobsVersion = 0
+    @ObservationIgnored private var changeListeners: [UUID: AsyncStream<Int>.Continuation] = [:]
 
     @ObservationIgnored private var supervisor: CoreSupervisor?
     @ObservationIgnored private var feed: Task<Void, Never>?
@@ -114,6 +118,7 @@ import CandidClient
 
     /// Called when the App quits: stops the core this App started (it finishes the pass it is in).
     func stop() {
+        AgentFolderWatcher.shared.stop()
         feed?.cancel(); feed = nil
         statusTask?.cancel(); statusTask = nil
         supervisor?.stop()
@@ -152,6 +157,7 @@ import CandidClient
                 switch event.type {
                 case "hello":
                     self.refreshStatus()
+                    if !AIRuntime.isTesting { AgentFolderWatcher.shared.start(channel: channel) }
                     Task { try? await AIRuntime.shared.syncCore() }
                     if !AIRuntime.isTesting { Task { await ConnectorsModel().pushSecrets() } }
                     await self.refreshClients()
@@ -159,11 +165,29 @@ import CandidClient
                     Task { await self.ensureCutover() }
                 case "status": self.refreshStatus()
                 case "clients": await self.refreshClients()
-                case "data": self.dataVersion += 1; self.refreshStatus(); self.desktopStore?.coreChanged()
+                case "data": self.dataVersion += 1; self.jobsVersion += 1; self.refreshStatus(); self.desktopStore?.coreChanged()
+                case "jobs": self.jobsVersion += 1
                 default: break
                 }
+                if ["hello", "data"].contains(event.type) { self.notifyChange() }
             }
         }
+    }
+
+    /// Data changes for work that is not a view (a view uses `.task(id: dataVersion)`): yields the current version
+    /// at once, then on every `data` event and whenever the core (re)connects. Bursts collapse to the newest version,
+    /// so a slow consumer never falls behind. Ends when the consuming task is cancelled.
+    func changes() -> AsyncStream<Int> {
+        let id = UUID()
+        let (stream, continuation) = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        continuation.yield(dataVersion)
+        continuation.onTermination = { _ in Task { @MainActor [weak self] in self?.changeListeners[id] = nil } }
+        changeListeners[id] = continuation
+        return stream
+    }
+
+    private func notifyChange() {
+        for continuation in changeListeners.values { continuation.yield(dataVersion) }
     }
 
     /// Coalesces status reads: the core publishes several status events per pass.

@@ -255,7 +255,6 @@ private struct OnboardingCaptureStep: View {
 private struct OnboardingPermissionStep: View {
     @Bindable var model: OnboardingModel
     let session: DesktopSession
-    private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
@@ -273,7 +272,12 @@ private struct OnboardingPermissionStep: View {
                 .typography(.secondary).foregroundStyle(.secondary)
         }
         .onAppear { model.refreshPermissions() }
-        .onReceive(ticker) { _ in model.refreshPermissions() }
+        // Permissions are granted in System Settings: read them again when the user comes back to Candid, and when
+        // macOS announces an accessibility change. No timer.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshPermissions() }
+        .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("com.apple.accessibility.api"))) { _ in
+            model.refreshPermissions()
+        }
     }
 
     private func row(_ permission: SystemPermission) -> some View {

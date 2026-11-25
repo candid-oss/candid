@@ -469,7 +469,14 @@ struct DesktopSessionTests {
         defer { session.prepareToQuit() }
         await session.bootstrap(); session.setTimelineVisible(false)
         let reloads = session.samplingDiagnostics.listReloads
-        session.addMarker(); try await eventually("hidden write committed") { session.statistics.recordCount == 1 }
+        session.addMarker()
+        // Hidden, deliveries refresh the counts at most once a minute (each refresh counts the whole library); a
+        // settings page on screen asks for them, as this does.
+        for _ in 0..<500 where session.statistics.recordCount != 1 {
+            await session.refreshStatistics(maxAge: 0)
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(session.statistics.recordCount == 1, "hidden write committed")
         #expect(session.samplingDiagnostics.listReloads == reloads)
         #expect(session.records.isEmpty)
         session.setTimelineVisible(true)

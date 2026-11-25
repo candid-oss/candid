@@ -9,11 +9,11 @@
 //! |---|---|
 //! | `GET /health` | process, store and endpoint identity |
 //! | `GET /local/status` | sync phase, event count, last change, problems, last verification |
-//! | `GET /local/events` | change feed: newline-delimited JSON (`hello`, `status`, `data`, `clients`) until either side closes |
+//! | `GET /local/events` | change feed: newline-delimited JSON (`hello`, `status`, `data`, `jobs`, `clients`) until either side closes; `jobs` is job progress, at most one a second |
 //! | `GET /local/clients` | registered external clients with their recent use |
 //! | `POST /local/clients` | `{"name"}` → token (shown once) and setup snippets for Claude Code, Codex and generic JSON |
 //! | `POST /local/clients/revoke` | `{"client_id"}` |
-//! | `POST /local/sync` | run a mirroring pass now (202; the result arrives as a `status` event) |
+//! | `POST /local/sync` | run a mirroring pass now (202; the result arrives as a `status` event); `{"paths": [...]}` reads only those agent transcript files |
 //! | `POST /local/verify` | `{"hash_blobs"}` → compare the desktop ledger with the timeline |
 //! | `GET /local/sources`, `POST /local/sources` | list, or register once by kind and name, the App's own sources |
 //! | `POST /local/ingest` | one `IngestBatch` (timeline-v1 §6.1) → ingest result; desktop batches only after the cutover |
@@ -229,6 +229,8 @@ pub struct Core {
     pub started: Instant,
     /// Held while a cutover runs, so two requests do not race.
     pub cutover_lock: Mutex<()>,
+    /// Wakes the one-time library conversion thread when a mirroring pass imported something.
+    pub conversion: Arc<crate::background::Wake>,
 }
 
 /// Returns memory freed by a mirroring pass or a verification to the system, so the idle helper does not keep the
@@ -526,6 +528,7 @@ impl Core {
         });
         if changed {
             self.feed.publish("data");
+            self.conversion.wake();
         }
         if first_pass && self.status().capture_mode != "direct" {
             self.verify(empty_before);

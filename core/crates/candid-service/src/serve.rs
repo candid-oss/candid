@@ -210,6 +210,7 @@ impl Service {
             parent_pid: opts.parent_pid,
             started: std::time::Instant::now(),
             cutover_lock: Mutex::new(()),
+            conversion: Default::default(),
         });
         core.load_capture_mode();
         let data = serde_json::to_vec(&endpoint).map_err(|e| failed(e.to_string()))?;
@@ -263,12 +264,24 @@ impl Service {
             (Some(l), Some(path)) => Some(LocalServer::start(l, path, opts.workers, core.clone()).map_err(|e| failed(e.to_string()))?),
             _ => None,
         };
-        // Every write to a table some background step reads wakes the thread, whichever path made it.
+        // Every write to a table some background step reads wakes the thread, whichever path made it. Job rows also
+        // tell the App about progress (`jobs` events, at most one a second), so its job views need no timer.
         {
             let wake = core.feed.wake().clone();
+            let weak = Arc::downgrade(&core);
+            let last_progress = std::sync::atomic::AtomicI64::new(0);
             shared.lock().map_err(|_| failed("store lock".into()))?.on_write(move |table| {
                 if crate::background::wakes_on(table) {
                     wake.wake();
+                }
+                if table == "jobs" || table == "job_checkpoints" {
+                    let now = crate::local::now_ms();
+                    let last = last_progress.load(Ordering::Relaxed);
+                    if now - last >= 1000 && last_progress.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+                        if let Some(core) = weak.upgrade() {
+                            core.feed.announce("jobs");
+                        }
+                    }
                 }
             });
         }
@@ -279,7 +292,7 @@ impl Service {
             let mut sleep = crate::background::WakeSleep { wake: &wake, stop: &workflow_stop };
             crate::background::run(&mut Default::default(), &workflow_store, &wake, &mut sleep, &|| workflow_core.feed.announce("data"));
         }).map_err(|e| failed(e.to_string()))?);
-        let convert = crate::library_conversion::start(shared.clone(), stop.clone()).ok();
+        let convert = crate::library_conversion::start(shared.clone(), stop.clone(), core.conversion.clone()).ok();
         Ok(Service { workflows, convert, store: shared, endpoint, core, run_dir: opts.run_dir.clone(), server, local, stop, sync })
     }
 
@@ -298,7 +311,7 @@ impl Service {
         }
         if let Some(w)=self.workflows.take(){let _=w.join();}
         if let Some(c) = self.convert.take() {
-            c.thread().unpark();
+            self.core.conversion.wake();
             let _ = c.join();
         }
         self.core.feed.close_all();

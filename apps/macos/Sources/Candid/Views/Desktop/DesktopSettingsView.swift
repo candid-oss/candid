@@ -379,6 +379,7 @@ private struct StorageSettings: View {
                     Text(ByteCountFormatter.string(fromByteCount: session.statistics.storageBytes, countStyle: .file))
                         .typography(.body, .medium, digits: true)
                 }
+                .refresh(on: TimelineService.shared.dataVersion) { await session.refreshStatistics() }
                 let budget = session.storageBudget
                 if budget.message != nil || budget.freedSummary != nil {
                     InlinePanel {

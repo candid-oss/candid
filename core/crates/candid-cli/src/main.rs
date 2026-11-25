@@ -144,15 +144,57 @@ fn serve(args: &[String]) {
     if let Some(socket) = &opts.socket {
         log(&format!("本地通道：{}", socket.display()));
     }
+    wait_for_stop(opts.parent_pid);
+    service.stop();
+}
+
+/// Blocks until SIGINT/SIGTERM or until the App that launched us exits. On macOS the kernel tells us (kqueue), so
+/// the idle core never wakes for this; elsewhere it checks every 200 ms.
+#[cfg(target_os = "macos")]
+fn wait_for_stop(parent: Option<i32>) {
+    let event = |ident: usize, filter: i16, flags: u16, fflags: u32| libc::kevent { ident, filter, flags, fflags, data: 0, udata: std::ptr::null_mut() };
+    // SAFETY: a kqueue we own; the events name our own signals and the parent's pid.
+    unsafe {
+        let kq = libc::kqueue();
+        if kq < 0 {
+            return wait_for_stop_polling(parent);
+        }
+        let mut changes = vec![event(libc::SIGINT as usize, libc::EVFILT_SIGNAL, libc::EV_ADD, 0), event(libc::SIGTERM as usize, libc::EVFILT_SIGNAL, libc::EV_ADD, 0)];
+        if let Some(p) = parent {
+            changes.push(event(p as usize, libc::EVFILT_PROC, libc::EV_ADD | libc::EV_ONESHOT, libc::NOTE_EXIT));
+        }
+        libc::kevent(kq, changes.as_ptr(), changes.len() as i32, std::ptr::null_mut(), 0, std::ptr::null());
+        loop {
+            // Checked after registering, so an exit just before it is not missed.
+            if parent.is_some_and(|p| libc::getppid() != p) {
+                log("启动它的 App 已退出，核心随之停止。");
+                break;
+            }
+            if STOP.load(Ordering::SeqCst) {
+                break;
+            }
+            let mut out = event(0, 0, 0, 0);
+            // Blocks with no timeout; a signal also interrupts it (EINTR), and the loop checks again.
+            libc::kevent(kq, std::ptr::null(), 0, &mut out, 1, std::ptr::null());
+        }
+        libc::close(kq);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wait_for_stop(parent: Option<i32>) {
+    wait_for_stop_polling(parent)
+}
+
+fn wait_for_stop_polling(parent: Option<i32>) {
     while !STOP.load(Ordering::SeqCst) {
         // SAFETY: getppid has no preconditions.
-        if opts.parent_pid.is_some_and(|p| unsafe { libc::getppid() } != p) {
+        if parent.is_some_and(|p| unsafe { libc::getppid() } != p) {
             log("启动它的 App 已退出，核心随之停止。");
             break;
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    service.stop();
 }
 
 /// `encode-webp`: raw BGRA on stdin, WebP on stdout. The App calls it per screenshot (data model v1 §9.1); it opens
