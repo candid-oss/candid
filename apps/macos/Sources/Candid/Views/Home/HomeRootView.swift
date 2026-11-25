@@ -23,6 +23,7 @@ struct HomeRootView: View {
     @ViewState private var ambientTint: Color = .accentColor
     @ViewState private var pendingJump: Date?
     @ViewState private var requestedSkill: String?
+    @ViewState private var requestedAutomationRun: String?
     @ViewState private var overlayID: String?
     /// Development reference (`--design-specimen`): adds a chrome button for the design specimen.
     private let showsSpecimen = ProcessInfo.processInfo.arguments.contains("--design-specimen")
@@ -103,8 +104,7 @@ struct HomeRootView: View {
             requestedSkill = note.object as? String; page = .ai
         }
         .onReceive(NotificationCenter.default.publisher(for: .candidAutomationRun)) { note in
-            UserDefaults.standard.set(note.object as? String, forKey: "automation.selectedRun")
-            settingsTab = "ai-functions"; page = .settings
+            requestedAutomationRun = note.object as? String; page = .ai
         }
         .onReceive(NotificationCenter.default.publisher(for: .candidOpenRecord)) { note in
             guard let id = note.object as? String, let channel = TimelineService.shared.channel else { return }
@@ -147,7 +147,8 @@ struct HomeRootView: View {
                 MediaWorkspaceView(store: media, showInTimeline: { date in pendingJump = date; page = .timeline })
                     .transition(pageTransition)
             case .ai:
-                AIHomeView(session: session, requestedSkill: $requestedSkill, model: assistant.ai, showInTimeline: { date in pendingJump = date; page = .timeline })
+                AIHomeView(session: session, requestedSkill: $requestedSkill, requestedAutomationRun: $requestedAutomationRun,
+                           model: assistant.ai, showInTimeline: { date in pendingJump = date; page = .timeline })
                     .transition(pageTransition)
             case .connections:
                 ConnectionsView(session: session, media: media, deviceStore: deviceStore,

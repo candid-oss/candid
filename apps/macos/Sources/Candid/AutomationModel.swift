@@ -75,12 +75,14 @@ func automationPost<T: Decodable>(_ channel: LocalChannel, _ body: [String: Any]
     var catalog: [WorkflowControlModel.Feature] = []
     var passed = false
     var busy = false
+    var loading = false
     var error: String?
     private let channel: () -> LocalChannel?
     init(channel: @escaping () -> LocalChannel? = { TimelineService.shared.channel }) { self.channel = channel }
 
     func refresh(includeRuns: Bool = true) async {
-        guard let channel = channel() else { return }
+        guard !loading, !busy, let channel = channel() else { return }
+        loading = true; defer { loading = false }
         do {
             let snapshot: AutomationSnapshot = try await automationPost(channel, ["action": "status", "include_runs": includeRuns])
             config = snapshot.config; runs = snapshot.runs; sources = snapshot.sources; catalog = snapshot.catalog
@@ -90,20 +92,26 @@ func automationPost<T: Decodable>(_ channel: LocalChannel, _ body: [String: Any]
     func detail(_ id: String) async {
         guard let channel = channel() else { return }
         do { let run: AutomationRun = try await automationPost(channel, ["action": "get", "id": id]); details[id] = run }
-        catch { self.error = AIPageModel.explain(error) }
+        catch { details[id] = nil; self.error = AIPageModel.explain(error) }
     }
     func save(_ next: AutomationConfig) async {
-        guard !busy, let channel = channel() else { return }
+        guard !busy, !loading, let channel = channel() else { return }
         busy = true; defer { busy = false }
         do {
             let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(next))
-            let _: AutomationConfig = try await automationPost(channel, ["action": "config", "config": object])
-            await refresh()
+            config = try await automationPost(channel, ["action": "config", "config": object])
+            error = nil
         } catch { self.error = AIPageModel.explain(error) }
     }
     func update(_ id: String, _ change: (inout SkillPolicy) -> Void) async {
         var next = config; guard var p = next.skills[id] else { return }
         change(&p); next.skills[id] = p; await save(next)
+    }
+    func authorize(_ source: String, allowed: Bool) async {
+        var next = config
+        next.remote_sources.removeAll { $0 == source }
+        if allowed { next.remote_sources.append(source) }
+        await save(next)
     }
     func command(_ action: String, id: String) async {
         guard let channel = channel() else { return }
@@ -115,7 +123,7 @@ func automationPost<T: Decodable>(_ channel: LocalChannel, _ body: [String: Any]
         do {
             let report = try JSONSerialization.jsonObject(with: data)
             let _: AutomationSnapshot.Quality = try await automationPost(channel, ["action": "quality", "report": report])
-            await refresh()
+            await refresh(includeRuns: false)
         } catch { self.error = AIPageModel.explain(error) }
     }
     func title(_ id: String) -> String { catalog.first { $0.id == id }?.title ?? L("技能") }

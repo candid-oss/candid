@@ -105,6 +105,70 @@ fn scan_queues_only_screenshots_with_new_text() {
 }
 
 #[test]
+fn chat_job_batches_changed_frames_and_uses_saved_ocr_coordinates() {
+    let fx = Fx::make("chat-batch");
+    fx.store.model_command(&json!({"action":"save","config":{"version":1,"providers":[{"provider_id":"local","name":"Synthetic","api":"openai-chat","base_url":"http://127.0.0.1:1/v1","enabled":true,"destination":"on_device"}],"models":[{"provider_id":"local","model_id":"test"}],"roles":[{"role":"vision","model":{"provider_id":"local","model_id":"test"}}]}})).unwrap();
+    enable(&fx.store);
+    fx.store.excerpt_scan().unwrap();
+    let now = fx.store.clock.now_ms();
+    let mut ids = vec![];
+    for (i, body, side, draft) in [
+        (0, "第一条已经发送", "侧栏预览甲", "随便写的草稿"),
+        (1, "第一条已经发送", "侧栏预览乙", "变化的草稿"),
+        (2, "第二条已经发送", "侧栏预览乙", "准备回复的草稿"),
+        (3, "第三条已经发送", "侧栏预览乙", "再写一行草稿"),
+    ] {
+        let at = now + i * 5000;
+        let key = format!("shot-{i}");
+        let (path, sha) = common::write_staging(&fx.store, &[i as u8; 100], "jpg");
+        let mut screenshot = common::shot(&key, at, &path, &sha);
+        screenshot.app_name = Some("微信".into());
+        screenshot.title = Some("微信".into());
+        let lines = [("测试群", 315, 45), (body, 380, 410), (side, 100, 120), (draft, 315, 824), ("发送", 925, 940)];
+        let blob = json!({"ocrLines":lines.map(|(t, x, y)| json!({"text":t,"x":x,"y":y,"width":50,"height":20}))});
+        let (path, sha) = common::write_staging(&fx.store, blob.to_string().as_bytes(), "json");
+        let mut ocr = IngestEvent::new(&format!("{key}-ocr"), "image.text", Some(at));
+        ocr.parent_key = Some(key.clone());
+        ocr.payload = json!({"method":"ocr","image_event_id":"pending","result_ref":sha});
+        ocr.text = vec![IngestText::new("ocr", &lines.map(|(t, ..)| t).join("\n"))];
+        let mut derived = IngestBlob::new(&path, &sha);
+        derived.role = "derived".into();
+        derived.mime_type = Some("application/json".into());
+        ocr.blobs.push(derived);
+        fx.store.ingest(&IngestBatch::events(&fx.source, vec![screenshot, ocr])).unwrap();
+        ids.push(fx.store.event_id(&fx.source, &key).unwrap().unwrap());
+        assert_eq!(fx.store.excerpt_scan().unwrap()["queued"], u64::from(i == 0));
+        if i < 3 {
+            let ready = fx.store.pending_job_queue().unwrap();
+            assert!(ready.is_empty(), "frame {i}: {ready:?} {}", fx.store.excerpt_parts(&ids[i as usize]).unwrap()["context"]);
+        }
+    }
+    let queue = fx.store.pending_job_queue().unwrap();
+    assert_eq!(queue.len(), 1);
+    let job = fx.store.job_command(&json!({"action":"claim","id":queue[0].0,"owner":"screen-batch-test","lease_ms":60000})).unwrap();
+    let request = fx.store.workflow_prepare(&job).unwrap();
+    assert_eq!(request["frames"], json!([ids[0], ids[2], ids[3]]));
+    assert_eq!(request["messages"][1]["content"].as_array().unwrap().iter().filter(|p| p["type"] == "image_url").count(), 3);
+    let content = request["content"].as_str().unwrap();
+    assert!(content.contains("第二条已经发送") && !content.contains("侧栏") && !content.contains("草稿"), "{content}");
+    let result = |n| json!({"kind":"chat","title":"测试群","excerpt":"","messages":[
+        {"frame":1,"from":"other","sender":"发言人","text":"第一条已经发送"},
+        {"frame":2,"from":"other","sender":"发言人","text":"第二条已经发送"},
+        {"frame":2,"from":"other","sender":"发言人","text":"第二条已经发送"},
+        {"frame":2,"from":"me","sender":"","text":"准备回复的草稿"},
+        {"frame":n,"from":"other","sender":"发言人","text":"第三条已经发送"}
+    ]});
+    // A message pointing at a frame that is not in the batch is dropped; the rest of the reply is kept.
+    let mut partial = result(4);
+    partial["messages"].as_array_mut().unwrap().push(json!({"frame":3,"from":"other","sender":"发言人","text":"第三条已经发送"}));
+    assert_eq!(fx.store.workflow_complete(&request, &json!(partial.to_string())).unwrap()["appended"], 3);
+    let list = call(&fx, "conversations", json!({"kind":"chat"}));
+    let messages = call(&fx, "conversation", json!({"conversation_id": list["conversations"][0]["conversation_id"]}));
+    assert_eq!(messages["messages"][1]["ref"], ids[2]);
+    assert_eq!(messages["messages"][2]["ref"], ids[3]);
+}
+
+#[test]
 fn compose_uses_the_on_screen_conversation_and_own_wording() {
     let fx = Fx::make("excerpt-compose");
     let c = json!({"version":1,"providers":[{"provider_id":"local","name":"SYNTHETIC","api":"openai-chat","base_url":"http://127.0.0.1:1/v1","enabled":true,"destination":"on_device"}],"models":[{"provider_id":"local","model_id":"SYNTHETIC"}],"roles":[{"role":"agent_chat","model":{"provider_id":"local","model_id":"SYNTHETIC"}}]});

@@ -123,6 +123,19 @@ import Observation
 
     // MARK: Roles
 
+    func builtinEngine(for info: ModelRoleInfo) -> BuiltinEngine? {
+        let assignment = config.assignment(info.id)
+        guard assignment?.model == nil else { return nil }
+        return info.engines.first { $0.id == assignment?.engine } ?? info.defaultEngine
+    }
+
+    func assignedName(for role: String) -> String? {
+        if let ref = config.assignment(role)?.model {
+            return config.model(ref)?.displayName ?? ref.modelID
+        }
+        return ModelRoleInfo.info(role).flatMap { builtinEngine(for: $0)?.title }
+    }
+
     func assign(role: String, to ref: ModelRef?) {
         var a = config.assignment(role) ?? RoleAssignment(role: role)
         a.model = ref
@@ -171,16 +184,6 @@ import Observation
         guard var a = config.assignment(role) else { return }
         a.limits = limits
         commit { try $0.setAssignment(a) }
-    }
-
-    func dailyCalls(_ provider: String, now: Date = Date()) -> [Int] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: now)
-        return (0..<7).map { index in
-            let start = calendar.date(byAdding: .day, value: index - 6, to: today)!
-            let end = calendar.date(byAdding: .day, value: 1, to: start)!
-            return calls.filter { $0.providerID == provider && Double($0.startedMs) >= start.timeIntervalSince1970 * 1000 && Double($0.startedMs) < end.timeIntervalSince1970 * 1000 }.count
-        }
     }
 
     // MARK: Usage

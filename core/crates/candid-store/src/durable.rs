@@ -133,6 +133,19 @@ impl TimelineStore {
             _ => Err(bad("未知修订操作")),
         }
     }
+    /// Call inside the store transaction when a job and its input must be committed together.
+    pub(crate) fn enqueue_job(&self, kind: &str, input: &str, config: &str, feature: Option<String>, next_run_ms: Option<i64>) -> Result<String> {
+        let now = self.clock.now_ms();
+        self.db.execute(
+            "INSERT OR IGNORE INTO jobs(job_id,kind,input_ref,config_version,state,created_ms,updated_ms,feature,next_run_ms) VALUES(?,?,?,?,'queued',?,?,?,?)",
+            &[text(uuid_v4()), text(kind), text(input), text(config), int(now), int(now), crate::db::opt_text(feature), next_run_ms.map(int).unwrap_or(crate::db::P::Null)],
+        )?;
+        Ok(self.db.first(
+            "SELECT job_id FROM jobs WHERE kind=? AND input_ref=? AND config_version=?",
+            &[text(kind), text(input), text(config)], |r| r.text(0),
+        )?.unwrap())
+    }
+
     pub fn job_command(&self, v: &Value) -> Result<Value> {
         let now = self.clock.now_ms();
         let id = v["id"].as_str().unwrap_or("");
@@ -149,8 +162,7 @@ impl TimelineStore {
             match action {
                 "enqueue"=>{let kind=v["kind"].as_str().filter(|x|!x.is_empty()).ok_or_else(||bad("缺少任务类型"))?;let input=v["input_ref"].as_str().filter(|x|!x.is_empty()).ok_or_else(||bad("缺少输入"))?;let config=v["config_version"].as_str().filter(|x|!x.is_empty()).ok_or_else(||bad("缺少配置版本"))?;
                     let feature=v["feature"].as_str().map(String::from).or_else(||feature_of(kind));
-                    self.db.execute("INSERT OR IGNORE INTO jobs(job_id,kind,input_ref,config_version,state,created_ms,updated_ms,feature) VALUES(?,?,?,?,'queued',?,?,?)",&[text(uuid_v4()),text(kind),text(input),text(config),int(now),int(now),crate::db::opt_text(feature)])?;
-                    let id=self.db.first("SELECT job_id FROM jobs WHERE kind=? AND input_ref=? AND config_version=?",&[text(kind),text(input),text(config)],|r|r.text(0))?.unwrap();return self.job_get(&id);
+                    return self.job_get(&self.enqueue_job(kind, input, config, feature, None)?);
                 },
                 "claim"=>{let owner=v["owner"].as_str().filter(|s|!s.is_empty()).ok_or_else(||bad("缺少执行者"))?;let lease=v["lease_ms"].as_i64().unwrap_or(30000);if !(100..=3600000).contains(&lease){return Err(bad("租约范围无效"));}
                     let kind=v["kind"].as_str().unwrap_or("");

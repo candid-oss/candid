@@ -303,7 +303,7 @@ impl TimelineStore {
         }
         // An AI-derived summary inherits every AI input's current permission, including retained-but-revoked data.
         let agent_scope=self.scope_filter(ctx,"e");
-        clauses.push(format!("NOT EXISTS (SELECT 1 FROM episode_evidence ae JOIN events e ON e.event_id=ae.event_id WHERE ae.episode_id=ep.episode_id AND ae.rev=ep.rev AND e.kind IN ('ai.prompt','ai.work') AND NOT ({}))",agent_scope.sql()));
+        clauses.push(format!("NOT EXISTS (SELECT 1 FROM episode_evidence ae JOIN events e ON e.event_id=ae.event_id WHERE ae.episode_id=ep.episode_id AND ae.rev=ep.rev AND (e.kind IN ('ai.prompt','ai.work') OR ep.episode_id GLOB 'screen:*') AND NOT ({}))",agent_scope.sql()));
         params.extend(agent_scope.params);
         if !ctx.scope.text {clauses.push("NOT EXISTS (SELECT 1 FROM episode_evidence ae JOIN events e ON e.event_id=ae.event_id WHERE ae.episode_id=ep.episode_id AND ae.rev=ep.rev AND e.kind IN ('ai.prompt','ai.work'))".into());}
         params.push(int(limit));

@@ -77,9 +77,23 @@ struct MediaContextActions: View {
         }
         Button(L("编辑标题与备注"), action: edit).disabled(store.isDemo || store.busy)
         if item.kind == .audio {
-            Button(L("重新转写")) { Task { await store.recognize(item, mode: .quick) } }.disabled(store.isDemo || item.processingStatus.isActive)
+            RecordingTranscriptionActions(id: item.id, store: store,
+                                          active: item.processingStatus.isActive || item.processing?.isActive == true)
         }
         Divider() // style-exempt: native context menu separator
         Button(L("删除…"), role: .destructive, action: remove).disabled(store.isDemo || store.busy)
+    }
+}
+
+struct RecordingTranscriptionActions: View {
+    let id: UUID
+    let store: MediaWorkspaceStore
+    let active: Bool
+
+    var body: some View {
+        ForEach(MediaLibraryRecord.Mode.allCases) { mode in
+            Button(mode.transcriptionTitle(retrying: true)) { Task { await store.recognize(id, mode: mode) } }
+                .disabled(store.isDemo || store.busy || active)
+        }
     }
 }

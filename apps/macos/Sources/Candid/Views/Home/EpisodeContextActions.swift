@@ -11,7 +11,8 @@ struct EpisodeContextActions: View {
     let media: MediaWorkspaceStore?
     var resolvedMediaRecord: MediaLibraryRecord? = nil
     let remove: () -> Void
-    private var record: MediaLibraryRecord? { resolvedMediaRecord ?? media?.records.first { $0.id.uuidString == episode.mediaID } }
+    private var mediaID: UUID? { episode.mediaID.flatMap(UUID.init(uuidString:)) }
+    private var record: MediaLibraryRecord? { resolvedMediaRecord ?? media?.records.first { $0.id == mediaID } }
     var body: some View {
         Button((record?.recordingParts?.count ?? 0) > 1 ? L("打开第一段原件") : L("打开原件")) { original(reveal: false) }
             .disabled(episode.screenshotSpans.isEmpty && record == nil)
@@ -29,10 +30,14 @@ struct EpisodeContextActions: View {
         } }
         Button(L("编辑标题与备注")) { NotificationCenter.default.post(name: .candidEditFragment, object: FragmentEditTarget(activities: episode.spans.map(\.id), mediaID: record?.id)) }.disabled(session.isDemo)
         Button(L("添加备注")) { Task { if let reference = await reference() { NotificationCenter.default.post(name: .candidNoteReference, object: reference) } } }.disabled(session.isDemo)
-        Button(L("重新识别")) { Task {
-            if let record, let media { await media.recognize(record, mode: .quick) }
-            else if let span = episode.screenshotSpans.last, let shot = await session.screenshotRecords(forEventID: span.id).last { session.recognition.runManually(.ocr, screenshot: shot) }
-        } }.disabled(session.isDemo || (episode.screenshotSpans.isEmpty && record?.kind != .audio))
+        if episode.audio != nil, let mediaID, let media {
+            RecordingTranscriptionActions(id: mediaID, store: media,
+                                          active: record?.processingStatus.isActive == true || record?.processing?.isActive == true)
+        } else {
+            Button(L("重新识别")) { Task {
+                if let span = episode.screenshotSpans.last, let shot = await session.screenshotRecords(forEventID: span.id).last { session.recognition.runManually(.ocr, screenshot: shot) }
+            } }.disabled(session.isDemo || episode.screenshotSpans.isEmpty)
+        }
         if episode.kind == .app, !episode.bundleID.isEmpty {
             Button(L("以后不记这个 App")) { session.setExcludedApp(episode.bundleID, true) }.disabled(session.isDemo)
         }

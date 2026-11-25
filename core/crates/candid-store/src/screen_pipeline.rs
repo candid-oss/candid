@@ -1,11 +1,11 @@
 //! Ended screen episodes and per-episode summaries in the existing derived layer.
-use crate::screen_cleanup::{clean, ScreenEpisode, ScreenFrame};
+use crate::screen_cleanup::{clean_objects, ScreenEpisode, ScreenFrame};
 use crate::{
     db::{int, text, RowExt},
     sha256_hex, uuid_v4, Result, TimelineError, TimelineStore,
 };
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 fn bad(s: &str) -> TimelineError {
     TimelineError::InvalidInput(s.into())
 }
@@ -71,12 +71,17 @@ impl TimelineStore {
             self.clock.now_ms() / 60000,
             &configuration
         ]))?);
-        let rows=self.db.query("SELECT e.event_id,e.source_id,e.event_id,COALESCE(shot.start_ms,e.start_ms),COALESCE(shot.end_ms,shot.start_ms,e.end_ms,e.start_ms),COALESCE(NULLIF(p.app_name,''),NULLIF(e.app_name,''),p.app_bundle_id,e.app_bundle_id,''),COALESCE(NULLIF(p.title,''),NULLIF(shot.title,''),e.title,''),e.kind,e.payload_json FROM events e LEFT JOIN events shot ON e.parent_event_id=shot.event_id AND shot.kind='screen.shot' LEFT JOIN events p ON shot.parent_event_id=p.event_id WHERE e.kind IN ('screen.text','image.text') AND e.start_ms>=? AND e.sensitivity<>'protected' ORDER BY e.start_ms DESC,e.event_id DESC LIMIT 20000",&[int(self.clock.now_ms()-7*86400000)],|r|(r.text(0),r.text(1),r.text(2),r.int(3),r.int(4),r.text(5),r.text(6),r.text(7),r.text(8)))?;
+        let rows=self.db.query("SELECT e.event_id,e.source_id,e.event_id,COALESCE(shot.start_ms,e.start_ms),COALESCE(shot.end_ms,shot.start_ms,e.end_ms,e.start_ms),COALESCE(NULLIF(p.app_name,''),NULLIF(e.app_name,''),p.app_bundle_id,e.app_bundle_id,''),COALESCE(NULLIF(p.title,''),NULLIF(shot.title,''),e.title,''),e.kind,e.payload_json,COALESCE(NULLIF(json_extract(e.payload_json,'$.record_evidence.object.key'),''),NULLIF(e.url,''),NULLIF(json_extract(p.payload_json,'$.record_evidence.object.key'),''),NULLIF(shot.url,'')) FROM events e LEFT JOIN events shot ON e.parent_event_id=shot.event_id AND shot.kind='screen.shot' LEFT JOIN events p ON COALESCE(shot.parent_event_id,e.parent_event_id)=p.event_id
+            WHERE (e.kind IN ('screen.text','image.text') OR (e.kind='screen.shot'
+              AND (EXISTS (SELECT 1 FROM message_sources ms WHERE ms.event_id=e.event_id) OR EXISTS (SELECT 1 FROM excerpt_sources xs WHERE xs.event_id=e.event_id))
+              AND NOT EXISTS (SELECT 1 FROM events o JOIN event_text t ON t.event_id=o.event_id
+                WHERE o.parent_event_id=e.event_id AND o.kind='image.text' AND o.sensitivity<>'protected' AND t.field='ocr'))) AND e.start_ms>=? AND e.sensitivity<>'protected' AND COALESCE(shot.sensitivity,'')<>'protected' AND COALESCE(p.sensitivity,'')<>'protected' ORDER BY e.start_ms DESC,e.event_id DESC LIMIT 20000",&[int(self.clock.now_ms()-7*86400000)],|r|(r.text(0),r.text(1),r.text(2),r.int(3),r.int(4),r.text(5),r.text(6),r.text(7),r.text(8),r.opt_text(9)))?;
         let mut bounded = rows.len() == 20000;
         let mut frames = Vec::new();
+        let mut objects = HashMap::new();
         let mut text_bytes = 0;
         let all = self.sources()?;
-        for (id, source, _revision, start, end, app, window, kind, payload) in rows {
+        for (id, source, _revision, start, end, app, window, kind, payload, object) in rows {
             if !sources.contains(&source) {
                 continue;
             }
@@ -91,7 +96,7 @@ impl TimelineStore {
                 continue;
             }
             let (field, body) = self.screen_frame_body(&id)?;
-            if body.trim().is_empty()
+            if (body.trim().is_empty() && kind != "screen.shot")
                 || sp
                     .policy
                     .exclude
@@ -112,6 +117,9 @@ impl TimelineStore {
             } else {
                 window
             };
+            if let Some(object) = object.filter(|o| o.starts_with("https://") || o.starts_with("http://") || o.starts_with("file://")) {
+                objects.insert(id.clone(), object);
+            }
             frames.push(ScreenFrame {
                 event_id: id,
                 source_id: source,
@@ -125,7 +133,11 @@ impl TimelineStore {
             });
         }
         let important:HashSet<String>=self.db.query("SELECT target_id FROM corrections WHERE target_type='event_label' AND action='relabel' AND json_extract(value_json,'$.screen_important')=1",&[],|r|r.text(0))?.into_iter().collect();
-        let episodes = clean(frames, &important);
+        let episodes = clean_objects(frames, &important, &objects);
+        let ended_frame_owners: HashMap<_, _> = episodes.iter()
+            .filter(|ep| ep.end_ms <= self.clock.now_ms() - 600000)
+            .flat_map(|ep| ep.frames.iter().map(|f| (f.event_id.as_str(), ep.id.as_str())))
+            .collect();
         let mut changed = 0;
         let mut raw = 0;
         let mut input = 0;
@@ -133,7 +145,15 @@ impl TimelineStore {
         self.db.transaction(||{
             // Revocation/deletion invalidates old draft episodes; raw evidence stays with its original owner.
             let stale=self.db.query("SELECT DISTINCT p.episode_id FROM episodes p JOIN episode_evidence e USING(episode_id,rev) LEFT JOIN events v USING(event_id) WHERE p.producer LIKE 'screen-%' AND p.status='draft'",&[],|r|r.text(0))?;
-            for id in stale {let data=self.automation_get(&format!("screen.input/1:{id}"))?;if self.screen_validate(&data).is_err(){self.db.execute("UPDATE episodes SET status='superseded' WHERE episode_id=? AND status='draft'",&[text(id)])?;}}
+            for id in stale {
+                let data = self.automation_get(&format!("screen.input/1:{id}"))?;
+                let mut owners = data["episode"]["frames"].as_array().into_iter().flatten()
+                    .map(|f| f["event_id"].as_str().and_then(|event| ended_frame_owners.get(event)));
+                let replaced = owners.next().flatten().is_some_and(|owner| *owner != id && owners.all(|other| other == Some(owner)));
+                if replaced || self.screen_validate(&data).is_err() {
+                    self.db.execute("UPDATE episodes SET status='superseded' WHERE episode_id=? AND status='draft'", &[text(id)])?;
+                }
+            }
             for ep in &episodes {
                 raw+=ep.raw_chars;input+=ep.input_chars;
                 if ep.end_ms>self.clock.now_ms()-600000 {continue;}
@@ -293,7 +313,7 @@ impl TimelineStore {
             &[text(id)],
             |r| r.text(0),
         )?;
-        if latest.is_some_and(|s| ["edited", "confirmed", "rejected"].contains(&s.as_str())) {
+        if latest.is_some_and(|s| ["edited", "confirmed", "rejected", "superseded"].contains(&s.as_str())) {
             return Err(bad("user_edited"));
         }
         let c = self.model_config()?;
@@ -337,7 +357,7 @@ impl TimelineStore {
                 return Err(TimelineError::Denied("waiting_authorization".into()));
             }
         }
-        // The model reads the curated layer of this span only: messages, excerpts and app time, never raw OCR.
+        // Cite structured records when present and bounded visible OCR when they are absent.
         let input = self.activity_input(&ep)?;
         if !input.has_curated {
             return Err(bad("no_curated_content"));
@@ -349,7 +369,7 @@ impl TimelineStore {
         self.workflow_budget(&c, a, input.content.len())?;
         let prompt = self.activity_prompt();
         Ok(
-            json!({"job":job,"speech":false,"step":"screen-episodes","provider":provider,"assignment":a,"content":input.content,"prompt":prompt,"json_mode":true,"response_schema":{"type":"object","properties":{"title":{"type":"string"},"summary":{"type":"string"},"citations":{"type":"array","items":{"type":"string"}}},"required":["title","summary","citations"],"additionalProperties":false},"refs":input.refs,"cache_key":cache_key,"source_revision":data["digest"],"config_revision":sha256_hex(&serde_json::to_vec(&c)?),"feature_revision":self.feature_settings()?["items"]["screen-episodes"]}),
+            json!({"job":job,"speech":false,"step":"screen-episodes","provider":provider,"assignment":a,"content":input.content,"prompt":prompt,"json_mode":true,"response_schema":{"type":"object","properties":{"title":{"type":"string"},"summary":{"type":"string"},"citations":{"type":"array","items":{"type":"string"}}},"required":["title","summary","citations"],"additionalProperties":false},"refs":input.refs,"evidence":input.evidence,"cache_key":cache_key,"source_revision":data["digest"],"config_revision":sha256_hex(&serde_json::to_vec(&c)?),"feature_revision":self.feature_settings()?["items"]["screen-episodes"]}),
         )
     }
     /// A deterministic provider rejection blocks this configuration instead of charging every queued episode.
@@ -368,6 +388,10 @@ impl TimelineStore {
             || sha256_hex(&serde_json::to_vec(&self.model_config()?)?) != r["config_revision"]
             || self.feature_settings()?["items"]["screen-episodes"] != r["feature_revision"]
         {
+            return Err(bad("source_or_configuration_changed"));
+        }
+        let input = self.activity_input(&self.screen_episode_light(&data)?)?;
+        if self.activity_cache_key(&input)? != r["cache_key"] {
             return Err(bad("source_or_configuration_changed"));
         }
         let job = self.job_command(&json!({"action":"get","id":r["job"]["id"]}))?;
@@ -411,6 +435,10 @@ impl TimelineStore {
             self.db.execute("UPDATE episodes SET status='superseded' WHERE episode_id=? AND status='draft'",&[text(id)])?;
             self.db.execute("INSERT INTO episodes VALUES(?,?,?,?,?,?,'activity','draft','screen-summary/1',?,?,NULL,?)",&[text(id),int(rev),int(ep.start_ms),int(ep.end_ms),text(title),text(summary),text(r["assignment"]["model"].to_string()),text(crate::activity::PROMPT_VERSION),int(self.clock.now_ms())])?;
             self.db.execute("INSERT INTO episode_evidence SELECT episode_id,?,event_id,role,selector_json FROM episode_evidence WHERE episode_id=? AND rev=?",&[int(rev),text(id),int(old.0)])?;
+            for evidence in r["evidence"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                self.db.execute("INSERT OR IGNORE INTO episode_evidence VALUES(?,?,?,'supporting','{}')",
+                    &[text(id), int(rev), text(evidence)])?;
+            }
             let result=json!({"format":"screen-summary/1","episode_id":id,"revision":rev,"title":title,"summary":summary,"citations":cited,"producer":r["assignment"]["model"],"source_revision":r["source_revision"],"prompt_version":crate::activity::PROMPT_VERSION,"cache_key":key});
             self.automation_put(&format!("screen.summary/1:{id}:{rev}"),&result)?;
             self.automation_put(&format!("screen.cache/1:{id}"),&json!({"key":key,"rev":rev}))?;

@@ -2,7 +2,7 @@ import SwiftUI
 import CandidLocalization
 
 /// The AI page's skill list (opened from 「技能」 in the header): what Pi can run, what triggers it, whether the hook is
-/// on, and 运行; below, the fixed flows inside the core. Per-feature settings come later in 设置 → AI 功能 (§4.2).
+/// on, and 运行.
 struct AISkillsPanel: View {
     @Bindable var model: AIPageModel
     let close: () -> Void
@@ -23,20 +23,7 @@ struct AISkillsPanel: View {
                     if index > 0 { HairlineDivider() }
                     skillRow(skill)
                 }
-                if !model.workflows.definitions.isEmpty {
-                    Text(L("核心内流程")).typography(.headline).padding(.top, Space.xs)
-                    ForEach(Array(model.workflows.definitions.enumerated()), id: \.element.id) { index, flow in
-                        if index > 0 { HairlineDivider() }
-                        HStack(spacing: Space.xs) {
-                            Text(flow.title).typography(.body).foregroundStyle(flow.implemented ? .primary : .secondary)
-                            Spacer(minLength: Space.xs)
-                            Tag(text: Self.flowTrigger(flow.id, automatic: model.workflows.settings.automatic))
-                            Tag(text: flow.implemented ? L("可用") : L("尚未接入"), tint: flow.implemented ? Palette.success : nil)
-                        }
-                        .frame(minHeight: 30)
-                    }
-                    Text(L("功能开关在 设置 → AI 功能。")).typography(.caption).foregroundStyle(.tertiary)
-                }
+
             }
         }
     }
@@ -61,11 +48,4 @@ struct AISkillsPanel: View {
         }
     }
 
-    static func flowTrigger(_ id: String, automatic: Bool) -> String {
-        switch id {
-        case "recording": automatic ? L("录音保存后 · 已开") : L("录音保存后 · 未开")
-        case "conversation": L("随录音转写")
-        default: L("手动")
-        }
-    }
 }

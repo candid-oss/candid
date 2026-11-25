@@ -34,6 +34,14 @@ struct MediaLibraryRecord: Decodable, Identifiable {
         case quick, conversation
         var id: Self { self }
         var label: String { self == .quick ? L("单人转写") : L("多人分段与声纹") }
+        func transcriptionTitle(retrying: Bool) -> String {
+            switch (self, retrying) {
+            case (.quick, false): L("转写录音")
+            case (.quick, true): L("重新转写")
+            case (.conversation, false): L("转写并区分说话人")
+            case (.conversation, true): L("重新转写并区分说话人")
+            }
+        }
     }
 
     struct Segment: Decodable {

@@ -23,7 +23,32 @@ const AX_APPS: &[&str] = &[
 const AI_HOSTS: &[&str] = &["chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com", "chat.deepseek.com", "grok.com", "kimi.com", "doubao.com", "poe.com", "perplexity.ai", "copilot.microsoft.com"];
 const VISIT_GAP_MS: i64 = 30 * 60 * 1000;
 const MAX_EXCERPT_CHARS: usize = 20_000;
-const MIN_EXCERPT_CHARS: usize = 20;
+/// A new visit needs this much text: shorter ones were mostly redirects, error stubs and empty app shells.
+const MIN_EXCERPT_CHARS: usize = 80;
+/// Pages with nothing to read: blank tabs, search result lists, sign-in and account pages.
+const BLANK_TITLES: &[&str] = &["新标签页", "New Tab", "无标题", "Untitled"];
+
+fn not_reading(title: &str, url: Option<&str>) -> bool {
+    if BLANK_TITLES.contains(&title.trim()) {
+        return true;
+    }
+    let Some(url) = url else { return false };
+    let rest = url.split("://").nth(1).unwrap_or("");
+    let (host, path) = rest.split_once('/').map(|(h, p)| (h, format!("/{p}"))).unwrap_or((rest, "/".into()));
+    let host = host.to_ascii_lowercase();
+    let search = (host.contains("google.") && path.starts_with("/search")) || (host.ends_with("bing.com") && path.starts_with("/search"))
+        || (host.ends_with("baidu.com") && (path.starts_with("/s?") || path.starts_with("/s/")))
+        || (host.ends_with("duckduckgo.com") && path.contains("q="));
+    let account = host.starts_with("accounts.") || host.starts_with("myaccount.") || host.starts_with("login.") || host.starts_with("passport.")
+        || ["/login", "/signin", "/sign-in", "/oauth", "/sso", "/auth"].iter().any(|p| path.starts_with(p));
+    search || account
+}
+
+/// A line that is only a link (AX exposes hrefs of link lists) carries no reading.
+fn bare_link(line: &str) -> bool {
+    let l = line.trim();
+    (l.starts_with("http://") || l.starts_with("https://")) && !l.contains(char::is_whitespace)
+}
 
 pub(crate) fn wants(app: &str) -> bool {
     AX_APPS.contains(&app)
@@ -63,6 +88,9 @@ impl TimelineStore {
             let object = &p["record_evidence"]["object"];
             let url = object["key"].as_str().filter(|k| ["url", "path"].contains(&object["basis"].as_str().unwrap_or("")) && (k.starts_with("http://") || k.starts_with("https://") || k.starts_with("file://"))).map(String::from);
             if url.as_deref().is_some_and(|u| AI_HOSTS.iter().any(|h| u.split('/').nth(2).is_some_and(|host| host == *h || host.ends_with(&format!(".{h}"))))) {
+                continue;
+            }
+            if not_reading(&clean_title(raw_title, app).unwrap_or_default(), url.as_deref()) {
                 continue;
             }
             let body = self.field_text(event_id, "body")?;
@@ -113,7 +141,7 @@ impl TimelineStore {
         for episode in clean(frames, &HashSet::new()) {
             for line in episode.lines.iter().filter(|l| l.is_new && l.weight >= 0.5) {
                 let t = line.text.trim().to_string();
-                if t.is_empty() || !seen.insert(t.clone()) {
+                if t.is_empty() || bare_link(&t) || !seen.insert(t.clone()) {
                     continue;
                 }
                 paragraphs.push(t);
@@ -158,5 +186,23 @@ impl TimelineStore {
                 Ok(1)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pages_without_reading_are_skipped() {
+        assert!(not_reading("新标签页", None));
+        assert!(not_reading("x", Some("https://www.google.com/search?q=hasselblad")));
+        assert!(not_reading("x", Some("https://www.google.com.hk/search?q=a")));
+        assert!(not_reading("x", Some("https://accounts.google.com/v3/signin")));
+        assert!(not_reading("x", Some("https://example.com/login?next=/")));
+        assert!(!not_reading("大疆收购哈苏原因", Some("https://www.zhihu.com/question/1")));
+        assert!(!not_reading("Docs", Some("https://www.google.com/maps/place/x")));
+        assert!(bare_link("https://inspect.aisi.org.uk/evals"));
+        assert!(!bare_link("see https://a.b for details"));
     }
 }

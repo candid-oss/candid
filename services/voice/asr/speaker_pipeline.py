@@ -12,7 +12,7 @@ from scipy.signal import resample_poly
 
 from .runtime import MAX_BYTES, decode_audio
 from .job_progress import report
-from .speaker_models import MOSS_ID, MOSS_REV, VOICE_ID, VOICE_REV, Models, unit
+from .speaker_models import MOSS_ID, MOSS_REV, VOICE_ID, VOICE_REV, Models, TokenLimit, unit
 from .speaker_store import now
 
 PIPELINE_VERSION = "speaker-demo-2.0"
@@ -21,6 +21,8 @@ PIPELINE_VERSION = "speaker-demo-2.0"
 # against 0.47–0.57 for 2–3 s clips).
 POOL_SECONDS = 30
 MIN_PIECE_SECONDS = 0.3
+SAMPLE_RATE = 16000
+MIN_TRANSCRIPTION_SAMPLES = 10 * SAMPLE_RATE
 
 
 def clean_intervals(start, end, blockers):
@@ -68,6 +70,21 @@ class SpeakerPipeline:
         self.models = models or Models()
         self.loaded = False
 
+    def _transcribe_chunk(self, chunk, offset, duration):
+        report("transcribing", offset / SAMPLE_RATE, duration)
+        try:
+            raw = self.models.transcribe(chunk)
+        except TokenLimit:
+            # Retry both halves from the original audio. The capped result is incomplete.
+            middle = len(chunk) // 2
+            if middle < MIN_TRANSCRIPTION_SAMPLES:
+                raise
+            yield from self._transcribe_chunk(chunk[:middle], offset, duration)
+            yield from self._transcribe_chunk(chunk[middle:], offset + middle, duration)
+            return
+        report("transcribing", min(duration, (offset + len(chunk)) / SAMPLE_RATE), duration)
+        yield offset, len(chunk) / SAMPLE_RATE, raw
+
     def analyze(self, audio_path, threshold=None, margin=0.05, chunk_seconds=300):
         # The diarization model handles several minutes in one pass and keeps its speaker labels
         # consistent within it, so long chunks avoid stitching speakers back together by voice.
@@ -101,20 +118,21 @@ class SpeakerPipeline:
             inference_started = time.monotonic()
             segments, local_speakers = [], []
             if np.sqrt(np.mean(audio ** 2)) >= 1e-4:
-                for index, offset in enumerate(range(0, len(audio), int(chunk_seconds * 16000))):
-                    chunk = audio[offset:offset + int(chunk_seconds * 16000)]
-                    report("transcribing", offset / 16000, duration)
-                    raw = self.models.transcribe(chunk)
-                    report("transcribing", min(duration, (offset + len(chunk)) / 16000), duration)
-                    for entry in raw:
-                        start, end = float(entry["start"]), float(entry["end"])
-                        sid = entry.get("speaker_id")
-                        if not sid or not np.isfinite([start, end]).all() or not 0 <= start < end <= len(chunk) / 16000 + 0.5:
-                            raise ValueError("MOSS returned missing speaker IDs or invalid timestamps; shorten audio and retry")
-                        segments.append({"start_s": start + offset / 16000,
-                            "end_s": min(end, len(chunk) / 16000) + offset / 16000,
-                            "text": re.sub(r"^\[S\d+\]\s*", "", entry["text"]),
-                            "local_id": f"c{index}:{sid}", "chunk": index})
+                chunk_samples = int(chunk_seconds * SAMPLE_RATE)
+                for start_sample in range(0, len(audio), chunk_samples):
+                    chunk = audio[start_sample:start_sample + chunk_samples]
+                    for offset, length, raw in self._transcribe_chunk(chunk, start_sample, duration):
+                        for entry in raw:
+                            start, end = float(entry["start"]), float(entry["end"])
+                            sid = entry.get("speaker_id")
+                            if not sid or not np.isfinite([start, end]).all() or not 0 <= start < end <= length + 0.5:
+                                raise ValueError("MOSS returned missing speaker IDs or invalid timestamps; shorten audio and retry")
+                            if start >= length:
+                                continue
+                            segments.append({"start_s": start + offset / SAMPLE_RATE,
+                                "end_s": min(end, length) + offset / SAMPLE_RATE,
+                                "text": re.sub(r"^\[S\d+\]\s*", "", entry["text"]),
+                                "local_id": f"c{offset}:{sid}", "chunk": offset})
             asr_seconds = time.monotonic() - inference_started
             report("voiceprints", duration, duration)
             voice_started = time.monotonic()

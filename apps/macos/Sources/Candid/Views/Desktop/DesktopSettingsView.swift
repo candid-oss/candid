@@ -15,7 +15,6 @@ struct DesktopSettingsView: View {
         case "appearance": AppearanceSettings()
         case "scope": AppScopeSettings(session: session)
         case "storage": StorageSettings(session: session)
-        case "recognition": DesktopVisionSettings(session: session.recognition, isDemo: session.isDemo)
         case "diagnostics": DesktopSystemView(session: session)
         case "access": TimelineAccessView()
         case "console":

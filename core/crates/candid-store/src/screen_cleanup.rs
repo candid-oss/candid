@@ -88,18 +88,25 @@ fn near(a: &str, b: &str) -> bool {
     row[bc.len()] * 10 <= ac.len().max(bc.len())
 }
 
-pub fn clean(mut frames: Vec<ScreenFrame>, important: &HashSet<String>) -> Vec<ScreenEpisode> {
+pub fn clean(frames: Vec<ScreenFrame>, important: &HashSet<String>) -> Vec<ScreenEpisode> {
+    clean_objects(frames, important, &HashMap::new())
+}
+
+/// A stable document URL or path can identify the same object across applications.
+pub(crate) fn clean_objects(mut frames: Vec<ScreenFrame>, important: &HashSet<String>, objects: &HashMap<String, String>) -> Vec<ScreenEpisode> {
     frames.sort_by(|a, b| (a.start_ms, &a.event_id).cmp(&(b.start_ms, &b.event_id)));
     let mut windows: HashMap<String, usize> = HashMap::new();
     let mut episodes: Vec<ScreenEpisode> = Vec::new();
     let mut seen: HashMap<String, Vec<(String, String, i64, Option<u64>, String)>> = HashMap::new();
     let mut frequency: HashMap<(String, String), HashSet<String>> = HashMap::new();
     let mut totals: HashMap<String, usize> = HashMap::new();
+    let mut episode_keys = Vec::new();
     for f in frames {
         let window = format!("{}\u{1f}{}\u{1f}{}", f.source_id, f.app, f.window);
-        *totals.entry(window.clone()).or_default() += 1;
+        let key = objects.get(&f.event_id).map(|obj| format!("{}\u{1f}{obj}", f.source_id)).unwrap_or_else(|| window.clone());
+        *totals.entry(key.clone()).or_default() += 1;
         let idx = if let Some(i) = windows
-            .get(&window)
+            .get(&key)
             .copied()
             .filter(|i| f.start_ms - episodes[*i].end_ms <= 300000)
         {
@@ -121,10 +128,11 @@ pub fn clean(mut frames: Vec<ScreenFrame>, important: &HashSet<String>) -> Vec<S
                 raw_chars: 0,
             });
             let idx = episodes.len() - 1;
-            windows.insert(window.clone(), idx);
+            episode_keys.push(key.clone());
+            windows.insert(key.clone(), idx);
             idx
         };
-        let memory = seen.entry(window.clone()).or_default();
+        let memory = seen.entry(key.clone()).or_default();
         memory.retain(|(_, _, at, _, _)| f.start_ms - *at <= 1800000);
         let mut offset = 0;
         let mut previous = String::new();
@@ -165,7 +173,7 @@ pub fn clean(mut frames: Vec<ScreenFrame>, important: &HashSet<String>) -> Vec<S
                 *at = f.start_ms;
                 (family.clone(), *key != context)
             } else {
-                let family = sha256_hex(format!("{window}:{context}").as_bytes());
+                let family = sha256_hex(format!("{key}:{context}").as_bytes());
                 if memory.len() >= 2048 {
                     memory.remove(0);
                 }
@@ -189,7 +197,7 @@ pub fn clean(mut frames: Vec<ScreenFrame>, important: &HashSet<String>) -> Vec<S
                 ));
             }
             frequency
-                .entry((window.clone(), family.clone()))
+                .entry((key.clone(), family.clone()))
                 .or_default()
                 .insert(f.event_id.clone());
             let len = text.chars().count();
@@ -212,11 +220,7 @@ pub fn clean(mut frames: Vec<ScreenFrame>, important: &HashSet<String>) -> Vec<S
         episodes[idx].end_ms = episodes[idx].end_ms.max(f.end_ms);
         episodes[idx].frames.push(f);
     }
-    for ep in &mut episodes {
-        let window = format!(
-            "{}\u{1f}{}\u{1f}{}",
-            ep.frames[0].source_id, ep.app, ep.window
-        );
+    for (ep, window) in episodes.iter_mut().zip(episode_keys) {
         for l in &mut ep.lines {
             let count = frequency
                 .get(&(window.clone(), l.family.clone()))

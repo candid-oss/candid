@@ -3,108 +3,59 @@ import CandidLocalization
 import CandidShared
 import SwiftUI
 
-/// Model settings follow model-settings-v1: summary strip, provider cards, compact role rows and searchable choices.
-struct ModelSettingsView: View {
-    @ViewState private var model = ModelSettingsModel()
-    @ViewState private var tab = "sources"
-    /// Self-test only (`--qa-snapshot-dir`): `modeltab roles`, `modeladd`, `modelprompt vision`.
-    @ViewState private var qaRequest: String?
-
-    private var refreshOnAppear = true
-    init(model: ModelSettingsModel = ModelSettingsModel(), initialTab: String = "sources", refreshOnAppear: Bool = true) {
-        _model = ViewState(wrappedValue: model); _tab = ViewState(initialValue: initialTab); self.refreshOnAppear = refreshOnAppear
-    }
-
-    var body: some View {
-        SettingsPage(title: L("模型"), accessory: AnyView(PillSwitcher(items: [("sources", L("来源")), ("roles", L("角色")), ("usage", L("用量"))], selection: $tab))) {
-            if let error = model.error { InlineMessage(kind: .error, text: error) }
-            Group {
-                switch tab {
-                case "roles": ModelRolesView(model: model, qaRequest: $qaRequest)
-                case "usage": ModelUsageView(model: model)
-                default:
-                    VStack(alignment: .leading, spacing: Space.xl) {
-                        ModelSourcesView(model: model, qaRequest: $qaRequest)
-                        NetworkProxyRow()
-                    }
-                }
-            }
-            .id(tab).transition(Motion.enter)
-        }
-        .task(id: tab) { if refreshOnAppear && tab == "sources" { await model.loadUsage(days: 7) } }
-        .animation(Motion.spring, value: tab)
-        .onReceive(NotificationCenter.default.publisher(for: QASnapshot.command)) { note in
-            guard let line = note.object as? String else { return }
-            if line.hasPrefix("modeltab ") { tab = String(line.dropFirst(9)) }
-            if line == "modeladd" || line.hasPrefix("modelprompt ") { qaRequest = line }
-        }
-    }
-}
-
-// MARK: - Shared bits
-
-// MARK: - Sources
-
 struct ModelSourcesView: View {
     let model: ModelSettingsModel
-    @Binding var qaRequest: String?
+    @Binding var addingSource: Bool
     /// providerID being edited, or "new"; one panel open at a time, unfolded in place.
     @ViewState private var editing: String?
     @ViewState private var newDraft = ProviderPreset.all[0].makeProvider()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.m) {
-            ModelSourceSummary(model: model)
-            if model.config.providers.isEmpty && editing != "new" {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(L("还没有模型来源")).typography(.section)
-
-                }.padding(.vertical, 18)
-            }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: Space.s)], spacing: Space.s) {
-                ForEach(model.config.providers) { provider in
-                    ProviderRow(model: model, provider: provider, open: editing == provider.providerID) {
-                        editing = editing == provider.providerID ? nil : provider.providerID
-                    }
+        VStack(alignment: .leading, spacing: Space.s) {
+            HStack {
+                Text(L("服务商与本机模型")).typography(.headline)
+                Spacer()
+                ChipButton(title: L("添加来源"), systemImage: "plus", emphasized: true) {
+                    addingSource = true
                 }
-                Button { newDraft = ProviderPreset.all[0].makeProvider(); editing = "new" } label: {
-                    VStack(spacing: Space.s) {
-                        Image(systemName: "plus").typography(.section)
-                        Text(L("添加来源")).typography(.body, .medium)
-                        Text(L("本机、自建或云端")).typography(.caption).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 220)
-                    .background(Surface.wash.color, in: RoundedRectangle(cornerRadius: Radius.large))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.large).strokeBorder(Surface.hairline, style: StrokeStyle(lineWidth: Surface.hairlineWidth, dash: [Space.xs])))
-                    .contentShape(RoundedRectangle(cornerRadius: Radius.large))
-                }.buttonStyle(.plain)
             }
-            if let provider = model.config.providers.first(where: { $0.providerID == editing }) {
-                InlinePanel { ProviderForm(model: model, initial: provider, isNew: false) { editing = nil } }
-                    .padding(.top, Space.s)
+            if model.config.providers.isEmpty && editing != "new" {
+                Text(L("还没有模型来源")).typography(.secondary).foregroundStyle(.secondary)
+                    .padding(.vertical, Space.row)
             }
             if editing == "new" {
                 InlinePanel { ProviderForm(model: model, initial: newDraft, isNew: true) { editing = nil } }
-                    .padding(.top, 14)
+                    .id(newDraft.providerID)
+            }
+            ForEach(model.config.providers) { provider in
+                if provider.providerID != model.config.providers.first?.providerID { HairlineDivider() }
+                ProviderRow(model: model, provider: provider, open: editing == provider.providerID) {
+                    editing = editing == provider.providerID ? nil : provider.providerID
+                }
+                if editing == provider.providerID {
+                    InlinePanel { ProviderForm(model: model, initial: provider, isNew: false) { editing = nil } }
+                        .id(provider.providerID)
+                }
             }
         }
-        .animation(Motion.spring, value: model.config.providers.map(\.providerID))
-        .animation(Motion.spring, value: editing)
-        .onChange(of: qaRequest) { _, request in
-            if request == "modeladd" { newDraft = ProviderPreset.all[0].makeProvider(); editing = "new"; qaRequest = nil }
+        .onChange(of: addingSource, initial: true) { _, add in
+            if add {
+                newDraft = ProviderPreset.all[0].makeProvider()
+                editing = "new"
+                addingSource = false
+            }
         }
     }
 }
 
 /// The app-wide proxy choice. It sits with the model sources because that is where an unreachable endpoint shows up.
-private struct NetworkProxyRow: View {
+struct NetworkProxyRow: View {
     @AppStorage(NetworkProxy.defaultsKey) private var mode = NetworkProxy.system.rawValue
 
     var body: some View {
         SettingRow(title: L("网络")) {
             CapsuleChoice(options: [(NetworkProxy.system.rawValue, L("系统代理")), (NetworkProxy.direct.rawValue, L("不走代理"))], selection: $mode)
         }
-
     }
 }
 
@@ -113,76 +64,45 @@ private struct ProviderRow: View {
     let provider: AIProvider
     let open: Bool
     let toggle: () -> Void
-    @ViewState private var hovering = false
 
     private var state: ModelSettingsModel.ProbeState { model.probes[provider.providerID] ?? .idle }
     private var count: Int { model.config.models(of: provider.providerID).count }
-    private var visionCount: Int { model.config.models(of: provider.providerID).filter { $0.supportsImages == true }.count }
     private var host: String {
         guard let url = URL(string: provider.baseURL), let host = url.host(percentEncoded: false) else { return provider.baseURL }
         return host + (url.port.map { ":\($0)" } ?? "")
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s) {
-            HStack(spacing: Space.s) {
-                SourceBadge(title: provider.name, destination: provider.destination)
-                VStack(alignment: .leading, spacing: Space.xxs) {
+        HStack(spacing: Space.s) {
+            SourceBadge(title: provider.name, destination: provider.destination)
+            VStack(alignment: .leading, spacing: Space.xxs) {
+                HStack(spacing: Space.xs) {
                     Text(provider.name).typography(.headline).lineLimit(1)
-                    Text(host).typography(.caption).monospaced().foregroundStyle(.secondary).lineLimit(1)
+                    DestinationTag(destination: provider.destination)
                 }
-                Spacer(minLength: 0)
-                DestinationTag(destination: provider.destination)
+                Text(host + " · " + L("%@ 个模型", count))
+                    .typography(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
-            HStack(spacing: Space.xs) {
-                Circle().fill(dot).frame(width: 7, height: 7)
-                if !provider.enabled { Text(L("已停用")).typography(.secondary).foregroundStyle(.secondary) }
-                else {
-                    switch state {
-                    case .idle: Text(L("尚未测试")).typography(.secondary).foregroundStyle(.secondary)
-                    default: status
-                    }
-                }
-                Spacer()
-                Text(L("%@ 个模型", count)).typography(.secondary).foregroundStyle(.secondary)
-            }
-            HStack(spacing: Space.xs) {
-                let texts = model.config.models(of: provider.providerID).filter { $0.modalities.contains("text") }.count
-                if texts > 0 { Tag(text: L("文本 %@", texts)) }
-                if visionCount > 0 { Tag(text: L("看图 %@", visionCount)) }
-                let tools = model.config.models(of: provider.providerID).filter { $0.supportsTools == true }.count
-                if tools > 0 { Tag(text: L("工具 %@", tools)) }
-            }
-            .frame(minHeight: ControlHeight.chip, alignment: .leading)
-            ActivityBars(values: model.dailyCalls(provider.providerID))
-            HStack(alignment: .center, spacing: Space.xs) {
-                let roles = model.config.roles.filter { $0.model?.providerID == provider.providerID }
-                    .map { ModelRoleInfo.info($0.role)?.title ?? $0.role }
-                Text(roles.isEmpty ? L("没有角色在用") : L("用于 ") + roles.joined(separator: L("、")))
-                    .typography(.caption).foregroundStyle(.secondary).lineLimit(2)
-                Spacer(minLength: 0)
-                IconChipButton(title: L("测试 ") + provider.name, symbol: "arrow.clockwise") { model.test(provider) }.disabled(state == .testing)
-                IconChipButton(title: L("编辑 ") + provider.name, symbol: open ? "chevron.up" : "pencil", action: toggle)
-                Toggle(L("启用来源"), isOn: Binding(get: { provider.enabled }, set: { model.setEnabled(provider, $0) }))
-                    .labelsHidden().toggleStyle(.switch).controlSize(.small)
-            }
+            Spacer(minLength: Space.xs)
+            status
+            IconChipButton(title: L("测试 ") + provider.name, symbol: "arrow.clockwise") { model.test(provider) }.disabled(state == .testing)
+            IconChipButton(title: L("编辑 ") + provider.name, symbol: open ? "chevron.up" : "pencil", action: toggle)
+            Toggle(L("启用来源"), isOn: Binding(get: { provider.enabled }, set: { model.setEnabled(provider, $0) }))
+                .labelsHidden().toggleStyle(.switch).controlSize(.small)
         }
-        .padding(Space.m).frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-        .panelSurface(radius: Radius.large)
-        .selectionEdge(open, radius: Radius.large)
-    }
-
-    private var dot: Color {
-        if !provider.enabled { return .secondary.opacity(0.4) }
-        switch state { case .ok: return .green; case .failed: return .red; case .testing: return .orange; case .idle: return .secondary.opacity(0.5) }
+        .padding(.vertical, Space.row)
     }
 
     @ViewBuilder private var status: some View {
-        switch state {
-        case .idle: EmptyView()
-        case .testing: ProgressView().controlSize(.small)
-        case .ok(let ms, _): Text(L("在线 · %@ ms", ms)).typography(.secondary, digits: true).foregroundStyle(.secondary)
-        case .failed(let message): Text(message).typography(.secondary).foregroundStyle(.red).lineLimit(1).frame(maxWidth: 260, alignment: .trailing)
+        if !provider.enabled {
+            Text(L("已停用")).typography(.secondary).foregroundStyle(.secondary)
+        } else {
+            switch state {
+            case .idle: Text(L("尚未测试")).typography(.secondary).foregroundStyle(.secondary)
+            case .testing: ProgressView().controlSize(.small)
+            case .ok(let ms, _): Text(L("在线 · %@ ms", ms)).typography(.secondary, digits: true).foregroundStyle(.secondary)
+            case .failed(let message): Text(message).typography(.secondary).foregroundStyle(Palette.danger).lineLimit(1).help(message)
+            }
         }
     }
 }

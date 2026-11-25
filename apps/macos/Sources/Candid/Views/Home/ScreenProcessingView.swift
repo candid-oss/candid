@@ -4,11 +4,17 @@ import CandidLocalization
 struct ScreenProcessingView: View {
     @ViewState private var model = ScreenProcessingModel()
     @ViewState private var visibleCount = 3
-    private var refreshOnAppear = true
-    init(model: ScreenProcessingModel = ScreenProcessingModel(), refreshOnAppear: Bool = true) { _model = ViewState(wrappedValue: model); self.refreshOnAppear = refreshOnAppear }
+    private let refreshOnAppear: Bool
+    private let showsHeading: Bool
+    init(model: ScreenProcessingModel = ScreenProcessingModel(), refreshOnAppear: Bool = true, showsHeading: Bool = true) {
+        _model = ViewState(wrappedValue: model)
+        self.refreshOnAppear = refreshOnAppear
+        self.showsHeading = showsHeading
+    }
     var body: some View {
-        SettingsGroup(title: L("屏幕片段")) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             HStack {
+                if showsHeading { Text(L("屏幕片段")).typography(.headline) }
                 Spacer()
                 ChipButton(title: model.busy ? L("正在整理") : L("重新整理"), systemImage: "arrow.clockwise") { Task { await model.command("rebuild") } }.disabled(model.busy)
             }

@@ -1,4 +1,3 @@
-import AIProviders
 import CandidLocalization
 import DesktopCore
 import DesktopPlatform
@@ -201,37 +200,14 @@ private struct DesktopRecognitionJSONView<Value: Encodable>: View {
     }
 }
 
-struct DesktopVisionSettings: View {
+struct DesktopRecognitionOptions: View {
     @Bindable var session: DesktopRecognitionSession
-    let isDemo: Bool
-    @ViewState private var selectedKind: DesktopRecognitionKind = .ocr
-    @AppStorage("desktop.settings.tab") private var settingsTab = "capture"
-
-    private func roleSummary(_ role: String) -> String {
-        let config = AIRuntime.shared.config()
-        guard let a = config.assignment(role), a.model != nil || a.engine != nil else {
-            return role == "ocr" ? L("系统文字识别（默认）") : L("未选择模型")
-        }
-        if let ref = a.model {
-            return "\(config.provider(ref.providerID)?.name ?? "?") · \(config.model(ref)?.displayName ?? ref.modelID)"
-        }
-        return ModelRoleInfo.info(role)?.engines.first { $0.id == a.engine }?.title ?? L("内置引擎")
-    }
+    let kind: DesktopRecognitionKind
 
     var body: some View {
-        SettingsPage(title: L("识别")) {
-            PillSwitcher(items: DesktopRecognitionKind.allCases.map { ($0, $0.title) }, selection: $selectedKind).offset(x: -13)
-            timingGroup(selectedKind)
-            powerGroup(selectedKind)
-            SettingsGroup(title: L("模型与提示词")) {
-                SettingRow(title: selectedKind == .vision ? L("图像理解") : L("文字识别"), detail: L("模型、密钥和提示词统一在「模型」里管理。")) {
-                    HStack(spacing: Space.xs) {
-                        Text(roleSummary(selectedKind == .vision ? "vision" : "ocr")).typography(.body).foregroundStyle(.secondary)
-                        QuietButton(title: L("打开"), emphasized: true) { settingsTab = "models" }
-                    }
-                }
-            }
-            if selectedKind == .vision {
+        VStack(alignment: .leading, spacing: Space.m) {
+            if session.policy(kind).mode != .manual { timingGroup(kind) }
+            if kind == .vision {
                 SettingsGroup(title: L("描述方式")) {
                     SwitchRow(title: L("参考这张图已有的 OCR 文字"), detail: L("有 OCR 结果时随图提供，模型仍需与原图核对；没有时直接看图。"),
                               isOn: $session.useOCRReference)
@@ -241,21 +217,15 @@ struct DesktopVisionSettings: View {
                     }
                 }
             }
+            powerGroup(kind)
         }
-        .animation(Motion.spring, value: selectedKind)
         .onAppear(perform: session.refreshPower)
     }
 
     @ViewBuilder private func timingGroup(_ kind: DesktopRecognitionKind) -> some View {
         let policy = session.policy(kind)
         SettingsGroup(title: L("处理时机")) {
-            SettingRow(title: L("模式"), detail: kind == .vision && policy.mode != .manual ? L("自动分析会把符合范围的截图交给配置的模型。") : nil) {
-                CapsuleChoice(options: DesktopRecognitionMode.allCases.map { ($0, $0.title) }, selection: binding(\.mode, for: kind))
-            }
-            if policy.mode != .manual {
-                HairlineDivider()
-                SwitchRow(title: L("也处理已有截图"), isOn: binding(\.includeHistory, for: kind))
-            }
+            SwitchRow(title: L("也处理已有截图"), isOn: binding(\.includeHistory, for: kind))
             if policy.mode == .batch {
                 HairlineDivider()
                 SettingRow(title: L("间隔")) {
@@ -265,13 +235,7 @@ struct DesktopVisionSettings: View {
                 SettingRow(title: L("每批最多")) {
                     StepperControl(text: L("%@ 张", policy.batchLimit), value: binding(\.batchLimit, for: kind), range: 1...100)
                 }
-                QuietButton(title: L("现在运行一批"), emphasized: true) { session.runBatchNow(kind) }
-                    .disabled(isDemo || session.activeKind != nil).offset(x: -9)
             }
-            if let status = session.status[kind], policy.mode != .manual || session.activeKind == kind {
-                InlineMessage(kind: .note, text: status).padding(.vertical, Space.xs)
-            }
-            if isDemo { InlineMessage(kind: .note, text: L("合成演示只运行手动识别。")).padding(.vertical, Space.xs) }
         }
     }
 

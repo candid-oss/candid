@@ -414,6 +414,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "candid-lab"
+version = "0.1.0"
+dependencies = [
+ "candid-service",
+ "candid-store",
+ "chrono",
+ "reqwest",
+ "serde_json",
+]
+
+[[package]]
 name = "candid-metrics"
 version = "0.1.0"
 dependencies = [

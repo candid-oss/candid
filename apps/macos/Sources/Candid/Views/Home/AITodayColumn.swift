@@ -327,26 +327,33 @@ struct AITodayColumn: View {
             }
             if jobsOpen && !(active.isEmpty && failed.isEmpty) {
                 InlinePanel {
-                    VStack(alignment: .leading, spacing: Space.xs) {
-                        ForEach(Array((active + failed).enumerated()), id: \.element.id) { index, job in
-                            if index > 0 { HairlineDivider() }
-                            HStack(spacing: Space.xs) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(job.title).typography(.body)
-                                    Text(model.workflows.sourceName(job) + (job.state == "failed" ? " · " + job.status : ""))
-                                        .typography(.caption).foregroundStyle(job.state == "failed" ? Palette.warning : .secondary).lineLimit(2)
-                                }
-                                Spacer(minLength: 0)
-                                if job.state == "failed" { ChipButton(title: L("重试"), systemImage: "arrow.clockwise", emphasized: true) { Task { await model.retry(job) } } }
-                                else { HStack(spacing: Space.xxs) { ProgressView().controlSize(.mini); ChipButton(title: L("取消")) { Task { await model.cancel(job) } } }.help(L("取消后不再保存返回结果。正在运行的模型可能继续处理。")) }
-                            }
-                        }
+                    ScrollView {
+                        jobsRows(active + failed)
                     }
+                    .frame(height: min(192, CGFloat(active.count + failed.count) * 44))
                 }
             }
         }
         .padding(.top, Space.xs)
     }
+    private func jobsRows(_ jobs: [WorkflowControlModel.Job]) -> some View {
+        LazyVStack(alignment: .leading, spacing: Space.xs) {
+            ForEach(Array(jobs.enumerated()), id: \.element.id) { index, job in
+                if index > 0 { HairlineDivider() }
+                HStack(spacing: Space.xs) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(job.title).typography(.body)
+                        Text(model.workflows.sourceName(job) + (job.state == "failed" ? " · " + job.status : ""))
+                            .typography(.caption).foregroundStyle(job.state == "failed" ? Palette.warning : .secondary).lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                    if job.state == "failed" { ChipButton(title: L("重试"), systemImage: "arrow.clockwise", emphasized: true) { Task { await model.retry(job) } } }
+                    else { HStack(spacing: Space.xxs) { ProgressView().controlSize(.mini); ChipButton(title: L("取消")) { Task { await model.cancel(job) } } }.help(L("取消后不再保存返回结果。正在运行的模型可能继续处理。")) }
+                }
+            }
+        }
+    }
+
 }
 
 /// One line of the 日程 or 提醒 card: time or a check circle, title, detail; 「问 AI」 on hover (always on the current

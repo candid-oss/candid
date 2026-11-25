@@ -163,6 +163,14 @@ struct Raw {
 /// (key, node kind, alias, display name)
 type NodeRef = (String, &'static str, String, Option<String>);
 
+/// `name@domain.tld` somewhere in the text.
+fn embeds_address(s: &str) -> bool {
+    s.split(|c: char| c.is_whitespace() || "<>()（）,;:\"'".contains(c)).any(|t| {
+        let Some((user, domain)) = t.split_once('@') else { return false };
+        !user.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
+    })
+}
+
 fn classify(r: &Raw, groups: &HashSet<String>) -> Option<NodeRef> {
     if r.actor == "self" {
         return Some((SELF_KEY.into(), "self", SELF_KEY.into(), None));
@@ -177,6 +185,13 @@ fn classify(r: &Raw, groups: &HashSet<String>) -> Option<NodeRef> {
             };
             let n = normalize(&shown);
             (!n.is_empty()).then(|| (format!("handle:{}/{n}", app_slug(r.app.as_deref())), "handle", format!("{}/{n}", app_slug(r.app.as_deref())), Some(shown)))
+        }
+        // A display name that carries its own address (「张三 ZHANG San - 20250001@example.edu」) was sent on that
+        // person's behalf through a shared sender (a course system, a ticket desk): the name, not the From address,
+        // tells who it is, so several people behind one address are not merged.
+        "mail" if sender.is_some_and(embeds_address) => {
+            let n = normalize(sender?);
+            (!n.is_empty()).then(|| (format!("name:{n}"), "name", n, sender.map(String::from)))
         }
         "mail" => match r.addr.as_deref().map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()) {
             Some(a) => Some((format!("email:{a}"), "email", a, sender.map(String::from))),
@@ -524,6 +539,12 @@ impl TimelineStore {
                 dsu.union(x, y);
             }
         }
+        // A voice-library person the user named 「我」 is the user: one self, not a second 「我」 beside it.
+        let me = format!("name:{}", normalize("我"));
+        if nodes.contains_key(&me) {
+            let (x, y) = (dsu.id(&me), dsu.id(SELF_KEY));
+            dsu.union(x, y);
+        }
         let mut touched: HashSet<String> = HashSet::new();
         for (a, b) in &corrections.merges {
             if nodes.contains_key(a) && nodes.contains_key(b) {
@@ -790,5 +811,19 @@ impl TimelineStore {
         let r = self.people_recompute()?;
         let person = self.meta_value(&format!("{NODE}{key}"))?.filter(|v| v != "-");
         Ok(json!({"ok": true, "key": key, "person_id": person, "people": r["people"]}))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_names_with_their_own_address() {
+        assert!(embeds_address("张三 ZHANG San - 20250001@example.edu"));
+        assert!(embeds_address("Li Shang <li.shang@example.org>"));
+        assert!(!embeds_address("Li Shang (TFSC)"));
+        assert!(!embeds_address("@程志伟 试一下"));
+        assert!(!embeds_address("user@localhost"));
     }
 }

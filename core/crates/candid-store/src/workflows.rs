@@ -241,9 +241,20 @@ impl TimelineStore {
     }
     pub fn workflow_command(&self, v: &Value) -> Result<Value> {
         match v["action"].as_str().unwrap_or("status") {
-            "status" => Ok(
-                json!({"catalog":serde_json::from_str::<Value>(CATALOG)?,"output_schema":serde_json::from_str::<Value>(OUTPUT_SCHEMA)?,"features":self.feature_settings()?,"settings":self.wf_get("workflows.settings/1")?,"approvals":self.workflow_approvals()?,"jobs":self.job_command(&json!({"action":"list"}))?["jobs"],"usage":self.model_command(&json!({"action":"usage"}))?}),
-            ),
+            "status" => {
+                let mut status = json!({
+                    "catalog": serde_json::from_str::<Value>(CATALOG)?,
+                    "features": self.feature_settings()?,
+                    "settings": self.wf_get("workflows.settings/1")?,
+                    "approvals": self.workflow_approvals()?
+                });
+                if v["include_activity"] != false {
+                    status["output_schema"] = serde_json::from_str::<Value>(OUTPUT_SCHEMA)?;
+                    status["jobs"] = self.job_command(&json!({"action":"list"}))?["jobs"].take();
+                    status["usage"] = self.model_command(&json!({"action":"usage"}))?;
+                }
+                Ok(status)
+            }
             "features" => self.save_feature_settings(&v["config"]),
             "authorize" => {
                 let source = v["source"].as_str().unwrap_or("");
@@ -620,8 +631,9 @@ impl TimelineStore {
             if bytes.len() > 16 * 1024 * 1024 {
                 return Err(bad("input_limit"));
             }
+            let (bytes, mime) = crate::webp::for_model(bytes, item["mime_type"].as_str().unwrap_or("image/png"), crate::feature_settings::is_loopback(p["base_url"].as_str().unwrap_or("")));
             Some(
-                json!([{"role":"system","content":prompt},{"role":"user","content":[{"type":"image_url","image_url":{"url":format!("data:{};base64,{}",item["mime_type"].as_str().unwrap_or("image/png"),base64::engine::general_purpose::STANDARD.encode(bytes))}}]}]),
+                json!([{"role":"system","content":prompt},{"role":"user","content":[{"type":"image_url","image_url":{"url":format!("data:{mime};base64,{}",base64::engine::general_purpose::STANDARD.encode(bytes))}}]}]),
             )
         } else {
             None

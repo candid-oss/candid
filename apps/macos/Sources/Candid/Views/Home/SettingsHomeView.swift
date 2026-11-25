@@ -1,86 +1,102 @@
 import SwiftUI
 import CandidLocalization
 
-/// Settings inside the immersive window: a quiet section list on the left,
-/// one section on the right. No box around either; the page floats on the
-/// same background as everything else.
 struct SettingsHomeView: View {
     @Bindable var session: DesktopSession
     var deviceSettings: AnyView?
     @AppStorage("desktop.settings.tab") private var selection = "capture"
-    @Namespace private var marker
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var sections: [(id: String, title: String, symbol: String)] {
-        var items: [(String, String, String)] = [
-            ("capture", L("记录"), "record.circle"), ("scope", L("应用"), "square.grid.2x2"),
-            ("appearance", L("外观"), "paintpalette"), ("storage", L("数据"), "internaldrive"),
-            ("recognition", L("识别"), "text.viewfinder"), ("shortcuts", L("快捷操作"), "keyboard"),
-            ("models", L("模型"), "sparkles"), ("ai-functions", L("AI 功能"), "wand.and.stars"),
-            ("components", L("组件"), "shippingbox"),
-            ("people", L("人物"), "person.2"), ("access", L("外部访问"), "key.horizontal")
+    private typealias Item = (id: String, title: String, symbol: String)
+
+    private var groups: [(title: String, items: [Item])] {
+        var system: [Item] = [
+            ("storage", L("数据"), "internaldrive"), ("components", L("组件"), "shippingbox"),
+            ("access", L("外部访问"), "key.horizontal")
         ]
-        if deviceSettings != nil { items.append(("console", L("设备"), "waveform")) }
-        items.append(("diagnostics", L("诊断"), "stethoscope"))
-        items.append(("about", L("关于"), "info.circle"))
-        return items.map { (id: $0.0, title: $0.1, symbol: $0.2) }
+        if deviceSettings != nil { system.append(("console", L("设备"), "waveform")) }
+        system += [("diagnostics", L("诊断"), "stethoscope"), ("about", L("关于"), "info.circle")]
+        return [
+            (L("常规"), [("appearance", L("外观"), "paintpalette"), ("shortcuts", L("快捷操作"), "keyboard")]),
+            (L("采集"), [("capture", L("记录"), "record.circle"), ("scope", L("应用"), "square.grid.2x2")]),
+            (L("智能处理"), [("ai-functions", L("AI 功能"), "sparkles"), ("people", L("人物"), "person.2")]),
+            (L("系统"), system)
+        ]
+    }
+
+    private var current: String {
+        switch selection {
+        case "models", "recognition": "ai-functions"
+        default: groups.contains { $0.items.contains { $0.id == selection } } ? selection : "capture"
+        }
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(L("设置")).typography(.title).padding(.horizontal, 12).padding(.bottom, 18)
-                ForEach(sections, id: \.id) { item in
-                    let on = item.id == current
-                    Button { withAnimation(Motion.bouncy) { selection = item.id } } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: item.symbol).typography(.headline, .medium)
-                                .foregroundStyle(on ? Color.accentColor : Color.secondary).frame(width: 20)
-                            Text(item.title).typography(.headline, on ? .semibold : .regular)
-                                .foregroundStyle(on ? Color.primary : Color.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 12).frame(height: 34)
-                        .background {
-                            if on {
-                                RoundedRectangle(cornerRadius: Radius.medium, style: .continuous).fill(Surface.hover.color)
-                                    .matchedGeometryEffect(id: "selection", in: marker)
-                            }
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(on ? .isSelected : [])
-                }
-                Spacer()
-            }
-            .frame(width: 200)
-            .padding(.top, 70).padding(.leading, 28)
-
-            Group {
-                if current == "shortcuts" { HotkeySettingsView() }
-                else if current == "models" { ModelSettingsView() }
-                else if current == "ai-functions" { AIFunctionSettingsView() }
-                else if current == "components" { ComponentsSettingsView() }
-                else if current == "about" { AboutSettingsView() }
-                else if current == "people" { SettingsPage(title: L("人物")) { VoiceLibraryView() } }
-                else { DesktopSettingsView(session: session, deviceSettings: deviceSettings, section: current) }
-            }
-                .id(current)
-                .transition(.opacity.combined(with: .offset(y: 8)))
+        HStack(alignment: .top, spacing: Space.xs) {
+            sidebar
+            detail
+                .id(selection == "models" ? "models" : current)
                 .scrollContentBackground(.hidden)
                 .frame(maxWidth: 760)
-                .padding(.top, 58)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .animation(Motion.spring, value: current)
+        .padding(.top, 58)
         .onReceive(NotificationCenter.default.publisher(for: QASnapshot.command)) { note in
-            // Self-test only: `settings <section>`.
             if let line = note.object as? String, line.hasPrefix("settings ") { selection = String(line.dropFirst(9)) }
         }
     }
 
-    /// A remembered device section disappears when no device store exists.
-    private var current: String { sections.contains { $0.id == selection } ? selection : "capture" }
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            Text(L("设置")).typography(.section).accessibilityAddTraits(.isHeader)
+                .padding(.horizontal, Space.s)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    ForEach(groups, id: \.title) { group in
+                        VStack(alignment: .leading, spacing: Space.xxs) {
+                            Text(group.title).typography(.caption, .semibold).foregroundStyle(.secondary)
+                                .accessibilityAddTraits(.isHeader).padding(.horizontal, Space.s)
+                            ForEach(group.items, id: \.id) { item in
+                                let selected = item.id == current
+                                Button {
+                                    withAnimation(reduceMotion ? nil : Motion.snappy) { selection = item.id }
+                                } label: {
+                                    HStack(spacing: Space.xs) {
+                                        Image(systemName: item.symbol).frame(width: 18).accessibilityHidden(true)
+                                        Text(item.title)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .typography(.body, selected ? .semibold : .regular)
+                                    .foregroundStyle(selected ? Color.primary : Color.secondary)
+                                    .padding(.horizontal, Space.s).frame(height: ControlHeight.button + 4)
+                                    .background(selected ? Surface.selected.color : .clear, in: RoundedRectangle(cornerRadius: Radius.medium))
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityAddTraits(selected ? .isSelected : [])
+                            }
+                        }
+                    }
+                }
+                .padding(.bottom, Space.m)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .frame(width: 166)
+        .padding(.leading, Space.page)
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch current {
+        case "shortcuts": HotkeySettingsView()
+        case "ai-functions":
+            AIFunctionSettingsView(recognition: session.recognition, initialTab: selection == "models" ? .sources : .features)
+        case "components": ComponentsSettingsView()
+        case "about": AboutSettingsView()
+        case "people": SettingsPage(title: L("人物")) { VoiceLibraryView() }
+        default: DesktopSettingsView(session: session, deviceSettings: deviceSettings, section: current)
+        }
+    }
 }
 
 /// Look of the whole window. Changes apply live to the background behind it.
