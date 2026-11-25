@@ -55,7 +55,7 @@ def test_conversation_offsets_and_read_only_identity_lookup(tmp_path, monkeypatc
     monkeypatch.setenv("CANDID_VOICE_LIBRARY", str(store.path))
 
     class Pipeline:
-        def __init__(self, store):
+        def __init__(self, store, models=None):
             self.store = store
 
         def analyze(self, path):

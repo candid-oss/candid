@@ -14,14 +14,17 @@ fn setup() -> (Fx, String) {
         .unwrap();
     (fx, id)
 }
+/// The recording's one job (quick mode, on the ASR service of `setup`), claimed.
 fn speech(fx: &Fx, id: &str) -> Value {
     fx.store
-        .media_command(&json!({"action":"recognize","id":id}))
+        .media_command(&json!({"action":"recognize","id":id,"mode":"quick"}))
         .unwrap();
-    fx.store.job_command(&json!({"action":"claim","kind":"speech.recognize","owner":"SYNTHETIC","lease_ms":180000})).unwrap()
+    fx.store.job_command(&json!({"action":"claim","kind":RECORDING_JOB,"owner":"SYNTHETIC","lease_ms":180000})).unwrap()
 }
-fn output() -> Value {
-    json!({"producer":{"model_id":"SYNTHETIC","revision":"fixture/1"},"segments":[{"start_seconds":0.0,"end_seconds":1.0,"text":"SYNTHETIC exact words"}]})
+/// What the voice service answers for request `r`: one line of text.
+fn output(r: &Value) -> Value {
+    json!({"format":"recording-speakers/2","mode":"quick","revision":r["input"]["revision"],"segments":[{"start_seconds":0.0,"end_seconds":1.0,"text":"SYNTHETIC exact words","speaker":null,"label":null,"voice_ref":null,"match":null,"correction_key":null}],
+        "speakers":[],"speaker_count":0,"unresolved_segments":0,"dropped_segments":0,"voice_refs":[],"producer":{"model_id":"SYNTHETIC","model_revision":"fixture/1"}})
 }
 #[test]
 fn cancelled_deleted_revoked_and_changed_configuration_reject_late_replies() {
@@ -61,7 +64,7 @@ fn cancelled_deleted_revoked_and_changed_configuration_reject_late_replies() {
             }
         }
         assert!(
-            fx.store.workflow_complete(&r, &output()).is_err(),
+            fx.store.workflow_complete(&r, &output(&r)).is_err(),
             "{scenario}"
         );
         assert!(fx
@@ -102,7 +105,7 @@ fn draft_invalidates_on_retranscription_and_unknown_configuration_version_fails(
     let (fx, id) = setup();
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     let queued = fx
         .store
         .workflow_command(&json!({"action":"enqueue","id":id,"step":"title"}))
@@ -131,7 +134,7 @@ fn draft_invalidates_on_retranscription_and_unknown_configuration_version_fails(
     );
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    let mut out = output();
+    let mut out = output(&r);
     out["segments"][0]["text"] = json!("SYNTHETIC revised words");
     fx.store.workflow_complete(&r, &out).unwrap();
     assert!(fx
@@ -152,7 +155,7 @@ fn reprojecting_after_an_unrelated_source_status_change_does_not_rewrite_events(
     let (fx, id) = setup();
     let job = speech(&fx, &id);
     let request = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&request, &output()).unwrap();
+    fx.store.workflow_complete(&request, &output(&request)).unwrap();
     fx.store.prepare_media(None).unwrap();
     let db = fx.store.raw_db();
     db.script("CREATE TEMP TABLE synthetic_updates(n INTEGER); INSERT INTO synthetic_updates VALUES(0); CREATE TEMP TRIGGER synthetic_event_updates AFTER UPDATE ON main.events BEGIN UPDATE synthetic_updates SET n=n+1; END;").unwrap();
@@ -168,7 +171,7 @@ fn draft_and_job_commit_roll_back_together_and_replay_once_after_reopen() {
     let (mut fx, id) = setup();
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     fx.store
         .workflow_command(&json!({"action":"enqueue","id":id,"step":"title"}))
         .unwrap();
@@ -214,7 +217,7 @@ fn small_features_use_the_same_queue_source_validation_and_atomic_drafts() {
     let (fx, id) = setup();
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     let mut c = fx.store.model_config().unwrap();
     for role in ["summary", "vision"] {
         c["roles"]
@@ -295,7 +298,7 @@ fn reply_validation_does_not_reapply_budget_to_its_own_pending_charge() {
     let (fx, id) = setup();
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     let mut c = fx.store.model_config().unwrap();
     c["models"][0]["cost_json"] = json!({"currency":"USD","per_mtok":{"input":1.0,"output":1.0}});
     c["roles"][1]["limits_json"] = json!({"daily_budget":1.0});
@@ -335,10 +338,10 @@ fn retranscription_transport_retry_does_not_start_another_paid_attempt() {
     fx.store.media_command(&request).unwrap();
     let job = fx
         .store
-        .job_command(&json!({"action":"claim","kind":"speech.recognize","owner":"SYNTHETIC"}))
+        .job_command(&json!({"action":"claim","kind":RECORDING_JOB,"owner":"SYNTHETIC"}))
         .unwrap();
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     fx.store.media_command(&request).unwrap();
     assert_eq!(
         fx.store
@@ -348,7 +351,7 @@ fn retranscription_transport_retry_does_not_start_another_paid_attempt() {
     );
     assert!(fx
         .store
-        .job_command(&json!({"action":"claim","kind":"speech.recognize","owner":"SYNTHETIC"}))
+        .job_command(&json!({"action":"claim","kind":RECORDING_JOB,"owner":"SYNTHETIC"}))
         .unwrap()
         .is_null());
 }
@@ -367,7 +370,7 @@ fn workflow_outputs_land_in_the_derived_layer_and_leave_with_the_recording() {
     let (fx, id) = setup();
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     let mut c = fx.store.model_config().unwrap();
     c["roles"].as_array_mut().unwrap().push(json!({"role":"summary","model":{"provider_id":"local","model_id":"SYNTHETIC"}}));
     fx.store.model_command(&json!({"action":"save","config":c})).unwrap();
@@ -403,9 +406,9 @@ fn workflow_outputs_land_in_the_derived_layer_and_leave_with_the_recording() {
 #[test]
 fn legacy_drafts_move_into_the_derived_tables_once() {
     let (mut fx, id) = setup();
-    let job = speech(&fx, &id);
-    let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    // A transcript as versions before the recording job stored it: on the file itself.
+    fx.store.raw_db().execute("UPDATE media_objects SET metadata=json_set(metadata,'$.processing_status','ready','$.segments',json(?)) WHERE id=?",
+        &[testing::rusqlite::types::Value::Text(json!([{"start_seconds":0.0,"end_seconds":1.0,"text":"SYNTHETIC exact words"}]).to_string()), testing::rusqlite::types::Value::Text(id.clone())]).unwrap();
     let revision = fx.store.workflow_command(&json!({"action":"drafts","id":id})).unwrap();
     assert!(revision.as_object().unwrap().is_empty());
     let segments = fx.store.media_item(&id).unwrap()["segments"].clone();
@@ -434,7 +437,7 @@ fn transcribed_recordings_get_titles_by_default_with_a_borrowed_model() {
     let (fx, id) = setup();
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     let mut c = fx.store.model_config().unwrap();
     for a in c["roles"].as_array_mut().unwrap().iter_mut().filter(|a| a["role"] == "title") {
         a["role"] = json!("vision");
@@ -456,7 +459,7 @@ fn transcribed_recordings_get_titles_by_default_with_a_borrowed_model() {
     let (fx, id) = setup();
     let job = speech(&fx, &id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r, &output()).unwrap();
+    fx.store.workflow_complete(&r, &output(&r)).unwrap();
     fx.store.workflow_command(&json!({"action":"settings","settings":{"version":1,"automatic":false,"titles":false}})).unwrap();
     fx.store.workflow_scan().unwrap();
     assert_eq!(titles(&fx), 0, "turned off stays off");
@@ -469,7 +472,7 @@ fn loopback_model_servers_need_no_source_approval() {
         let (fx, id) = setup();
         let job = speech(&fx, &id);
         let r = fx.store.workflow_prepare(&job).unwrap();
-        fx.store.workflow_complete(&r, &output()).unwrap();
+        fx.store.workflow_complete(&r, &output(&r)).unwrap();
         let mut c = fx.store.model_config().unwrap();
         c["providers"].as_array_mut().unwrap().push(json!({"provider_id":"lan","name":"SYNTHETIC","api":"openai-chat","base_url":url,"enabled":true,"destination":"self_hosted"}));
         for a in c["roles"].as_array_mut().unwrap().iter_mut().filter(|a| a["role"] == "title") {
@@ -575,11 +578,11 @@ fn feature_reenable_resumes_only_jobs_cancelled_by_that_switch() {
     config["items"]["transcribe"]["enabled"] = json!(false);
     fx.store.save_feature_settings(&config).unwrap();
     assert_eq!(fx.store.job_command(&json!({"action":"get","id":job["id"]})).unwrap()["state"], "cancelled");
-    assert!(fx.store.workflow_complete(&r,&output()).is_err());
+    assert!(fx.store.workflow_complete(&r,&output(&r)).is_err());
     config["items"]["transcribe"]["enabled"] = json!(true);
     fx.store.save_feature_settings(&config).unwrap();
     assert_eq!(fx.store.job_command(&json!({"action":"get","id":job["id"]})).unwrap()["state"], "queued");
-    assert!(fx.store.workflow_complete(&r,&output()).is_err());
+    assert!(fx.store.workflow_complete(&r,&output(&r)).is_err());
     fx.store.job_command(&json!({"action":"cancel","id":job["id"]})).unwrap();
     fx.store.save_feature_settings(&config).unwrap();
     assert_eq!(fx.store.job_command(&json!({"action":"get","id":job["id"]})).unwrap()["state"], "cancelled");
@@ -590,9 +593,32 @@ fn automatic_summary_works_when_automatic_transcription_is_off() {
     let (fx,id) = setup();
     let job = speech(&fx,&id);
     let r = fx.store.workflow_prepare(&job).unwrap();
-    fx.store.workflow_complete(&r,&output()).unwrap();
+    fx.store.workflow_complete(&r,&output(&r)).unwrap();
     fx.store.workflow_command(&json!({"action":"settings","settings":{"version":1,"automatic":false,"titles":false,"summary":true}})).unwrap();
     fx.store.workflow_scan().unwrap();
     let jobs = fx.store.job_command(&json!({"action":"list"})).unwrap();
     assert!(jobs["jobs"].as_array().unwrap().iter().any(|j|j["kind"] == "workflow.summary" && j["state"] == "queued"));
+}
+
+/// Jobs queued by earlier versions (one per 30-second file, plus a whole-recording speaker pass) are cancelled
+/// once; the stopped recording then gets its one job instead.
+#[test]
+fn queued_jobs_of_earlier_versions_are_retired_for_one_recording_job() {
+    let (fx, id) = setup();
+    let old = [("speech.recognize", "external-api/1:conversation"), ("workflow.speakers", "SYNTHETIC-old")];
+    for (kind, config) in old {
+        fx.store.job_command(&json!({"action":"enqueue","kind":kind,"input_ref":id,"config_version":config})).unwrap();
+    }
+    fx.store.workflow_scan().unwrap();
+    let jobs = fx.store.job_command(&json!({"action":"list"})).unwrap()["jobs"].as_array().unwrap().clone();
+    for (kind, _) in old {
+        let job = jobs.iter().find(|j| j["kind"] == kind).unwrap();
+        assert_eq!((job["state"].as_str(), job["error_code"].as_str()), (Some("cancelled"), Some("superseded")), "{kind}");
+    }
+    let new: Vec<_> = jobs.iter().filter(|j| j["kind"] == RECORDING_JOB).collect();
+    assert_eq!(new.len(), 1, "{jobs:?}");
+    assert_eq!((new[0]["state"].as_str(), new[0]["input_ref"].as_str()), (Some("queued"), Some(id.as_str())));
+    // A second scan with nothing changed queues nothing more.
+    fx.store.workflow_scan().unwrap();
+    assert_eq!(fx.store.job_command(&json!({"action":"list"})).unwrap()["jobs"].as_array().unwrap().len(), jobs.len());
 }

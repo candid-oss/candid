@@ -52,20 +52,6 @@ fn wait(socket: &std::path::Path) -> Value {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
-/// Waits until a job matching `select` reaches a final state and returns that job (other jobs may finish first).
-fn wait_job(socket: &std::path::Path, select: impl Fn(&Value) -> bool) -> Value {
-    let until = Instant::now() + Duration::from_secs(150);
-    loop {
-        let v = post(socket, "/local/jobs", json!({"action":"list"}));
-        if let Some(job) = v["jobs"].as_array().unwrap().iter()
-            .find(|j| select(j) && (j["state"] == "done" || j["state"] == "failed"))
-        {
-            return job.clone();
-        }
-        assert!(Instant::now() < until, "{v}");
-        std::thread::sleep(Duration::from_millis(100));
-    }
-}
 #[test]
 #[ignore = "explicit public sample model acceptance; requires independently running voice service"]
 fn public_voice_is_consumed_searched_and_located() {
@@ -87,8 +73,8 @@ fn public_voice_is_consumed_searched_and_located() {
     assert_eq!(jobs["jobs"][0]["state"], "done", "{jobs}");
     let item = post(&socket, "/local/media", json!({"action":"item","id":id}));
     let segment = &item["segments"][0];
-    assert!(segment["sample_end"].as_u64().unwrap() > segment["sample_start"].as_u64().unwrap());
-    assert_eq!(item["producer"]["timestamp_kind"], "audio_chunk");
+    assert_eq!(item["processing_mode"], "quick");
+    assert!(segment["end_seconds"].as_f64().unwrap() > segment["start_seconds"].as_f64().unwrap());
     let text = segment["text"].as_str().unwrap();
     let q = text.chars().take(3).collect::<String>();
     let hits = post(&socket, "/v1/search", json!({"q":q,"attention":"all"}));
@@ -131,8 +117,10 @@ fn malformed_provider_is_failed_without_hidden_retry() {
                 }
             }
         }
-        if bytes.starts_with(b"GET /v1/voice/capabilities ") {
-            stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
+        if bytes.starts_with(b"GET /v1/voiceprints ") {
+            let caps = br#"{"format":"candid-voiceprints/1","capabilities":["recording_windows","recording_windows_quick"],"people":[]}"#;
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", caps.len()).as_bytes()).unwrap();
+            stream.write_all(caps).unwrap();
             continue;
         }
         stream
@@ -153,11 +141,11 @@ fn malformed_provider_is_failed_without_hidden_retry() {
     post(
         &socket,
         "/local/media",
-        json!({"action":"recognize","id":id}),
+        json!({"action":"recognize","id":id,"mode":"quick"}),
     );
     let jobs = wait(&socket);
     assert_eq!(jobs["jobs"][0]["state"], "failed", "{jobs}");
-    assert_eq!(jobs["jobs"][0]["error_code"], "bad_json");
+    assert!(jobs["jobs"][0]["error_code"].as_str().is_some_and(|c| c.contains("格式无效")), "{jobs}");
     let usage = post(&socket, "/local/models", json!({"action":"usage"}));
     assert_eq!(usage["calls"].as_array().unwrap().len(), 1);
     server.join().unwrap();
@@ -172,7 +160,6 @@ fn recording_pipeline_preserves_repetitions_gaps_and_manual_edits() {
     };
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../data/asr/sample-zh.wav");
     if !path.exists() { eprintln!("SKIP: public sample {} not downloaded (see services/voice/README.md)", path.display()); return; }
-    let digest = sha256_hex_file(&path).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let addr = listener.local_addr().unwrap();
@@ -212,7 +199,16 @@ fn recording_pipeline_preserves_repetitions_gaps_and_manual_edits() {
                     }
                 }
             }
-            let body=if b.starts_with(b"POST /v1/voice "){json!({"format":"candid-voice-result/1","source_hash":digest,"producer":{"model_id":"SYNTHETIC","model_revision":"1","processor_version":"1","timestamp_kind":"audio_chunk"},"segments":[{"start_seconds":0.0,"end_seconds":1.0,"text":"SYNTHETIC 重复话语"},{"start_seconds":1.0,"end_seconds":2.0,"text":"SYNTHETIC 重复话语"}]})}else{json!({"choices":[{"message":{"content":"SYNTHETIC 草稿"}}],"usage":{"prompt_tokens":100,"completion_tokens":10}})}.to_string();
+            let line=|a:f64,text:&str|json!({"start_seconds":a,"end_seconds":a+1.0,"text":text,"speaker":null,"label":null,"voice_ref":null,"match":null,"correction_key":null});
+            let body=if b.starts_with(b"GET /v1/voiceprints "){json!({"format":"candid-voiceprints/1","capabilities":["recording_windows","recording_windows_quick"],"people":[]})}
+                else if b.starts_with(b"POST /v1/voiceprints/window "){json!({"format":"speaker-window/1","mode":"quick","duration":10.0,"segments":[],"speakers":{}})}
+                else if b.starts_with(b"POST /v1/voiceprints/stitch "){
+                    let i=b.windows(4).position(|w|w==b"\r\n\r\n").unwrap();
+                    let request:Value=serde_json::from_slice(&b[i+4..]).unwrap();
+                    // Repeated words stay repeated, in both files of the recording.
+                    json!({"format":"recording-speakers/2","mode":"quick","revision":request["revision"],"segments":[line(0.0,"SYNTHETIC 重复话语"),line(1.0,"SYNTHETIC 重复话语"),line(6.5,"SYNTHETIC 重复话语"),line(7.5,"SYNTHETIC 重复话语")],
+                        "speakers":[],"speaker_count":0,"unresolved_segments":0,"dropped_segments":0,"voice_refs":[],"producer":{"model_id":"SYNTHETIC","model_revision":"1","processor_version":"recording-windows/1"}})}
+                else{json!({"choices":[{"message":{"content":"SYNTHETIC 草稿"}}],"usage":{"prompt_tokens":100,"completion_tokens":10}})}.to_string();
             let _ = stream.write_all(
                 format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
@@ -254,12 +250,10 @@ fn recording_pipeline_preserves_repetitions_gaps_and_manual_edits() {
                 "/local/workflows",
                 json!({"action":"settings","settings":{"version":1,"automatic":true,"summary":true,"mode":"quick"}}),
             );
-            let jobs = wait(&socket);
-            assert!(jobs["jobs"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|j| j["kind"] == "speech.recognize"));
+            // While recording nothing is transcribed: files are only stored.
+            std::thread::sleep(Duration::from_millis(500));
+            let jobs = post(&socket, "/local/jobs", json!({"action":"list"}));
+            assert!(jobs["jobs"].as_array().unwrap().iter().all(|j| !j["kind"].as_str().unwrap_or("").starts_with("speech.")), "{jobs}");
         }
     }
     post(
@@ -276,7 +270,8 @@ fn recording_pipeline_preserves_repetitions_gaps_and_manual_edits() {
     loop {
         let jobs = post(&socket, "/local/jobs", json!({"action":"list"}));
         let rows = jobs["jobs"].as_array().unwrap();
-        if rows.iter().filter(|j| j["state"] == "done").count() == 4 {
+        // The recording's one job, then its title and summary.
+        if rows.iter().filter(|j| j["state"] == "done").count() == 3 {
             break;
         }
         assert!(Instant::now() < until, "{jobs}");
@@ -301,133 +296,6 @@ fn recording_pipeline_preserves_repetitions_gaps_and_manual_edits() {
     assert_eq!(usage["calls"].as_array().unwrap().len(), 4);
     svc.stop();
     stop.store(true, Ordering::SeqCst);
-    server.join().unwrap();
-    std::fs::remove_dir_all(dir).unwrap();
-}
-#[test]
-fn long_audio_chunks_resume_after_failure_and_core_restart_without_rebilling_completed_chunks() {
-    use std::sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
-    };
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let addr = listener.local_addr().unwrap();
-    let halt = Arc::new(AtomicBool::new(false));
-    let stopped = halt.clone();
-    let requests = Arc::new(AtomicUsize::new(0));
-    let sent = requests.clone();
-    let server = std::thread::spawn(move || {
-        while !stopped.load(Ordering::SeqCst) {
-            let Ok((mut stream, _)) = listener.accept() else {
-                std::thread::sleep(Duration::from_millis(10));
-                continue;
-            };
-            stream.set_nonblocking(false).unwrap();
-            let mut b = Vec::new();
-            let mut chunk = [0; 4096];
-            loop {
-                let n = stream.read(&mut chunk).unwrap();
-                if n == 0 {
-                    break;
-                }
-                b.extend_from_slice(&chunk[..n]);
-                if let Some(i) = b.windows(4).position(|w| w == b"\r\n\r\n") {
-                    let header = String::from_utf8_lossy(&b[..i]);
-                    let size = header
-                        .lines()
-                        .find_map(|l| {
-                            l.to_lowercase()
-                                .strip_prefix("content-length:")
-                                .and_then(|s| s.trim().parse::<usize>().ok())
-                        })
-                        .unwrap_or(0);
-                    if b.len() >= i + 4 + size {
-                        break;
-                    }
-                }
-            }
-            if b.starts_with(b"GET /v1/voice/capabilities ") {
-                stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}").unwrap();
-                continue;
-            }
-            let index = sent.fetch_add(1, Ordering::SeqCst);
-            let (status, body) = if index == 1 {
-                ("429 Too Many Requests", json!({"error":"SYNTHETIC"}))
-            } else {
-                let offset = b.windows(4).position(|w| w == b"RIFF").unwrap();
-                let size =
-                    u32::from_le_bytes(b[offset + 4..offset + 8].try_into().unwrap()) as usize + 8;
-                let hash = sha256_hex(&b[offset..offset + size]);
-                (
-                    "200 OK",
-                    json!({"format":"candid-voice-result/1","source_hash":hash,"producer":{"model_id":"SYNTHETIC chunks","model_revision":"1","processor_version":"1","timestamp_kind":"audio_chunk"},"segments":[{"start_seconds":1.0,"end_seconds":2.0,"text":"SYNTHETIC chunk speech"}]}),
-                )
-            };
-            let body = body.to_string();
-            let _ = stream.write_all(
-                format!(
-                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                    body.len()
-                )
-                .as_bytes(),
-            );
-        }
-    });
-    let (svc, dir, socket) = start();
-    let path = dir.join("SYNTHETIC-301-seconds.wav");
-    let mut b = b"RIFF".to_vec();
-    b.extend(602036u32.to_le_bytes());
-    b.extend(b"WAVEfmt ");
-    b.extend(16u32.to_le_bytes());
-    b.extend(1u16.to_le_bytes());
-    b.extend(1u16.to_le_bytes());
-    b.extend(1000u32.to_le_bytes());
-    b.extend(2000u32.to_le_bytes());
-    b.extend(2u16.to_le_bytes());
-    b.extend(16u16.to_le_bytes());
-    b.extend(b"data");
-    b.extend(602000u32.to_le_bytes());
-    b.resize(602044, 0);
-    std::fs::write(&path, b).unwrap();
-    let original = sha256_hex_file(&path).unwrap();
-    post(
-        &socket,
-        "/local/models",
-        json!({"action":"save","config":config(&format!("http://{addr}/v1"))}),
-    );
-    let id = import(&socket, path.clone());
-    post(
-        &socket,
-        "/local/media",
-        json!({"action":"recognize","id":id}),
-    );
-    let first = wait_job(&socket, |j| !j["checkpoint"]["next_sample"].is_null());
-    assert_eq!(first["state"], "failed");
-    assert_eq!(first["checkpoint"]["next_sample"], 240000);
-    assert_eq!(requests.load(Ordering::SeqCst), 2);
-    let job = first["id"].clone();
-    svc.stop();
-    let mut options = ServeOptions::new(dir.join("root"), dir.join("run")); options.power = Some(true);
-    options.socket = Some(socket.clone());
-    let svc = Service::start(&options, |_| {}).unwrap();
-    post(&socket, "/local/jobs", json!({"action":"restart","id":job}));
-    let second = wait_job(&socket, |j| j["id"] == job && j["state"] == "done");
-    assert_eq!(second["state"], "done", "{second}");
-    assert_eq!(
-        requests.load(Ordering::SeqCst),
-        3,
-        "first completed chunk must never be sent again"
-    );
-    let item = post(&socket, "/local/media", json!({"action":"item","id":id}));
-    assert_eq!(item["segments"].as_array().unwrap().len(), 2);
-    assert_eq!(item["segments"][0]["sample_start"], 1000);
-    assert_eq!(item["segments"][1]["sample_start"], 241000);
-    assert_eq!(sha256_hex_file(&path).unwrap(), original);
-    let usage = post(&socket, "/local/models", json!({"action":"usage"}));
-    assert_eq!(usage["calls"].as_array().unwrap().len(), 3);
-    svc.stop();
-    halt.store(true, Ordering::SeqCst);
     server.join().unwrap();
     std::fs::remove_dir_all(dir).unwrap();
 }
@@ -506,10 +374,9 @@ fn public_conversation_preserves_anonymous_speakers_and_estimated_positions() {
         .filter_map(|s| s["speaker"].as_str())
         .collect();
     assert!(speakers.len() >= 2);
-    assert_ne!(item["producer"]["timestamp_kind"], "word");
     assert!(segments
         .iter()
-        .all(|s| s["sample_end"].as_u64().unwrap() > s["sample_start"].as_u64().unwrap()));
+        .all(|s| s["end_seconds"].as_f64().unwrap() > s["start_seconds"].as_f64().unwrap()));
     svc.stop();
     std::fs::remove_dir_all(dir).unwrap();
 }

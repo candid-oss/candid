@@ -202,7 +202,8 @@ impl TimelineStore {
     }
     fn job_get(&self, id: &str) -> Result<Value> {
         let mut result=self.db.first("SELECT j.job_id,j.kind,j.input_ref,j.config_version,j.state,j.attempts,j.lease_until_ms,c.owner,c.checkpoint,j.error_code,j.output_ref,j.feature,j.created_ms,j.updated_ms,j.manual FROM jobs j LEFT JOIN job_checkpoints c USING(job_id) WHERE j.job_id=?",&[text(id)],|r|json!({"id":r.text(0),"kind":r.text(1),"input_ref":r.text(2),"config_version":r.text(3),"state":r.text(4),"attempt":r.int(5),"lease_until_ms":r.opt_int(6),"owner":r.opt_text(7),"checkpoint":serde_json::from_str::<Value>(&r.text(8)).unwrap_or(json!({})),"error_code":r.opt_text(9),"output_ref":r.opt_text(10),"feature":r.opt_text(11),"created_ms":r.int(12),"updated_ms":r.int(13),"manual":r.int(14)==1}))?.ok_or_else(||TimelineError::NotFound("任务".into()))?;
-        if result["kind"] == "speech.recognize" {
+        // Checkpoints of recording jobs hold transcript text (per-file results, finished windows).
+        if matches!(result["kind"].as_str(), Some("speech.recording" | "speech.recognize" | "workflow.speakers")) {
             let id = result["input_ref"].as_str().unwrap_or("");
             let allowed = self.media_item(id).ok().is_some_and(|m| {
                 self.media_text_allowed(id, m["source"].as_str().unwrap_or(""))
@@ -221,6 +222,7 @@ fn feature_of(kind: &str) -> Option<String> {
     let step = kind.strip_prefix("workflow.");
     Some(match (kind, step) {
         ("speech.recognize", _) => "recording".into(),
+        ("speech.recording", _) => "transcribe".into(),
         (_, Some("title" | "summary")) => "recording".into(),
         (_, Some(step)) => step.into(),
         _ => return None,

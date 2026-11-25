@@ -57,9 +57,10 @@ pub const JOB_CLASSES: &[JobClass] = &[
     core("screen.excerpt", 1, Some(DAY), Cost::ByModel),
     // Entry extraction is never dropped for age: over the daily limit it waits, and a later job covers more messages.
     core("items.extract", 1, None, Cost::ByModel),
-    // P2: recording flows. The voice service runs on this Mac, so recognition and the speaker pass are always heavy.
-    core("speech.recognize", 2, None, Cost::Heavy),
-    core("workflow.speakers", 2, None, Cost::Heavy),
+    // P2: recordings. One job per stopped recording: transcript, speakers and voiceprints in one windowed pass.
+    // Heavy: the voice service is always the one on this Mac (`local_voice_provider`), so the queue can hold these
+    // jobs without preparing them. Make it ByModel if a remote voice provider is ever allowed.
+    core("speech.recording", 2, None, Cost::Heavy),
     // Titles, summaries and the other fixed steps use the role's model.
     core("workflow.", 2, None, Cost::ByModel),
     // P3: can wait for a quiet moment or the next day.
@@ -80,7 +81,7 @@ pub const JOB_CLASSES: &[JobClass] = &[
 pub const DEFAULT_PRIORITY: u8 = 2;
 
 pub fn class_of(kind: &str) -> Option<&'static JobClass> {
-    // Exact entries win over a family prefix (`workflow.speakers` before `workflow.`).
+    // Exact entries win over a family prefix (an exact `workflow.x` row would beat `workflow.`).
     JOB_CLASSES.iter().find(|c| c.kind == kind).or_else(|| JOB_CLASSES.iter().find(|c| c.kind.ends_with('.') && kind.starts_with(c.kind)))
 }
 
@@ -178,7 +179,7 @@ mod tests {
 
     #[test]
     fn exact_entries_win_and_unknown_kinds_are_heavy() {
-        assert_eq!(job_cost("workflow.speakers"), Cost::Heavy);
+        assert_eq!(job_cost("speech.recording"), Cost::Heavy);
         assert_eq!(job_cost("workflow.title"), Cost::ByModel);
         assert_eq!(job_cost("nothing.registered"), Cost::Heavy);
         assert!(!is_background_kind("app.ocr") && !is_background_kind("agent.skill") && is_background_kind("people.judge"));

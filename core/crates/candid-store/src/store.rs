@@ -116,6 +116,7 @@ pub struct TimelineStore {
     /// The job `workflow_prepare` is preparing (`kind`, manual flag), so `feature_check` can ask the power gate
     /// with the job's registered cost. Empty outside a prepare.
     pub(crate) preparing: std::cell::RefCell<Option<(String, bool)>>,
+    pub(crate) recording_scan: std::cell::RefCell<crate::workflows::RecordingScan>,
     pub(crate) desktop_read_cache: std::cell::RefCell<crate::desktop_read_cache::DesktopReadCache>,
     pub(crate) media_projection_stamp: std::cell::Cell<Option<i64>>,
     pub(crate) media_cleanup_stamp: std::cell::Cell<Option<(i64, i64)>>,
@@ -240,6 +241,7 @@ impl TimelineStore {
             media_locks: Default::default(),
             workflow_scan_stamp: Default::default(),
             preparing: Default::default(),
+            recording_scan: Default::default(),
             desktop_read_cache: Default::default(),
             media_projection_stamp: Default::default(),
             media_cleanup_stamp: Default::default(),

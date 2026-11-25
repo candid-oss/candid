@@ -25,7 +25,7 @@ fn background_queue_runs_by_priority_then_by_age() {
     let s = &fx.store;
     let mut ids = Vec::new();
     // Oldest first, but lower priority kinds must still come later.
-    for (kind, key) in [("workflow.title", "t1"), ("screen.summarize", "s1"), ("screen.excerpt", "e1"), ("speech.recognize", "r1"), ("workflow.summary", "t2"), ("screen.excerpt", "e2")] {
+    for (kind, key) in [("workflow.title", "t1"), ("screen.summarize", "s1"), ("screen.excerpt", "e1"), ("speech.recording", "r1"), ("workflow.summary", "t2"), ("screen.excerpt", "e2")] {
         ids.push(enqueue(s, kind, key)["id"].as_str().unwrap().to_string());
         now.fetch_add(10, Ordering::Relaxed);
     }

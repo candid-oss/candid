@@ -202,18 +202,8 @@ impl TimelineStore {
                         return self.media_item(id);
                     }
                 }
-                let mut ids = self.media_part_ids(id)?;
-                if ids.is_empty() {
-                    ids.push(id.into());
-                }
-                for sid in ids {
-                    let job=self.job_command(&json!({"action":"enqueue","kind":"speech.recognize","input_ref":sid,"config_version":format!("external-api/1:{mode}")}))?;
-                    if ["done", "failed", "cancelled"]
-                        .contains(&job["state"].as_str().unwrap_or(""))
-                    {
-                        self.job_command(&json!({"action":"restart","id":job["id"]}))?;
-                    }
-                }
+                // The whole recording in one job, once it has stopped.
+                self.rerun_recording(id, Some(mode))?;
                 if let Some(key) = receipt {
                     self.db.execute(
                         "INSERT OR REPLACE INTO store_meta VALUES(?,?)",
@@ -223,164 +213,26 @@ impl TimelineStore {
                 self.media_item(id)
             }
             "result" => {
-                if let Some(format) = v.get("format") {
-                    if format != "candid-workflow-result/1" || v["request"]["speech"] == true {
+                if let Some(format) = v.get("format").filter(|f| *f != "candid-recording-result/1") {
+                    if format != "candid-workflow-result/1" || v["request"]["speech"] == true || v["request"]["recording"] == true {
                         return Err(bad("不支持的处理结果版本"));
                     }
                     return self.workflow_complete(&v["request"], &v["output"]);
                 }
-                let job_id = field(v, "job_id")?;
-                let input = self
-                    .db
-                    .first(
-                        "SELECT input_ref FROM jobs WHERE job_id=? AND kind='speech.recognize'",
-                        &[text(job_id)],
-                        |r| r.text(0),
-                    )?
-                    .ok_or_else(|| bad("任务类型不符"))?;
-                let original = self.media_item(&input)?;
-                if !self.media_text_allowed(&input, original["source"].as_str().unwrap_or(""))? {
-                    return Err(TimelineError::Denied("media_text_storage_disabled".into()));
-                }
-                let result = &v["result"];
-                let mode = field(v, "mode")?;
-                if !["quick", "conversation"].contains(&mode) {
-                    return Err(bad("识别模式无效"));
-                }
-                let config = self
-                    .db
-                    .first(
-                        "SELECT config_version FROM jobs WHERE job_id=?",
-                        &[text(job_id)],
-                        |r| r.text(0),
-                    )?
-                    .unwrap_or_default();
-                if let Some(expected) = config.strip_prefix("external-api/1:") {
-                    if expected != mode {
-                        return Err(bad("结果模式与任务模式不符"));
+                // A worker outside the core completes the recording's one job; the core prepares the request
+                // itself under the job's lease. Per-file results of earlier versions are no longer accepted.
+                if v["format"] == "candid-recording-result/1" {
+                    let job = self.job_command(&json!({"action":"get","id":field(v, "job_id")?}))?;
+                    if job["kind"] != crate::RECORDING_JOB || job["owner"] != v["owner"] || job["attempt"] != v["attempt"] {
+                        return Err(TimelineError::Denied("stale_job_lease".into()));
                     }
+                    let request = self.workflow_prepare(&job)?;
+                    let mut output = v["result"].clone();
+                    if output.get("format").is_none() { output["format"] = json!("recording-speakers/2"); }
+                    if output.get("revision").is_none() { output["revision"] = request["input"]["revision"].clone(); }
+                    return self.recording_complete(&request, &output);
                 }
-                let digest = self
-                    .db
-                    .first(
-                        "SELECT digest FROM media_objects WHERE id=?",
-                        &[text(&input)],
-                        |r| r.text(0),
-                    )?
-                    .ok_or_else(|| bad("原件不存在"))?;
-                for object in [v, result, &result["producer"], &result["source"]] {
-                    for name in ["source_sha256", "source_hash", "input_sha256"] {
-                        if let Some(hash) = object.get(name) {
-                            if hash.as_str() != Some(digest.as_str()) {
-                                return Err(bad("结果来源原件校验不符"));
-                            }
-                        }
-                    }
-                }
-                if let Some(hash) = result["source"].get("sha256") {
-                    if hash.as_str() != Some(digest.as_str()) {
-                        return Err(bad("结果来源原件校验不符"));
-                    }
-                }
-                if self.media_raw(&input)?["kind"] != "audio" {
-                    return Err(bad("转写来源必须是录音"));
-                }
-                if sha256_hex_file(&self.media_path(&input)?)? != digest {
-                    return Err(TimelineError::BlobMismatch("转写原件内容已改变".into()));
-                }
-                let (duration, samples) = self.media_bounds(&input)?;
-
-                if !result["producer"].is_object()
-                    || result["producer"]["model_id"]
-                        .as_str()
-                        .unwrap_or("")
-                        .trim()
-                        .is_empty()
-                    || result["producer"]["revision"]
-                        .as_str()
-                        .unwrap_or("")
-                        .trim()
-                        .is_empty()
-                {
-                    return Err(bad("处理结果需要模型和流水线版本"));
-                }
-                let segments = result["segments"]
-                    .as_array()
-                    .ok_or_else(|| bad("缺少转写分段"))?;
-                for s in segments {
-                    let a = s["start_seconds"]
-                        .as_f64()
-                        .ok_or_else(|| bad("缺少开始范围"))?;
-                    let b = s["end_seconds"]
-                        .as_f64()
-                        .ok_or_else(|| bad("缺少结束范围"))?;
-                    if !a.is_finite()
-                        || !b.is_finite()
-                        || a < 0.
-                        || b <= a
-                        || b > duration
-                        || s["text"].as_str().is_none_or(|t| t.trim().is_empty())
-                    {
-                        return Err(bad("转写区间或文字无效"));
-                    }
-                    if let Some((rate, frames)) = samples {
-                        let sample_start = (a * rate as f64).round() as u64;
-                        let sample_end = (b * rate as f64).round() as u64;
-                        if sample_start >= sample_end || sample_end > frames {
-                            return Err(bad("转写样本半开区间无效"));
-                        }
-                        if let Some(declared) = s.get("sample_start") {
-                            if declared.as_u64() != Some(sample_start) {
-                                return Err(bad("转写开始样本与时间不符"));
-                            }
-                        }
-                        if let Some(declared) = s.get("sample_end") {
-                            if declared.as_u64() != Some(sample_end) {
-                                return Err(bad("转写结束样本与时间不符"));
-                            }
-                        }
-                        if let Some(declared) = s.get("sample_count") {
-                            if declared.as_u64() != Some(sample_end - sample_start) {
-                                return Err(bad("转写样本长度与时间不符"));
-                            }
-                        }
-                        if let Some(declared) = s.get("sample_rate") {
-                            if declared.as_u64() != Some(rate as u64) {
-                                return Err(bad("转写采样率与原件不符"));
-                            }
-                        }
-                    } else if s.get("sample_start").is_some() || s.get("sample_end").is_some() {
-                        return Err(bad("此格式尚无可核对的原始样本坐标"));
-                    }
-                }
-                let completed=self.db.scalar("SELECT COUNT(*) FROM jobs j JOIN job_checkpoints c USING(job_id) WHERE j.job_id=? AND j.state='done' AND j.attempts=? AND c.owner=?",&[text(job_id),int(v["attempt"].as_i64().unwrap_or(-1)),text(v["owner"].as_str().unwrap_or(""))])?==1;
-                if completed {
-                    let old = self.db.first(
-                        "SELECT result FROM media_recognitions WHERE id=? AND mode=?",
-                        &[text(&input), text(v["mode"].as_str().unwrap_or("quick"))],
-                        |r| r.text(0),
-                    )?;
-                    if old
-                        .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                        .as_ref()
-                        == Some(&v["result"])
-                    {
-                        self.project_native_media()?;
-                        return self.media_item(&input);
-                    }
-                    return Err(bad("已完成任务的重试结果冲突"));
-                }
-                self.db.transaction(||{
-      // Verify the lease here without nesting the queue's transaction.
-      if self.db.scalar("SELECT COUNT(*) FROM jobs j JOIN job_checkpoints c USING(job_id) WHERE j.job_id=? AND j.state='running' AND j.attempts=? AND c.owner=? AND j.lease_until_ms>?",&[text(job_id),int(v["attempt"].as_i64().unwrap_or(-1)),text(v["owner"].as_str().unwrap_or("")),int(self.clock.now_ms())])?!=1{return Err(TimelineError::Denied("stale_job_lease".into()));}
-      let mut m=self.media_raw(&input)?;m["segments"]=result["segments"].clone();
-      if let Some((rate,_))=samples {for segment in m["segments"].as_array_mut().unwrap(){let a=(segment["start_seconds"].as_f64().unwrap()*rate as f64).round() as u64;let b=(segment["end_seconds"].as_f64().unwrap()*rate as f64).round() as u64;segment["sample_start"]=json!(a);segment["sample_end"]=json!(b);segment["sample_count"]=json!(b-a);segment["sample_rate"]=json!(rate);}}m["producer"]=result["producer"].clone();m["processing_status"]=json!("ready");m["processing_mode"]=v["mode"].clone();
-      let history=format!("history:{}:{}:{}",mode,job_id,v["attempt"].as_i64().unwrap_or(-1));
-      self.db.execute("INSERT OR IGNORE INTO media_recognitions VALUES(?,?,?)",&[text(&input),text(history),text(result.to_string())])?;
-      self.db.execute("INSERT OR REPLACE INTO media_recognitions VALUES(?,?,?)",&[text(&input),text(v["mode"].as_str().unwrap_or("quick")),text(result.to_string())])?;
-      self.db.execute("UPDATE media_objects SET metadata=? WHERE id=?",&[text(m.to_string()),text(&input)])?;
-      self.db.execute("UPDATE jobs SET state='done',lease_until_ms=NULL,updated_ms=? WHERE job_id=?",&[int(self.clock.now_ms()),text(job_id)])?;Ok(m)
-    })
+                Err(bad("不支持的处理结果版本"))
             }
             "migrate" => self.migrate_media(Path::new(field(v, "hub")?)),
             _ => Err(bad("未知资料操作")),
@@ -513,6 +365,7 @@ impl TimelineStore {
             let mut gaps = vec![];
             let mut cursor = 0;
             let mut rate = 1;
+            let mut all_ready = true;
             for sid in &ids {
                 let p = self.media_part(sid)?;
                 let mut part = p.clone();
@@ -526,6 +379,7 @@ impl TimelineStore {
                 }
                 cursor = start + count;
                 let row = self.media_raw(sid)?;
+                all_ready &= row["processing_status"] == "ready";
                 for s in row["segments"].as_array().unwrap_or(&vec![]) {
                     let mut s = s.clone();
                     for k in ["start_seconds", "end_seconds"] {
@@ -557,6 +411,8 @@ impl TimelineStore {
             item["duration_seconds"] = json!(cursor as f64 / rate as f64);
             item["recording_state"] = json!("stopped");
             item["content_revision"] = json!(ids.join(":"));
+            // Per-file transcripts of earlier versions count only when every file has one.
+            item["processing_status"] = json!(if all_ready { "ready" } else { "idle" });
             item
         };
         self.check_media_source(item["source"].as_str().unwrap_or(""))?;
@@ -569,6 +425,23 @@ impl TimelineStore {
             item["notes"] = json!(notes);
             item["recording_state"] = json!(state);
         }
+        let mut inputs = ids;
+        if inputs.is_empty() {
+            inputs.push(id.into());
+        }
+        self.media_processing(id,&inputs,&mut item)?;
+        self.apply_speaker_labels(id, &mut item)?;
+        // The recording's one job decides the status while it is queued, running or failed; a finished job's
+        // transcript was applied above (`ready`).
+        if let Some(state)=self.db.first("SELECT state FROM jobs WHERE kind=? AND input_ref=? ORDER BY updated_ms DESC,rowid DESC LIMIT 1",&[text(crate::RECORDING_JOB),text(id)],|r|r.text(0))? {
+            if ["queued","running","failed"].contains(&state.as_str()) {
+                item["processing_status"]=json!(if state=="running" {"processing"} else {state.as_str()});
+            }
+            if item["processing_mode"]!="quick" {
+                item["speaker_processing"]=json!(match state.as_str(){"running"=>"processing","done"=>"ready","cancelled"=>"idle",other=>other});
+            }
+        }
+        // Drafts are checked against the transcript as shown, after the recording's own result was applied.
         {
             let mut drafts = self.workflow_drafts(id)?;
             if drafts.as_object().is_some_and(|o| !o.is_empty()) {
@@ -588,32 +461,6 @@ impl TimelineStore {
                 item["ai_drafts"] = drafts;
             }
         }
-        let mut inputs = ids;
-        if inputs.is_empty() {
-            inputs.push(id.into());
-        }
-        self.media_processing(id,&inputs,&mut item)?;
-        for input in inputs {
-            let state = self.db.first(
-                "SELECT state FROM jobs WHERE input_ref=? AND kind='speech.recognize' ORDER BY updated_ms DESC LIMIT 1",
-                &[text(input)],
-                |r| r.text(0),
-            )?;
-            if let Some(state) = state {
-                if ["queued", "running", "failed"].contains(&state.as_str()) {
-                    item["processing_status"] = json!(if state == "running" {
-                        "processing"
-                    } else {
-                        &state
-                    });
-                    break;
-                }
-            }
-        }
-        if let Some(state)=self.db.first("SELECT state FROM jobs WHERE input_ref=? AND kind='workflow.speakers' ORDER BY updated_ms DESC,rowid DESC LIMIT 1",&[text(id)],|r|r.text(0))? {
-            item["speaker_processing"]=json!(match state.as_str(){"running"=>"processing","done"=>"ready","cancelled"=>"idle",other=>other});
-        }
-        self.apply_speaker_labels(id, &mut item)?;
         if !self.media_text_allowed(id, item["source"].as_str().unwrap_or(""))? {
             item["speakers"] = Value::Null;
             item["segments"] = json!([]);
@@ -918,7 +765,7 @@ impl TimelineStore {
                 &[text(v.to_string()), text(id)],
             )?;
             if ["queued", "processing"].contains(&status.as_str()) {
-                self.job_command(&json!({"action":"enqueue","kind":"speech.recognize","input_ref":id,"config_version":format!("external-api/1:{}",mode.as_deref().unwrap_or("quick"))}))?;
+                let _ = self.enqueue_recording(id, mode.as_deref().unwrap_or("quick"));
             }
         }
         self.db.transaction(||{

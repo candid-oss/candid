@@ -103,7 +103,7 @@ def match_of(identity: dict) -> dict | None:
     return out
 
 
-def conversation_result(decoded: Path, temp: Path) -> dict:
+def conversation_result(decoded: Path, temp: Path, models=None) -> dict:
     from contextlib import closing, contextmanager
     import sqlite3
 
@@ -136,7 +136,7 @@ def conversation_result(decoded: Path, temp: Path) -> dict:
     from .speaker_store import VoiceRefs
     refs = VoiceRefs(candidate_path.parent)
     source_hash = hashlib.sha256(decoded.read_bytes()).hexdigest()
-    pipeline = SpeakerPipeline(JobSpeakerStore(temp / "analysis"))
+    pipeline = SpeakerPipeline(JobSpeakerStore(temp / "analysis"), models)
     chunk = temp / "chunk.wav"
     segments = []
     speaker_count = 0

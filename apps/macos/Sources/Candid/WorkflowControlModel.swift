@@ -16,7 +16,7 @@ import Observation
     struct FeatureSettings: Codable { var version = 1; var items: [String: FeaturePolicy] = [:] }
     struct Job: Decodable, Identifiable {
         var id: String; var kind: String; var input_ref: String; var state: String; var error_code: String?
-        var title: String { kind == "workflow.speakers" ? L("说话人整理") : kind == "screen.summarize" ? L("屏幕片段摘要") : kind == "agent.skill" ? L("技能运行") : kind == "speech.recognize" ? L("语音转写") : ["workflow.title": L("标题"), "workflow.summary": L("摘要"), "workflow.tags": L("标签"), "workflow.decisions": L("决定与待办")][kind] ?? L("整理") }
+        var title: String { kind == "workflow.speakers" ? L("说话人整理") : kind == "screen.summarize" ? L("屏幕片段摘要") : kind == "agent.skill" ? L("技能运行") : kind == "speech.recording" || kind == "speech.recognize" ? L("语音转写") : ["workflow.title": L("标题"), "workflow.summary": L("摘要"), "workflow.tags": L("标签"), "workflow.decisions": L("决定与待办")][kind] ?? L("整理") }
         var status: String { if let error_code { return ["feature_disabled": L("功能已关闭"), "waiting_feature_source": L("来源不在功能范围内"), "waiting_feature_remote": L("此功能只用本机模型"), "waiting_feature_budget": L("已到每日调用上限"), "waiting_model_request_rejected": L("摘要请求被模型拒绝，请检查模型设置后重试"), "waiting_model": L("等待选择模型"), "waiting_authorization": L("等待授权"), "waiting_budget_cost_unknown": L("费用未知，等待预算确认"), "offline": L("模型离线"), "timeout": L("请求超时"), "http_429": L("模型繁忙"), "bad_json": L("模型返回格式有误"), "configuration_changed": L("模型配置已改变"), "source_or_configuration_changed": L("来源或配置已改变")][error_code] ?? L("处理未完成，请重试") }; return ["queued": L("排队中"), "running": L("处理中"), "failed": L("失败"), "done": L("完成"), "cancelled": L("已取消")][state] ?? state }
     }
     struct Settings: Codable {

@@ -42,6 +42,20 @@ def download():
     print(f"Verified {len(verified)} files: {MODEL_DIR}")
 
 
+def launchd_config(label, state):
+    return {
+        "Label": label, "ProgramArguments": [str(ROOT / ".venv-asr-mlx/bin/python"),
+            str(Path(__file__).resolve()), "serve"], "WorkingDirectory": str(ROOT),
+        "RunAtLoad": True, "StandardOutPath": str(state / "server.log"),
+        "StandardErrorPath": str(state / "server.log"),
+        # Transcription is background work: the scheduler may run it slowly and on efficiency cores.
+        "ProcessType": "Background", "LowPriorityBackgroundIO": True,
+        "EnvironmentVariables": {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
+            "PYTHONUNBUFFERED": "1",
+            "PATH": "/opt/homebrew/bin:/usr/bin:/bin"},
+    }
+
+
 def service(action):
     label = "io.github.candid-oss.voice"
     domain = f"gui/{os.getuid()}"
@@ -52,15 +66,7 @@ def service(action):
     state = ROOT / "data/asr"
     state.mkdir(parents=True, exist_ok=True)
     plist = state / f"{label}.plist"
-    config = {
-        "Label": label, "ProgramArguments": [str(ROOT / ".venv-asr-mlx/bin/python"),
-            str(Path(__file__).resolve()), "serve"], "WorkingDirectory": str(ROOT),
-        "RunAtLoad": True, "StandardOutPath": str(state / "server.log"),
-        "StandardErrorPath": str(state / "server.log"),
-        "EnvironmentVariables": {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
-            "PYTHONUNBUFFERED": "1",
-            "PATH": "/opt/homebrew/bin:/usr/bin:/bin"},
-    }
+    config = launchd_config(label, state)
     with plist.open("wb") as f:
         plistlib.dump(config, f)
     # launchd may still be releasing a just-stopped service after bootout returns.

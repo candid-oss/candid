@@ -1,4 +1,8 @@
-"""Loopback-only multipart transcription API; does not save uploaded audio."""
+"""Loopback-only voice service; does not save uploaded audio.
+
+One resident process. Models load on first use and are unloaded after ten idle minutes (`models.ModelPool`), so a
+started service costs no memory or GPU until something is transcribed.
+"""
 import logging
 import asyncio
 from contextlib import asynccontextmanager
@@ -6,27 +10,35 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
-from .runtime import AudioError, MAX_BYTES, MODEL_ID, MODEL_REVISION, Runtime
+from .models import IDLE_SECONDS, ModelPool, measured
+from .runtime import AudioError, MAX_BYTES, MODEL_ID, MODEL_REVISION
 
 
 def create_app(runtime=None, voice_runner=None, *, voiceprint_path=None, voiceprint_analyzer=None,
-               voiceprint_models=None):
-    engine = runtime or Runtime()
+               voiceprint_models=None, model_idle_seconds=IDLE_SECONDS):
+    pool = ModelPool(asr=runtime, speaker=voiceprint_models, idle_seconds=model_idle_seconds)
     gate = asyncio.Lock()
 
     @asynccontextmanager
     async def lifespan(app):
-        await run_in_threadpool(engine.load)
         yield
         await app.state.voice_jobs.close()
+        pool.close()
 
     app = FastAPI(title="Local Qwen3 ASR", lifespan=lifespan)
+    app.state.models = pool
 
     @app.get("/health")
     def health():
+        asr = pool.slots["asr"].value
         return {"status": "ready", "model_id": MODEL_ID, "model_revision": MODEL_REVISION,
-                "device": engine.device, "backend": "mlx-audio", "quantization": "8bit",
-                "timestamps_available": False}
+                "device": getattr(asr, "device", None), "backend": "mlx-audio", "quantization": "8bit",
+                "timestamps_available": False, "models_loaded": pool.state(),
+                "idle_unload_seconds": pool.idle_seconds}
+
+    def transcribe_upload(data, language):
+        with pool.use():
+            return measured(lambda: pool.get("asr").transcribe(data, language))
 
     @app.post("/v1/audio/transcriptions")
     async def transcribe(file: UploadFile = File(...), model: str = Form(MODEL_ID),
@@ -40,7 +52,7 @@ def create_app(runtime=None, voice_runner=None, *, voiceprint_path=None, voicepr
             if gate.locked():
                 raise BlockingIOError("ASR busy; retry after the current request completes")
             async with gate:
-                return await run_in_threadpool(engine.transcribe, data, language)
+                return await run_in_threadpool(transcribe_upload, data, language)
         except (AudioError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
         except BlockingIOError as exc:
@@ -53,11 +65,16 @@ def create_app(runtime=None, voice_runner=None, *, voiceprint_path=None, voicepr
         finally:
             await file.close()
 
+    from .media_api import install_voice_api, recognize_upload
+
+    def recognize(data, mode):
+        with pool.use():
+            return recognize_upload(pool, data, mode)
+
+    runner = voice_runner or recognize
     from .voice_jobs import install_voice_jobs
-    app.state.voice_jobs = install_voice_jobs(app, gate)
-    from .media_api import install_voice_api
-    install_voice_api(app, engine, gate, voice_runner)
+    app.state.voice_jobs = install_voice_jobs(app, gate, runner)
+    install_voice_api(app, gate, runner)
     from .voiceprint_api import install_voiceprint_api
-    install_voiceprint_api(app, gate, path=voiceprint_path, analyzer=voiceprint_analyzer,
-                           models=voiceprint_models)
+    install_voiceprint_api(app, gate, pool, path=voiceprint_path, analyzer=voiceprint_analyzer)
     return app

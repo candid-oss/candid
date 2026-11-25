@@ -48,6 +48,8 @@ class Runtime:
         self.lock = threading.Lock()
 
     def load(self):
+        if self.model is not None:
+            return
         # Local paths plus offline flags prevent inference from fetching weights.
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -62,6 +64,9 @@ class Runtime:
         self.device = "mlx:gpu"
         mx.set_default_device(mx.gpu)
         self.model = load(MODEL_DIR, strict=True)
+
+    def unload(self):
+        self.model = None
 
     def transcribe(self, data, language=None):
         if language:

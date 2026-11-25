@@ -103,7 +103,7 @@ fn run_now_marks_queued_jobs_and_the_queue_skips_held_work() {
     let s = &fx.store;
     s.power_declare(None).unwrap();
     let job = |kind: &str, input: &str| s.job_command(&json!({"action": "enqueue", "kind": kind, "input_ref": input, "config_version": "v"})).unwrap()["id"].as_str().unwrap().to_string();
-    let heavy = job("speech.recognize", "a");
+    let heavy = job("speech.recording", "a");
     let remote = job("workflow.title", "b");
     // Heavy kinds are held without being prepared; jobs of model-dependent kinds still come back to be resolved.
     let queue: Vec<String> = s.pending_job_queue().unwrap().into_iter().map(|j| j.0).collect();

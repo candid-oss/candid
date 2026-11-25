@@ -4,8 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 import tempfile
+import time
 import wave
 from pathlib import Path
 from typing import Literal
@@ -16,19 +16,19 @@ from starlette.concurrency import run_in_threadpool
 from .runtime import MAX_BYTES, MAX_SECONDS
 
 
-def recognize_upload(engine, data: bytes, mode: str) -> dict:
+def recognize_upload(pool, data: bytes, mode: str) -> dict:
+    """One short upload; models come from the resident pool and load only when a chunk has speech."""
     from . import media_worker
     from .job_progress import report
 
-    class LoadedRuntime:
-        # create_app's lifespan already loaded and verified the selected model.
+    class PooledRuntime:
         def load(self):
-            pass
+            pool.get("asr")
 
         def transcribe(self, audio):
-            return engine.transcribe(audio)
+            return pool.get("asr").transcribe(audio)
 
-    with tempfile.TemporaryDirectory(prefix="candid-voice-api-", dir=os.environ.get("CANDID_VOICE_WORKSPACE")) as directory:
+    with tempfile.TemporaryDirectory(prefix="candid-voice-api-") as directory:
         root = Path(directory)
         source, decoded = root / "upload", root / "decoded.wav"
         source.write_bytes(data)
@@ -38,8 +38,8 @@ def recognize_upload(engine, data: bytes, mode: str) -> dict:
             duration = audio.getnframes() / audio.getframerate()
         if duration > MAX_SECONDS:
             raise ValueError("单次服务输入超过五分钟，请按来源分段提交")
-        result = (media_worker.quick_result(decoded, root, LoadedRuntime()) if mode == "quick"
-                  else media_worker.conversation_result(decoded, root))
+        result = (media_worker.quick_result(decoded, root, PooledRuntime()) if mode == "quick"
+                  else media_worker.conversation_result(decoded, root, pool.lazy("speaker")))
         return dict(result, duration_seconds=duration)
 
 
@@ -81,9 +81,7 @@ def checked_voice_result(result: dict, data: bytes) -> dict:
     return value
 
 
-def install_voice_api(app, engine, gate, runner=None):
-    process = runner or (lambda data, mode: recognize_upload(engine, data, mode))
-
+def install_voice_api(app, gate, runner):
     @app.post("/v1/voice")
     async def voice(request: Request, file: UploadFile = File(...), mode: Literal["quick", "conversation"] = Form("quick")):
         try:
@@ -95,8 +93,11 @@ def install_voice_api(app, engine, gate, runner=None):
             if gate.locked():
                 raise HTTPException(429, "语音服务正在处理其他请求", headers={"Retry-After": "5"})
             async with gate:
-                result = await run_in_threadpool(process, data, mode)
-                return checked_voice_result(result, data)
+                started = time.process_time()
+                result = await run_in_threadpool(runner, data, mode)
+                result = checked_voice_result(result, data)
+                result["cpu_seconds"] = round(time.process_time() - started, 3)
+                return result
         except (ValueError, wave.Error, EOFError) as exc:
             raise HTTPException(400, "音频或语音结果无效，请检查输入后重试") from exc
         except HTTPException:

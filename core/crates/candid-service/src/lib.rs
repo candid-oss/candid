@@ -35,4 +35,3 @@ mod scheduling;
 
 pub mod voiceprints;
 
-mod voice_jobs;
