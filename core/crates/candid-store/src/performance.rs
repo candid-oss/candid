@@ -71,7 +71,9 @@ impl TimelineStore {
     /// then oldest first. Cheap, so the worker can hydrate jobs one by one and stop at the first runnable one.
     pub fn pending_job_queue(&self) -> Result<Vec<(String, String, Option<String>)>> {
         let now = self.clock.now_ms();
-        let sql = format!("SELECT job_id,kind,feature,created_ms FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND ((state='queued' AND (next_run_ms IS NULL OR next_run_ms<=?)) OR (state='running' AND lease_until_ms<=?)) AND {}", crate::job_priority::kind_filter());
+        // Screenshots are read in the order they were taken: a backlog is queued in one scan (same created_ms), and
+        // chat merging appends after what the conversation already holds, so an out-of-order frame scrambles times.
+        let sql = format!("SELECT job_id,kind,feature,CASE WHEN kind='screen.excerpt' THEN COALESCE((SELECT COALESCE(e.start_ms,e.ingested_ms) FROM events e WHERE e.event_id=jobs.input_ref),created_ms) ELSE created_ms END FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND ((state='queued' AND (next_run_ms IS NULL OR next_run_ms<=?)) OR (state='running' AND lease_until_ms<=?)) AND {}", crate::job_priority::kind_filter());
         let mut rows = self.db.query(&sql, &[int(now), int(now)], |r| (r.text(0), r.text(1), r.opt_text(2), r.int(3)))?;
         rows.sort_by(|a, b| (crate::job_priority::job_priority(&a.1), a.3, &a.0).cmp(&(crate::job_priority::job_priority(&b.1), b.3, &b.0)));
         Ok(rows.into_iter().map(|(id, kind, feature, _)| (id, kind, feature)).collect())

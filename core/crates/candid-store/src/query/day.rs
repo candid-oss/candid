@@ -56,8 +56,7 @@ impl TimelineStore {
                 }
                 let light = self.screen_episode_light(&data)?;
                 let input = self.activity_input(&light)?;
-                let ids: Vec<String> = input.refs.values().cloned().collect();
-                let messages: Vec<String> = ids.iter().filter(|i| !i.starts_with("ex:")).cloned().collect();
+                let messages: Vec<_> = input.refs.iter().filter(|(r, _)| r.starts_with('m')).map(|(_, id)| id.clone()).collect();
                 let messages = self.day_visible(ctx, "message_sources", "message_id", "messages", "m", &messages)?;
                 let excerpts = self.day_visible(ctx, "excerpt_sources", "excerpt_id", "excerpts", "x", &input.excerpts)?;
                 let conversations: Vec<String> = if messages.is_empty() { vec![] } else { input.conversations.clone() };
@@ -65,6 +64,7 @@ impl TimelineStore {
                     "episode_id": ep.episode_id, "start": ep.start, "end": ep.end,
                     "app": light.app, "window": light.window,
                     "title": ep.title, "summary": ep.summary,
+                    "apps": light.frames.iter().map(|frame| frame.app.as_str()).collect::<std::collections::BTreeSet<_>>(),
                     "by": if ep.producer == "screen-summary/1" { "model" } else if ep.producer == "user" { "user" } else { "rule" },
                     "conversations": conversations, "excerpts": excerpts,
                 }));

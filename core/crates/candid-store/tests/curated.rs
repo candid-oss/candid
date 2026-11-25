@@ -190,22 +190,22 @@ fn ax_page_text_becomes_one_excerpt_per_visit() {
     let page = "https://example.com/article";
     let m = 60_000;
     fx.store.ingest(&IngestBatch::events(&fx.source, vec![
-        ax("a1", T0, "Google Chrome", "文章 - Google Chrome", Some(page), "导航\n预算会议纪要第一段内容\n第二段讲报价单"),
-        ax("a2", T0 + m, "Google Chrome", "文章 - 内存用量高 - 910 MB - Google Chrome", Some(page), "导航\n预算会议纪要第一段内容\n第二段讲报价单\n第三段是新滚出来的内容"),
-        ax("a3", T0 + 2 * m, "Google Chrome", "文章 - Google Chrome", Some(page), "导航\n第三段是新滚出来的内容"),
+        ax("a1", T0, "Google Chrome", "文章 - Google Chrome", Some(page), "导航\n预算会议纪要第一段内容，讨论了下季度各团队的投入和人力安排\n第二段讲报价单，供应商给了三档价格和各自的交付周期"),
+        ax("a2", T0 + m, "Google Chrome", "文章 - 内存用量高 - 910 MB - Google Chrome", Some(page), "导航\n预算会议纪要第一段内容，讨论了下季度各团队的投入和人力安排\n第二段讲报价单，供应商给了三档价格和各自的交付周期\n第三段是新滚出来的内容，列出了需要在周五前确认的事项"),
+        ax("a3", T0 + 2 * m, "Google Chrome", "文章 - Google Chrome", Some(page), "导航\n第三段是新滚出来的内容，列出了需要在周五前确认的事项"),
         // The same page after a long absence is a new visit.
-        ax("a4", T0 + 60 * m, "Google Chrome", "文章 - Google Chrome", Some(page), "晚些时候重新打开读到的第四段内容，这一段比较长所以够得上摘录"),
+        ax("a4", T0 + 60 * m, "Google Chrome", "文章 - Google Chrome", Some(page), "晚些时候重新打开读到的第四段内容，这一段比较长所以够得上摘录，讲的是会后各自要跟进的事情和负责人：采购那边下周一给最终报价，财务周三前核对预算余额，项目组周五开会定下最终方案并同步给所有相关的同事"),
         // Left out: private window, AI chat site, a chat client (screenshot path), a window with no URL goes by title.
         ax("x1", T0, "Google Chrome", "秘密页面 - Google Chrome（无痕）", Some("https://secret.example/a"), "不应该出现的无痕页面内容"),
         ax("x2", T0, "Google Chrome", "ChatGPT", Some("https://chatgpt.com/c/1"), "AI 的回答不应该进摘录里面来"),
         ax("x3", T0, "微信", "张三", None, "聊天气泡的内容走截图摘录而不是这里"),
-        ax("n1", T0, "Notion", "项目计划", None, "Notion 页面的正文内容在这里面，同样需要足够长才会成为摘录"),
+        ax("n1", T0, "Notion", "项目计划", None, "Notion 页面的正文内容在这里面，同样需要足够长才会成为摘录：项目分三个阶段推进，每个阶段都有明确的验收标准，第一阶段完成原型和用户访谈，第二阶段打磨核心流程，第三阶段做灰度发布和数据复盘"),
     ])).unwrap();
     fx.store.curated_sync().unwrap();
     let rows = fx.texts("SELECT title||'|'||COALESCE(url,'')||'|'||start_ms||'|'||end_ms||'|'||replace(text,char(10),'/') FROM excerpts ORDER BY start_ms, key");
     assert_eq!(rows.len(), 3, "{rows:?}");
-    assert!(rows.contains(&format!("文章|{page}|{}|{}|预算会议纪要第一段内容/第二段讲报价单/第三段是新滚出来的内容", T0, T0 + 2 * m)), "{rows:?}");
-    assert!(rows.iter().any(|r| r.starts_with("文章|") && r.ends_with("晚些时候重新打开读到的第四段内容，这一段比较长所以够得上摘录")));
+    assert!(rows.contains(&format!("文章|{page}|{}|{}|预算会议纪要第一段内容，讨论了下季度各团队的投入和人力安排/第二段讲报价单，供应商给了三档价格和各自的交付周期/第三段是新滚出来的内容，列出了需要在周五前确认的事项", T0, T0 + 2 * m)), "{rows:?}");
+    assert!(rows.iter().any(|r| r.starts_with("文章|") && r.ends_with("晚些时候重新打开读到的第四段内容，这一段比较长所以够得上摘录，讲的是会后各自要跟进的事情和负责人：采购那边下周一给最终报价，财务周三前核对预算余额，项目组周五开会定下最终方案并同步给所有相关的同事")));
     assert!(rows.iter().any(|r| r.starts_with("项目计划||")), "no URL: keyed by app and title");
     // Sources are the events that contributed lines; the repeated page body did not add a1's lines twice.
     assert_eq!(fx.scalar("SELECT COUNT(*) FROM excerpt_sources s JOIN events e ON e.event_id=s.event_id WHERE e.source_key IN ('a1','a2')"), 2);

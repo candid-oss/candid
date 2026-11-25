@@ -67,6 +67,64 @@ pub fn is_webp(bytes: &[u8]) -> bool {
     bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP"
 }
 
+/// Image bytes and MIME type to send to a model. A model server on this Mac may not accept WebP (LM Studio rejects
+/// it with HTTP 400), so for a local one stored WebP screenshots go out as PNG; a remote service gets the WebP, about a
+/// tenth of the PNG's size (measured: 3.4 s against 10.9 s per call). Anything else is unchanged.
+pub fn for_model(bytes: Vec<u8>, mime: &str, local: bool) -> (Vec<u8>, String) {
+    if local && is_webp(&bytes) {
+        if let Some(png) = png_from_webp(&bytes) {
+            return (png, "image/png".into());
+        }
+    }
+    (bytes, mime.to_string())
+}
+
+/// (width, height, RGB bytes row by row) of a WebP image.
+pub fn decode_rgb(webp: &[u8]) -> Option<(usize, usize, Vec<u8>)> {
+    let (mut w, mut h) = (0, 0);
+    // SAFETY: libwebp reads `webp` within its length and returns one RGB allocation of w*h*3 bytes, or null.
+    let rgb = unsafe { sys::WebPDecodeRGB(webp.as_ptr(), webp.len(), &mut w, &mut h) };
+    if rgb.is_null() {
+        return None;
+    }
+    let (w, h) = (w as usize, h as usize);
+    // SAFETY: the allocation holds h rows of w*3 bytes; it is copied, then freed once.
+    let pixels = unsafe { std::slice::from_raw_parts(rgb, w * h * 3) }.to_vec();
+    unsafe { sys::WebPFree(rgb as *mut _) };
+    Some((w, h, pixels))
+}
+
+fn png_from_webp(webp: &[u8]) -> Option<Vec<u8>> {
+    use std::io::Write;
+    let (w, h, pixels) = decode_rgb(webp)?;
+    let mut raw = Vec::with_capacity((w * 3 + 1) * h);
+    for row in pixels.chunks_exact(w * 3) {
+        raw.push(0); // filter: none
+        raw.extend_from_slice(row);
+    }
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+    z.write_all(&raw).ok()?;
+    let idat = z.finish().ok()?;
+    fn chunk(out: &mut Vec<u8>, kind: &[u8], data: &[u8]) {
+        out.extend((data.len() as u32).to_be_bytes());
+        let mut crc = flate2::Crc::new();
+        crc.update(kind);
+        crc.update(data);
+        out.extend(kind);
+        out.extend(data);
+        out.extend(crc.sum().to_be_bytes());
+    }
+    let mut ihdr = Vec::with_capacity(13);
+    ihdr.extend((w as u32).to_be_bytes());
+    ihdr.extend((h as u32).to_be_bytes());
+    ihdr.extend([8, 2, 0, 0, 0]); // 8-bit RGB, deflate, no filter method, no interlace
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    chunk(&mut out, b"IHDR", &ihdr);
+    chunk(&mut out, b"IDAT", &idat);
+    chunk(&mut out, b"IEND", &[]);
+    Some(out)
+}
+
 /// Thumbnail edge sizes for change detection (`luma_thumbnail`).
 pub const THUMB_W: usize = 96;
 pub const THUMB_H: usize = 60;
@@ -167,6 +225,26 @@ mod tests {
         let d = thumbnail_change(&a, &b);
         assert!(d > 0.02 && d < 0.2, "{d}");
         assert!(luma_thumbnail(b"not webp").is_none());
+    }
+
+    #[test]
+    fn model_images_go_out_as_png() {
+        let (w, h, stride) = (123u32, 45u32, 123 * 4);
+        let webp = encode_bgra(&frame(w, h, stride), w, h, stride, DEFAULT_QUALITY).unwrap();
+        let (png, mime) = for_model(webp.clone(), "image/webp", true);
+        assert_eq!(for_model(webp.clone(), "image/webp", false), (webp, "image/webp".to_string()));
+        assert_eq!(mime, "image/png");
+        assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+        assert_eq!(&png[12..16], b"IHDR");
+        assert_eq!((u32::from_be_bytes(png[16..20].try_into().unwrap()), u32::from_be_bytes(png[20..24].try_into().unwrap())), (w, h));
+        // The pixel stream inflates to one filter byte plus an RGB row per line.
+        let len = u32::from_be_bytes(png[33..37].try_into().unwrap()) as usize;
+        assert_eq!(&png[37..41], b"IDAT");
+        let mut raw = vec![];
+        std::io::Read::read_to_end(&mut flate2::read::ZlibDecoder::new(&png[41..41 + len]), &mut raw).unwrap();
+        assert_eq!(raw.len(), (w as usize * 3 + 1) * h as usize);
+        // Not WebP: passed through untouched.
+        assert_eq!(for_model(b"\xff\xd8jpeg".to_vec(), "image/jpeg", true), (b"\xff\xd8jpeg".to_vec(), "image/jpeg".to_string()));
     }
 
     #[test]

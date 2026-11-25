@@ -138,11 +138,10 @@ fn execute_http(r: &Value, audio: Option<Vec<u8>>) -> Result<(Value, Value), Str
         req = req.multipart(form);
     } else {
         let mut messages=r.get("messages").filter(|v|!v.is_null()).cloned().unwrap_or(json!([{"role":"system","content":r["prompt"]},{"role":"user","content":r["content"]}]));
-        let cap = r["assignment"]["limits_json"]["max_output_tokens"]
-            .as_u64()
-            .unwrap_or(1024)
-            .min(4096)
-            .min(r["max_tokens"].as_u64().unwrap_or(4096));
+        // Each step states what its answer needs (`max_tokens`); a role limit only lowers it. A fixed 1024 default
+        // cut multi-frame chat JSON short, and a thinking model spends part of the budget before it answers.
+        let step_cap = r["max_tokens"].as_u64().unwrap_or(1024).min(4096);
+        let cap = r["assignment"]["limits_json"]["max_output_tokens"].as_u64().map_or(step_cap, |n| n.min(step_cap));
         let mut body = json!({"model":r["assignment"]["model"]["model_id"],"messages":messages,"max_tokens":cap,"temperature":r["temperature"].as_f64().unwrap_or(0.0)});
         if anthropic {
             let mut systems = Vec::new();
@@ -366,11 +365,13 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
                         blocked.insert(kind.to_string());
                     }
                     if reason.contains("waiting_") {
+                        log_waiting(kind, reason.split('：').next_back().unwrap_or(&reason));
                         let _ = s.workflow_wait(
                             j["id"].as_str().unwrap_or(""),
                             reason.split('：').next_back().unwrap_or(&reason),
                         );
                     } else {
+                        eprintln!("任务：{kind} 作废 {}", code_only(&reason));
                         let _ = s.workflow_invalidate(j["id"].as_str().unwrap_or(""), &reason);
                     }
                 }
@@ -380,6 +381,7 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
     };
     let Some(r) = request else { return };
     on_start();
+    let started = Instant::now();
     let result = if r["reconcile_speakers"]==true {crate::voiceprints::reconcile_recording_job(store,&r)} else {execute_workflow(store, &r)};
     let unused_refs=result.as_ref().ok().map(|o|o["voice_refs"].clone());
     let s = lock(store);
@@ -388,6 +390,11 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         Ok(output) => if r["reconcile_speakers"]==true{s.recording_speakers_complete(&r,&output)}else if r["speech"]==true{s.workflow_complete(&r,&output)}else{s.media_command(&json!({"action":"result","format":"candid-workflow-result/1","request":r,"output":output}))}.err().map(|e|e.message()),
         Err(e) => Some(e),
     };
+    let kind = job["kind"].as_str().unwrap_or("?");
+    let ms = started.elapsed().as_millis();
+    if error.is_none() {
+        eprintln!("任务：{kind} 完成 {ms}ms");
+    }
     if let Some(code) = error {
         if r["reconcile_speakers"]==true {if let Some(refs)=unused_refs {let _=s.discard_recording_speaker_refs(&refs);}}
         let _ = s.screen_request_rejected(&r, &code);
@@ -395,9 +402,25 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         // Speaker reconciliation reports "voice service busy/offline" in words rather than the shared codes.
         let transient = if r["reconcile_speakers"]==true && (code.contains("离线")||code.contains("正在处理")||code.contains("声纹服务未完成")) { "offline" } else { code.as_str() };
         match crate::retry::retry_delay_ms(attempt, transient) {
-            Some(delay) => {let _=s.job_command(&json!({"action":"retry","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"delay_ms":delay,"error_code":transient}));}
-            None => {let _=s.job_command(&json!({"action":"finish","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"error_code":code}));}
+            Some(delay) => {eprintln!("任务：{kind} 失败 {}（第 {} 次，{}s 后重试）{ms}ms", code_only(&code), attempt + 1, delay / 1000);let _=s.job_command(&json!({"action":"retry","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"delay_ms":delay,"error_code":transient}));}
+            None => {eprintln!("任务：{kind} 失败 {}（第 {} 次，不再重试）{ms}ms", code_only(&code), attempt + 1);let _=s.job_command(&json!({"action":"finish","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"error_code":code}));}
         }
+    }
+}
+
+/// Codes, not content: messages from the store may quote input, so the log keeps the leading code word only.
+fn code_only(reason: &str) -> String {
+    let tail = reason.split('：').next_back().unwrap_or(reason);
+    let code: String = tail.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').take(64).collect();
+    if code.is_empty() { "other".into() } else { code }
+}
+
+/// A waiting job is re-checked every round; each (kind, reason) is logged once per process.
+fn log_waiting(kind: &str, reason: &str) {
+    static SEEN: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+    let key = format!("{kind} {}", code_only(reason));
+    if SEEN.get_or_init(Default::default).lock().unwrap().insert(key.clone()) {
+        eprintln!("任务：{key}（等待中，同类只记一次）");
     }
 }
 

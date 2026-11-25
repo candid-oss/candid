@@ -98,6 +98,52 @@ fn activity_input_is_the_curated_layer_only_and_blocks_without_it_never_call_the
 }
 
 #[test]
+fn activity_uses_chat_pane_ocr_when_it_has_no_structured_messages() {
+    let fx = Fx::make("activity-ocr-fallback");
+    enable_screen(&fx.store);
+    model_role(&fx);
+    let at = fixtures::FIXED_NOW_MS - 3600000;
+    let mut ocr = IngestEvent::new("chat-ocr", "image.text", Some(at));
+    ocr.app_name = Some("微信".into());
+    ocr.title = Some("测试聊天".into());
+    ocr.payload = json!({"method":"ocr","image_event_id":"pending","boxes":[[310,40,80,20],[95,145,130,20],[375,420,150,20],[310,825,150,20],[925,945,40,20]]});
+    ocr.text = vec![IngestText::new("ocr", "测试聊天\n不相关的侧栏预览\n正在讨论新服务器的预算\n保存时还没发的草稿\n发送")];
+    fx.store.ingest(&IngestBatch::events(&fx.source, vec![ocr])).unwrap();
+    fx.store.screen_scan().unwrap();
+    let id = ep_id(&fx);
+    fx.store.screen_command(&json!({"action":"run","id":id})).unwrap();
+    let request = fx.store.screen_prepare(&claim(&fx)).unwrap();
+    let content = request["content"].as_str().unwrap();
+    assert!(content.contains("正在讨论新服务器的预算") && !content.contains("侧栏") && !content.contains("草稿"), "{content}");
+    assert_eq!(request["refs"]["o1"], fx.store.event_id(&fx.source, "chat-ocr").unwrap().unwrap());
+    let output = json!({"title":"查看预算讨论","summary":"群聊可见新服务器的预算讨论","citations":["o1"]});
+    fx.store.screen_complete(&request, &json!(output.to_string())).unwrap();
+}
+
+#[test]
+fn adjacent_windows_with_the_same_document_form_one_activity_across_apps() {
+    let fx = Fx::make("activity-shared-document");
+    enable_screen(&fx.store);
+    let at = fixtures::FIXED_NOW_MS - 3600000;
+    let url = "https://example.test/shared-plan";
+    let mut events = vec![];
+    for (key, app, delta) in [("one", "Chrome", 0), ("two", "Preview", 40_000), ("unrelated", "Mail", 50_000)] {
+        let mut event = screen_text(key, at + delta, app, key, "预算变更和执行计划", None, None);
+        if key != "unrelated" {
+            event.url = Some(url.into());
+        }
+        events.push(event);
+    }
+    fx.store.ingest(&IngestBatch::events(&fx.source, events)).unwrap();
+    fx.store.screen_scan().unwrap();
+    let day = fx.store.call_tool("day", b"{}", &fx.client).unwrap();
+    let blocks = day["blocks"].as_array().unwrap();
+    assert_eq!(blocks.len(), 2, "{day}");
+    assert_eq!(blocks[0]["apps"], json!(["Chrome","Preview"]));
+    assert_eq!(blocks[1]["apps"], json!(["Mail"]));
+}
+
+#[test]
 fn activity_summary_is_cached_until_the_input_changes_and_edits_survive() {
     let fx = Fx::make("activity-cache");
     enable_screen(&fx.store);

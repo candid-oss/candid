@@ -6,6 +6,7 @@ members = [
     "crates/candid-cli",
     "crates/candid-metrics",
     "crates/candid-connectors",
+    "crates/candid-lab",
 ]
 
 [workspace.package]
