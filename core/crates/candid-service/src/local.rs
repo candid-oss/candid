@@ -99,10 +99,13 @@ impl Default for SyncStatus {
 }
 
 /// Subscribers of `GET /local/events`. A subscriber that cannot take a line within a second is dropped.
+/// Publishing `data` or `power` also wakes the background thread ([`crate::background`]); the thread itself
+/// announces without waking.
 #[derive(Default)]
 pub struct Feed {
     subscribers: Mutex<Vec<UnixStream>>,
     seq: AtomicU64,
+    wake: Arc<crate::background::Wake>,
 }
 
 impl Feed {
@@ -127,8 +130,24 @@ impl Feed {
         }
     }
 
-    /// Sends `{"type": kind, "seq": n}` to every subscriber.
+    /// Sends `{"type": kind, "seq": n}` to every subscriber; `data` wakes the background thread and `power` makes it
+    /// look at waiting jobs again.
     pub fn publish(&self, kind: &str) {
+        match kind {
+            "data" => self.wake.wake(),
+            "power" => self.wake.invalidate(),
+            _ => {}
+        }
+        self.announce(kind);
+    }
+
+    /// The background thread's wake signal.
+    pub fn wake(&self) -> &Arc<crate::background::Wake> {
+        &self.wake
+    }
+
+    /// Sends `{"type": kind, "seq": n}` without waking anything (the background thread reporting its own work).
+    pub fn announce(&self, kind: &str) {
         let line = self.line(kind);
         let mut subs = self.subscribers.lock().unwrap_or_else(|p| p.into_inner());
         subs.retain_mut(|s| s.write_all(&line).and_then(|_| s.flush()).is_ok());
@@ -261,6 +280,12 @@ struct NewSource {
 }
 
 impl Core {
+    /// Wakes the background thread and has it look at waiting jobs again. For changes outside the library (power
+    /// state, authorization, an explicit request); writes to the library wake it on their own.
+    pub fn wake_background(&self) {
+        self.feed.wake.invalidate();
+    }
+
     pub fn status(&self) -> SyncStatus {
         self.status.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
@@ -562,7 +587,7 @@ impl Core {
             if method != "POST" {return HttpResponse::error(405,"method","请用 POST。");}
             if !bearer(request).is_empty(){return HttpResponse::error(403,"internal_only","此操作只供 App 使用。");}
             let v:Value=match decode(request,"固定流程"){Ok(v)=>v,Err(e)=>return e};
-            if path=="/local/models/authorize" {crate::workflows::authorize(&v);return ok_json(&json!({"authorized":true}));}
+            if path=="/local/models/authorize" {crate::workflows::authorize(&v);self.wake_background();return ok_json(&json!({"authorized":true}));}
             if path=="/local/compose" {
                 // Draft from the user's history (plan M3): the store builds the request, the call runs unlocked.
                 let prepared=match lock(&self.store).compose_prepare(&v){Ok(p)=>p,Err(e)=>return store_error(&e)};

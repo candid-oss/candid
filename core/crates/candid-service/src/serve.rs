@@ -45,7 +45,8 @@ impl ServeOptions {
             created_by: format!("candid/{}", crate::VERSION),
             ledger: None,
             hub: None,
-            sync_interval: Duration::from_secs(30),
+            // A fallback only: the App asks for a pass when an agent folder changes (`POST /local/sync`).
+            sync_interval: Duration::from_secs(10 * 60),
             socket: None,
             parent_pid: None,
             cli_path: None,
@@ -252,18 +253,17 @@ impl Service {
             (Some(l), Some(path)) => Some(LocalServer::start(l, path, opts.workers, core.clone()).map_err(|e| failed(e.to_string()))?),
             _ => None,
         };
-        let workflow_store=shared.clone();let workflow_stop=stop.clone();let workflow_core=core.clone();
+        // Every write to the library wakes the background thread, whichever path made it.
+        {
+            let wake = core.feed.wake().clone();
+            shared.lock().map_err(|_| failed("store lock".into()))?.on_write(move || wake.wake());
+        }
+        let (workflow_store, workflow_stop, workflow_core) = (shared.clone(), stop.clone(), core.clone());
         let workflows = Some(std::thread::Builder::new().name("candid-workflows".into()).spawn(move || {
             crate::scheduling::background();
-            let mut worker = crate::workflows::Worker::default();
-            let mut compactor = crate::audio_compaction::Compactor::default();
-            while !workflow_stop.load(Ordering::SeqCst) {
-                let before = jobs_revision(&workflow_store);
-                worker.tick(&workflow_store, &|| workflow_core.feed.publish("data"));
-                compactor.tick(&workflow_store);
-                if jobs_revision(&workflow_store) != before { workflow_core.feed.publish("data"); }
-                if !workflow_stop.load(Ordering::SeqCst) { std::thread::park_timeout(Duration::from_secs(2)); }
-            }
+            let wake = workflow_core.feed.wake().clone();
+            let mut sleep = crate::background::WakeSleep { wake: &wake, stop: &workflow_stop };
+            crate::background::run(&mut Default::default(), &workflow_store, &wake, &mut sleep, &|| workflow_core.feed.announce("data"));
         }).map_err(|e| failed(e.to_string()))?);
         let convert = crate::library_conversion::start(shared.clone(), stop.clone()).ok();
         Ok(Service { workflows, convert, store: shared, endpoint, core, run_dir: opts.run_dir.clone(), server, local, stop, sync })
@@ -278,7 +278,7 @@ impl Service {
     pub fn stop(mut self) {
         self.stop.store(true, Ordering::SeqCst);
         self.core.trigger.request();
-        if let Some(w) = &self.workflows { w.thread().unpark(); }
+        self.core.feed.wake().wake();
         if let Some(s) = self.sync.take() {
             let _ = s.join();
         }
@@ -303,6 +303,3 @@ impl Service {
     }
 }
 
-fn jobs_revision(store: &SharedStore) -> Option<i64> {
-    store.lock().ok().and_then(|s| s.background_revision("jobs").ok())
-}

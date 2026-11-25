@@ -64,7 +64,7 @@ impl TimelineStore {
                 .as_i64()
                 .is_some_and(|at| self.clock.now_ms() - at < 60000)
         {
-            return Ok(json!({"changed":false}));
+            return Ok(json!({"changed":false,"next_due_ms":previous["at_ms"].as_i64().map(|at| at + 60000)}));
         }
         let stamp = sha256_hex(&serde_json::to_vec(&json!([
             self.current_seq()?,
@@ -182,6 +182,8 @@ impl TimelineStore {
             let report=json!({"format":"screen-scan/1","stamp":stamp,"configuration":configuration,"changed":changed>0,"raw_chars":raw,"input_chars":input,"episodes":episodes.len(),"ended":ended,"bounded":bounded,"at_ms":self.clock.now_ms()});
             self.automation_put("screen.scan/1",&report)
         })?;
+        // A block counts as ended ten minutes after its last frame: the worker sleeps until the next one does.
+        let next_due = episodes.iter().filter(|ep| ep.end_ms > self.clock.now_ms() - 600000).map(|ep| ep.end_ms + 600000).min();
         // Queue outside the transaction: job_command owns its atomic insert.
         if policy["enabled"] == true {
             for ep in &episodes {
@@ -194,7 +196,9 @@ impl TimelineStore {
                 }
             }
         }
-        self.automation_get("screen.scan/1")
+        let mut report = self.automation_get("screen.scan/1")?;
+        report["next_due_ms"] = json!(next_due);
+        Ok(report)
     }
     /// The frame text of one `screen.text` / `image.text` event, rebuilt from its paragraphs in character order.
     pub(crate) fn screen_frame_body(&self, id: &str) -> Result<(String, String)> {

@@ -10,7 +10,7 @@ mod support;
 #[path = "support/snapshot.rs"]
 mod snapshot;
 
-use candid_service::{workflows, McpShell, ToolCallError};
+use candid_service::{background, McpShell, ToolCallError};
 use candid_store::testing::RowExt;
 use candid_store::*;
 use serde_json::{json, Value};
@@ -49,7 +49,10 @@ fn lifecycle_three_days_through_the_real_worker() {
     }
     store.workflow_command(&json!({"action": "features", "config": features})).unwrap();
     let store: workflows_store::Shared = Arc::new(Mutex::new(store));
-    drain(&store);
+    // The service's own background worker: it runs only the steps whose inputs changed or came due, so draining with
+    // it also checks that every step declares what it reads.
+    let mut worker = background::Background::default();
+    drain(&store, &mut worker);
     assert!(stub.calls().is_empty(), "nothing to do before any data");
 
     // Each record arrives at its own time (clock = record time + 30 s) and the worker drains the queue after each,
@@ -63,18 +66,18 @@ fn lifecycle_three_days_through_the_real_worker() {
             let expected = batch.events.len();
             let r = store.lock().unwrap().ingest(&batch).unwrap();
             assert_eq!(r.inserted, expected, "day {}: {r:?}", i + 1);
-            drain(&store);
+            drain(&store, &mut worker);
         }
         now.store(local_ms(day, "18:00"), Ordering::SeqCst);
-        drain(&store);
+        drain(&store, &mut worker);
         now.fetch_add(15 * 60_000, Ordering::SeqCst);
-        drain(&store);
+        drain(&store, &mut worker);
     }
     // KNOWN BUG (found by this test, 2026-11-25): `people_judge_scan` remembers a state that does not change when
     // new aliases appear, so candidates that show up after its first run are never queued. Forget that state once so
     // the judge step is still exercised; harmless once the scan is fixed (answered pairs are not asked again).
     store.lock().unwrap().raw_db().execute("DELETE FROM store_meta WHERE key='people.judge.scan/1'", &[]).unwrap();
-    drain(&store);
+    drain(&store, &mut worker);
     let calls = stub.calls();
     let unmatched: Vec<&Value> = calls.iter().filter(|c| c["reply"].is_null()).collect();
     assert!(unmatched.is_empty(), "model requests without a fixed reply in replies.json:\n{}", serde_json::to_string_pretty(&unmatched).unwrap());
@@ -153,14 +156,54 @@ fn lifecycle_three_days_through_the_real_worker() {
     }
     snaps.expect_only("lifecycle/snapshots/model-calls", &produced);
 
+    // 8. Idle: an hour of virtual time with no input wakes the worker at most 7 times and writes nothing.
+    let wake = Arc::new(background::Wake::default());
+    {
+        let wake = wake.clone();
+        store.lock().unwrap().on_write(move || wake.wake());
+    }
+    let (calls_before, writes_before, statements_before) = {
+        let s = store.lock().unwrap();
+        (stub.calls().len(), s.write_count(), s.statement_count())
+    };
+    let mut idle = VirtualHour { now: now.clone(), end: now.load(Ordering::SeqCst) + 3_600_000, wakes: 0 };
+    background::run(&mut worker, &store, &wake, &mut idle, &|| {});
+    assert!(idle.wakes <= 7, "idle hour woke the worker {} times", idle.wakes);
+    assert_eq!(store.lock().unwrap().write_count(), writes_before, "idle hour wrote to the library: {:?}", store.lock().unwrap().write_counts());
+    assert_eq!(stub.calls().len(), calls_before, "idle hour called the model");
+    assert_eq!(store.lock().unwrap().statement_count(), statements_before, "an idle wake ran SQL: steps must check their in-memory write revisions first");
+
     stub.stop();
     let _ = std::fs::remove_dir_all(&root);
     snaps.finish();
     assert!(started.elapsed() < Duration::from_secs(30), "lifecycle took {:?}", started.elapsed());
 }
 
+/// Sleeps on a virtual clock: each sleep moves the clock by the timeout and counts as one wake.
+struct VirtualHour {
+    now: Arc<AtomicI64>,
+    end: i64,
+    wakes: usize,
+}
+
+impl background::Sleep for VirtualHour {
+    fn sleep(&mut self, timeout: Duration) -> bool {
+        let now = self.now.load(Ordering::SeqCst);
+        if now >= self.end || self.wakes >= 1000 {
+            return false;
+        }
+        let next = (now + timeout.as_millis() as i64).min(self.end);
+        self.now.store(next, Ordering::SeqCst);
+        if next >= self.end {
+            return false;
+        }
+        self.wakes += 1;
+        true
+    }
+}
+
 /// Runs the background worker until a tick changes nothing: no new model call, no job changing state.
-fn drain(store: &workflows_store::Shared) {
+fn drain(store: &workflows_store::Shared, worker: &mut background::Background) {
     let state = || -> Vec<String> {
         let s = store.lock().unwrap();
         s.raw_db().query("SELECT job_id||state||attempts||COALESCE(error_code,'') FROM jobs ORDER BY job_id", &[], |r| r.text(0)).unwrap()
@@ -168,7 +211,7 @@ fn drain(store: &workflows_store::Shared) {
     let mut last = state();
     let mut quiet = 0;
     for _ in 0..200 {
-        workflows::tick(store, &|| {});
+        while worker.pass(store, 0, &|| {}) {}
         let now = state();
         quiet = if now == last { quiet + 1 } else { 0 };
         last = now;

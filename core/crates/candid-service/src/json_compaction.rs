@@ -18,6 +18,11 @@ pub(crate) struct Converter {
 }
 
 impl Converter {
+    /// Nothing is left to convert (or the conversion gave up until the next start).
+    pub fn finished(&self) -> bool {
+        self.finished
+    }
+
     pub fn tick(&mut self, store: &SharedStore) {
         if self.finished {
             return;

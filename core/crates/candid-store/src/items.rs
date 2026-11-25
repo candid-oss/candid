@@ -557,6 +557,17 @@ impl TimelineStore {
 
     // MARK: rules
 
+    /// When [`TimelineStore::items_maintain`] next has something to expire (an event ending, a candidate turning a
+    /// week old), so the background worker can sleep until then.
+    pub(crate) fn items_next_expiry(&self) -> Result<Option<i64>> {
+        Ok(self.db.first(
+            "SELECT MIN(t) FROM (SELECT COALESCE(end_ms,start_ms+?) AS t FROM items WHERE state='open' AND kind='event' AND start_ms IS NOT NULL \
+             UNION ALL SELECT created_ms+? FROM items WHERE state='open' AND review='candidate')",
+            &[int(DEFAULT_EVENT_MS), int(CANDIDATE_DAYS * DAY)],
+            |r| r.opt_int(0),
+        )?.flatten().map(|t| t + 1))
+    }
+
     /// Events past their end become `expired`; candidates nobody handled for a week are put away (`expired`, and
     /// still listed with `state=expired`). Returns how many items changed.
     pub fn items_maintain(&self) -> Result<i64> {

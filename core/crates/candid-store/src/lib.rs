@@ -74,6 +74,7 @@ pub mod testing {
 
 mod schema_upgrade;
 mod performance;
+pub mod background;
 mod desktop_read_cache;
 pub mod agents;
 

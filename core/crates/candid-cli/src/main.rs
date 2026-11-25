@@ -21,7 +21,7 @@ const USAGE: &str = "用法:
   candid <工具> [--参数 值 ...]        调用一个工具，输出 JSON
   candid <工具> --json '{...}'        用 JSON 传参数
   candid serve --root <数据根目录>     不带界面运行时间线服务（回环 HTTP，写 endpoint.json 与 cli.token）
-        [--port 0] [--run-dir 目录] [--ledger 桌面账本目录] [--hub Hub目录] [--sync-interval 30] [--workers 2]
+        [--port 0] [--run-dir 目录] [--ledger 桌面账本目录] [--hub Hub目录] [--sync-interval 600] [--workers 2]
         [--socket 本地通道路径] [--parent-pid App进程号]   作为 App 的辅助进程运行时使用
   candid encode-webp --width W --height H [--stride 每行字节] [--quality 60]
                                      从标准输入读 BGRA 像素，向标准输出写 WebP（App 截图用）

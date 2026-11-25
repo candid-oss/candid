@@ -14,9 +14,9 @@ pub(crate) enum Lane {
     Background,
 }
 static EXECUTIONS: OnceLock<Mutex<std::collections::HashSet<(usize, Lane)>>> = OnceLock::new();
-struct Execution(usize, Lane);
+pub(crate) struct Execution(usize, Lane);
 impl Execution {
-    fn acquire(store: &SharedStore, lane: Lane) -> Option<Self> {
+    pub(crate) fn acquire(store: &SharedStore, lane: Lane) -> Option<Self> {
         let id = std::sync::Arc::as_ptr(store) as usize;
         if EXECUTIONS
             .get_or_init(Default::default)
@@ -52,6 +52,10 @@ pub fn authorize(v: &Value) {
         }
     }
     AUTHORIZATION_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+/// Moves whenever model secrets are (re)authorized: jobs waiting for authorization are checked again.
+pub(crate) fn authorization_revision() -> u64 {
+    AUTHORIZATION_REVISION.load(std::sync::atomic::Ordering::Relaxed)
 }
 pub(crate) fn secret(reference: &str) -> Option<String> {
     SECRETS.get_or_init(Default::default).lock().unwrap().get(reference).cloned()
@@ -253,62 +257,43 @@ pub(crate) fn checked_speech(mut v:Value,r:&Value)->Result<(Value,Value),String>
 }
 
 /// A timeout or interrupted attempt is never automatically sent again: charging may already have occurred.
+/// One full pass without any gating: voice cleanup, every scan, then at most one job. Tests drive the worker with it;
+/// the service runs [`crate::background::Background`], which only runs what changed or came due.
 pub fn tick(store: &SharedStore, on_start: &dyn Fn()) {
-    tick_inner(store, on_start, true);
-}
-
-/// Poll only indexed revision counters between changes. The bounded fallback covers time-based hooks,
-/// model budget resets and offline cleanup without repeatedly hydrating the historical jobs list.
-#[derive(Default)]
-pub(crate) struct Worker {
-    stamp: Option<(i64, i64, i64, u64)>,
-    last_poll: Option<Instant>,
-    next_due: Option<i64>,
-    cleanup: Option<(i64, Instant)>,
-}
-impl Worker {
-    pub fn tick(&mut self, store: &SharedStore, on_start: &dyn Fn()) {
-        let (stamp, now) = {
-            let s = lock(store);
-            let Ok(jobs) = s.background_revision("jobs") else { return };
-            let Ok(workflows) = s.background_revision("workflows") else { return };
-            let Ok(seq) = s.background_data_revision() else { return };
-            ((jobs, workflows, seq, AUTHORIZATION_REVISION.load(std::sync::atomic::Ordering::Relaxed)), s.clock.now_ms())
-        };
-        if self.stamp == Some(stamp)
-            && self.last_poll.is_some_and(|t| t.elapsed() < Duration::from_secs(30))
-            && !self.next_due.is_some_and(|t| t <= now)
-        { return; }
-        let cleanup = self.cleanup.is_none_or(|(revision, t)| revision != stamp.1 || t.elapsed() >= Duration::from_secs(30));
-        self.stamp = Some(stamp);
-        self.last_poll = Some(Instant::now());
-        if cleanup { self.cleanup = Some((stamp.1, Instant::now())); }
-        tick_inner(store, on_start, cleanup);
-        self.next_due = lock(store).next_workflow_deadline().ok().flatten();
-    }
-}
-
-fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
     let Some(_execution) = Execution::acquire(store, Lane::Background) else {
         return;
     };
-    if cleanup { crate::voiceprints::reconcile(store); }
+    crate::voiceprints::reconcile(store);
+    {
+        let s = lock(store);
+        for scan in candid_store::background::SCANS {
+            if (scan.run)(&s).is_ok_and(|v| v["changed"] == true) {
+                on_start();
+            }
+        }
+    }
+    run_queue(store, on_start);
+}
+
+/// What one look at the job queue found.
+#[derive(Default)]
+pub(crate) struct QueueOutcome {
+    /// A job was claimed and run (its result is stored).
+    pub ran: bool,
+    /// Some kind hit its daily limit or budget: it waits for the next local day.
+    pub budget_blocked: bool,
+}
+
+/// Prepares due jobs in priority order and runs the first runnable one. The caller holds the background lane.
+pub(crate) fn run_queue(store: &SharedStore, on_start: &dyn Fn()) -> QueueOutcome {
+    let mut outcome = QueueOutcome::default();
     let request = {
         let s = lock(store);
-        let _ = s.workflow_scan();
-        let _ = s.curated_sync();
-        let _ = s.people_sync();
-        if s.people_judge_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        if s.items_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        let _ = s.automation_scan();
         // Kinds that hit their daily limit this round; their remaining jobs are skipped without preparing.
         let mut blocked: std::collections::HashSet<String> = Default::default();
-        let _ = s.expire_stale_jobs();
         let queue = match s.pending_job_queue() {
             Ok(v) => v,
-            Err(_) => return,
+            Err(_) => return outcome,
         };
         let mut prepared = None;
         for (id, kind, _) in queue {
@@ -361,6 +346,9 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
                 }
                 Err(e) => {
                     let reason = e.message();
+                    if reason.contains("budget") {
+                        outcome.budget_blocked = true;
+                    }
                     if reason.contains("waiting_feature_budget") {
                         blocked.insert(kind.to_string());
                     }
@@ -379,7 +367,13 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         }
         prepared
     };
-    let Some(r) = request else { return };
+    let Some(r) = request else { return outcome };
+    outcome.ran = true;
+    run_job(store, r, on_start);
+    outcome
+}
+
+fn run_job(store: &SharedStore, r: Value, on_start: &dyn Fn()) {
     on_start();
     let started = Instant::now();
     let result = if r["reconcile_speakers"]==true {crate::voiceprints::reconcile_recording_job(store,&r)} else {execute_workflow(store, &r)};

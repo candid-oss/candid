@@ -2,6 +2,7 @@
 //! port of the Swift `TimelineServer` and `TimelineAPI` modules, plus the App's local channel (Unix domain socket).
 
 pub mod agenda;
+pub mod background;
 pub mod catalog;
 pub mod client;
 pub mod endpoint;
