@@ -341,6 +341,7 @@ private struct StorageSettings: View {
     var body: some View {
         SettingsPage(title: L("数据")) {
             TimelineLibraryGroup()
+            DataMigrationGroup(session: session)
             SettingsGroup(title: L("保存位置")) {
                 SettingRow(title: L("采集设置与待写队列"), detail: session.dataLocation) {
                     QuietButton(title: L("在 Finder 中显示")) {

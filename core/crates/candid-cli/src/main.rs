@@ -2,6 +2,8 @@
 //! service without a user interface (`serve`). Except for `serve`, it never opens the database: everything goes
 //! through the running service's loopback HTTP with a client token, following the App's 「网络代理」 setting.
 
+mod migrate;
+
 use candid_service::catalog::{self, Tool};
 use candid_service::serve::{ServeOptions, Service, StartError};
 use candid_service::{McpShell, RunDirectory, ServiceClient, VERSION};
@@ -23,6 +25,12 @@ const USAGE: &str = "用法:
         [--socket 本地通道路径] [--parent-pid App进程号]   作为 App 的辅助进程运行时使用
   candid encode-webp --width W --height H [--stride 每行字节] [--quality 60]
                                      从标准输入读 BGRA 像素，向标准输出写 WebP（App 截图用）
+
+数据迁移（见 docs/data-migration.md；默认支持目录 ~/Library/Application Support/Candid，可用 --support 改）:
+  candid backup <目标目录> [--no-media]       一致性快照 + 原件 + 清单，App 运行中也能做
+  candid restore <备份目录> [--move-existing]  校验后恢复；已有数据默认拒绝，--move-existing 先移到 before-restore-<时间>
+  candid move-root <新位置> [--remove-old]    把时间线库搬到新位置（如外置盘），原处留符号链接
+  以上命令加 --json 时逐行输出进度和结果 JSON
 
 例子:
   candid overview --start today
@@ -208,6 +216,7 @@ fn main() {
         }
         "serve" => serve(&argv[1..]),
         "encode-webp" => encode_webp(&argv[1..]),
+        "backup" | "restore" | "move-root" => std::process::exit(migrate::run(command, &argv[1..])),
         name => {
             let Some(tool) = catalog::tool(name) else { fail(&format!("没有这个工具：{name}\n\n{USAGE}"), 2) };
             let body = arguments(&tool, &argv[1..]);

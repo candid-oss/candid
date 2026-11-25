@@ -16,6 +16,9 @@ candid-store.workspace = true
 candid-service.workspace = true
 serde_json.workspace = true
 libc.workspace = true
+rusqlite.workspace = true
+sha2.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 libc.workspace = true
