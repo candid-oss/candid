@@ -33,7 +33,12 @@ MERGE_BASE="$(git merge-base HEAD "$BASE" 2>/dev/null || git rev-parse HEAD)"
 # Committed on this branch, changed in the working tree, and new untracked files.
 CHANGED="$( (git diff --name-only "$MERGE_BASE"; git ls-files --others --exclude-standard) | sort -u)"
 
-touches() { [[ $ALL -eq 1 ]] || grep -qE "$1" <<<"$CHANGED"; }
+# Documentation never needs the code suites; the docs check below covers it. Prompts and skill texts are
+# Markdown too, but they change behaviour, so they still count as code.
+CODE_CHANGED="$(grep -vE '\.md$' <<<"$CHANGED" || true)
+$(grep -E '^(core/prompts|core/workflows|agents/skills|agents/pi-extension)/.*\.md$' <<<"$CHANGED" || true)"
+
+touches() { [[ $ALL -eq 1 ]] || grep -qE "$1" <<<"$CODE_CHANGED"; }
 
 FAILED=()
 BLOCKED=()

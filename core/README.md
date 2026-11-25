@@ -2,7 +2,7 @@
 
 **English** · [中文](#中文)
 
-The Rust core owns the timeline: storage, ingest, queries, permissions and audit, background processing, the local API, the MCP server and the `candid` command. The macOS app runs it as a helper process (`Candid.app/Contents/Helpers/candid serve`) and talks to it over a private Unix socket. Design notes: [timeline spec](../docs/specs/timeline-v1.md), [ADR-024](../docs/decisions/024-rust-core.md).
+The Rust core owns the timeline: storage, ingest, queries, permissions and audit, background processing, the local API, the MCP server and the `candid` command. The macOS app runs it as a helper process (`Candid.app/Contents/Helpers/candid serve`) and talks to it over a private Unix socket. Design notes: [timeline spec](../docs/specs/storage.en.md), [ADR-024](../docs/decisions/024-rust-core.md).
 
 ## Crates
 
@@ -57,7 +57,7 @@ Register a client in the app (or via `POST /local/clients`); it returns a one-ti
 
 ## 中文
 
-Rust 核心负责时间线的一切：存储、入库、查询、权限与审计、后台处理、本地接口、MCP 服务和 `candid` 命令。Mac App 把它作为辅助进程运行（`Candid.app/Contents/Helpers/candid serve`），通过私有 Unix 套接字通信。设计说明见[时间线规格](../docs/specs/timeline-v1.md)与 [ADR-024](../docs/decisions/024-rust-core.md)。
+Rust 核心负责时间线的一切：存储、入库、查询、权限与审计、后台处理、本地接口、MCP 服务和 `candid` 命令。Mac App 把它作为辅助进程运行（`Candid.app/Contents/Helpers/candid serve`），通过私有 Unix 套接字通信。设计说明见[时间线规格](../docs/specs/storage.md)与 [ADR-024](../docs/decisions/024-rust-core.md)。
 
 | Crate | 内容 |
 |---|---|

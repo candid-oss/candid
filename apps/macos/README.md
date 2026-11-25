@@ -2,7 +2,7 @@
 
 **English** · [中文](#中文)
 
-The SwiftUI app: menu bar status, timeline, recording, screenshots with OCR, settings, the AI page and connectors. It bundles and runs the [Rust core](../../core/README.md) as a helper process; all data lives in the core's timeline library. UI rules: [design system](../../docs/specs/design-system-v1.md).
+The SwiftUI app: menu bar status, timeline, recording, screenshots with OCR, settings, the AI page and connectors. It bundles and runs the [Rust core](../../core/README.md) as a helper process; all data lives in the core's timeline library. UI rules: [design system](../../docs/specs/design-system.en.md).
 
 ## Requirements
 
@@ -55,7 +55,7 @@ Runs the style check, a recording-recovery check, builds the core and runs all S
 
 ## 中文
 
-SwiftUI 客户端：菜单栏状态、时间线、录音、截图与文字识别、设置、AI 页和连接器。App 内置并以辅助进程运行 [Rust 核心](../../core/README.md)，所有数据保存在核心的时间线库中。界面规则见[设计系统](../../docs/specs/design-system-v1.md)。
+SwiftUI 客户端：菜单栏状态、时间线、录音、截图与文字识别、设置、AI 页和连接器。App 内置并以辅助进程运行 [Rust 核心](../../core/README.md)，所有数据保存在核心的时间线库中。界面规则见[设计系统](../../docs/specs/design-system.md)。
 
 **环境**：macOS 14+（14 尚未实机验证）、Xcode 26 或更新版本（Swift 6.2+）、Rust 1.88+；Python 3 与 OpenSSL 只在构建签名脚本中使用；Node.js 只用于 AI 页的 agent 测试。
 

@@ -2,7 +2,7 @@
 
 **English** · [中文](#中文)
 
-Candid uses AI in two ways ([agent platform](../docs/specs/agent-platform-v1.md)):
+Candid uses AI in two ways ([agent platform](../docs/specs/workflows.en.md)):
 
 1. **Built-in processing** inside the core: transcription, speakers, titles and summaries, screenshot text, extraction.
 2. **An attached agent** for conversations on the AI page and skill runs: [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent), launched with Candid's extension as its *only* tools and model. External agents (Claude Code, Codex, …) connect through MCP instead, with the same tools and permissions.
@@ -36,7 +36,7 @@ The end-to-end test starts a real core, the pinned Pi over RPC and a scripted lo
 
 ## 中文
 
-Candid 用两种方式使用 AI（见 [agent 平台](../docs/specs/agent-platform-v1.md)）：
+Candid 用两种方式使用 AI（见 [agent 平台](../docs/specs/workflows.md)）：
 
 1. **核心内置处理**：转写、说话人、标题与摘要、截图文字、信息抽取。
 2. **挂接的 agent**：AI 页的对话和技能运行由 [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) 执行，启动时只给它 Candid 扩展提供的工具和模型。外部 agent（Claude Code、Codex 等）通过 MCP 接入，使用同一套工具和权限。

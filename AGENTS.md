@@ -10,8 +10,11 @@ Candid 是本地优先的 macOS 采集与上下文底座。仓库的主人只做
 | [架构总图](docs/architecture.md) | 代码该放哪一块，往哪个接缝扩展 |
 | [工程规范](docs/engineering.md) | 设计原则、代码规范、测试秩序、完成的定义 |
 | [契约清单](docs/contracts/README.md) | 哪些东西不能悄悄改 |
-| [docs/README.md](docs/README.md) | 规格索引和文档标准 |
-| 所改目录的 README、[docs/plans/](docs/plans/) 里的当前计划 | 这一块的现状和正在进行的事 |
+| [规格索引](docs/specs/README.md) | 你要改的那一块现在的行为和规则 |
+| [术语表](docs/glossary.md) | 一个词在这个项目里指什么 |
+| [待办](docs/roadmap.md)、[docs/plans/](docs/plans/) 里的当前计划 | 正在进行的事、已知问题、等主人决定的事 |
+| [文档规范](docs/standard.md) | 文档放哪、怎么写 |
+| 所改目录的 README | 这一块怎么构建、运行、测试 |
 
 本页是摘要。与上面的文档冲突时以它们为准，并顺手修正本页。
 
@@ -39,7 +42,7 @@ Candid 是本地优先的 macOS 采集与上下文底座。仓库的主人只做
 - **不自造 agent loop 或 harness。** 对话与技能交给 Pi（`agents/`）；核心只做固定流程（scan → 作业队列 → prepare → 模型 → complete）。
 - **不重复实现核心已有的能力。** 先搜 `core/crates/candid-store/src/`（入库、整理、人物、条目、查询工具都在这里），扩展现有模块，不另起一套。
 - **界面文字用中文作 key，并补英文。** Swift 里写 `L("中文")`，在 `apps/macos/Resources/Localizable.en.json` 补英文；
-  `python3 apps/macos/script/localize_sources.py --check` 会检查。界面规则见 [界面规范](docs/specs/design-system-v1.md)。
+  `python3 apps/macos/script/localize_sources.py --check` 会检查。界面规则见 [界面规范](docs/specs/design-system.md)。
 - **仓库里不放真实个人数据。** 测试只用明确标记的合成数据；不提交录音、截图、数据库、模型或密钥。
 - **不新增遥测或用户没配置的网络请求。** 测试里的模型只能是本机回环上的桩（参考 `core/crates/candid-service/tests/lifecycle.rs`）。
 - **不在功能改动里顺手格式化整个文件**（全仓库还没有统一跑过 `cargo fmt`）。
@@ -72,7 +75,7 @@ scripts/check.sh
 | `apps/macos/` | `swift build --package-path apps/macos`，再跑 `apps/macos/script/test.sh`（样式、本地化、Swift 测试；CI 不跑这一套） |
 | `agents/` | `node agents/pi-extension/test/e2e.mjs`（先 `npm ci --prefix agents/pi-extension --ignore-scripts`） |
 | `services/voice/` | `.venv-asr-mlx/bin/python -m pytest -q services/voice/tests` |
-| 任何 Markdown | `python3 scripts/check_docs.py`（链接、双语成对、索引） |
+| 任何 Markdown | `python3 scripts/check_docs.py`（链接、锚点、双语成对、索引、规格长度） |
 
 ## 全流程测试与快照
 
@@ -96,10 +99,15 @@ UPDATE_SNAPSHOTS=1 cargo test -p candid-cli --test contract
 
 ## 文档
 
-- 六种文档各放各处：定位、地图、规范、契约、规格、决策记录、计划。规则见[文档标准](docs/README.md#standard)。
-- 规格只写现在为真的；进度只写在计划里；计划做完就删，结论并入规格或决策记录。
-- 行为变了改规格，对外承诺变了改契约清单，结构变了改架构总图。规格、决策记录和各 README 中英文两版都要改。
-- 重要的结构性决定写一条决策记录（`docs/decisions/`，从 025 起编号）。
+完整规则见[文档规范](docs/standard.md)。要点：
+
+- **每种文档只做一件事**：规格写现在的行为，决定写为什么，计划写正在做的事，研究记录写实验和调研，版本记录写已做，待办写要做。不混写。
+- **规格只写现在为真的。** 没实现的标「（未实现）」，没核对过的标「（未验证）」，并列进该规格的「未实现与待定」。不确定就标未验证，不要猜成已实现。
+- **改代码时同步改文档**：行为变了改规格；对外承诺变了改契约清单和快照；结构变了改架构总图并记一条决定；合并进主分支的改动在[版本记录](docs/changelog.md)的「未发布」加一条；做完的事从[待办](docs/roadmap.md)删掉。
+- **和主人讨论出的决定**当天在[决定流水](docs/decisions/log.md)记一行；影响结构、难以反悔的写决策记录（`docs/decisions/`，从 025 起编号）。
+- **引用**：文档之间用相对链接加锚点，不用章节号；代码注释引用文档写 `docs/specs/<文件>.md#<锚点>`。旧注释里的 `agent-platform-v1 §2.6`、`data model v1 §9.1` 这类章节号，到同名的搬迁对照页（`docs/specs/*-v1.md`）查新位置。
+- **双语**：规格、决策记录、各 README 中英文都要改，中文为准。其余只写中文。
+- 规格一份不超过两万字符；`python3 scripts/check_docs.py` 检查链接、锚点、双语成对、索引和长度。
 
 ## 工作方式
 
