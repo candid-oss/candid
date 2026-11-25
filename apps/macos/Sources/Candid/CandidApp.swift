@@ -133,12 +133,16 @@ private struct DesktopRootView: View {
     private var statusItem: StatusItemController?
     private var callReminder: CallRecordingReminder?
     private var reopenMainWindow: (() -> Void)?
+    private var launchedAtLogin = false
 
     /// The menu bar icon and its panel: a transient popover, so a click anywhere else, another app or Esc closes it.
     func installStatusItem(openMainWindow: @escaping () -> Void) {
         reopenMainWindow = openMainWindow
         guard statusItem == nil, let session, let media else { return }
         statusItem = StatusItemController(session: session, media: media, openMainWindow: openMainWindow)
+        RecordingControl.shared.attach(session: session, media: media)
+        // A login launch stays in the menu bar; the window opens from the icon or the Dock.
+        if launchedAtLogin { NSApp.windows.filter { $0.identifier?.rawValue.hasPrefix("desktop") == true }.forEach { $0.close() } }
         if !session.isDemo && !QASnapshot.isActive {
             callReminder = CallRecordingReminder(media: media)
             callReminder?.start()
@@ -151,8 +155,16 @@ private struct DesktopRootView: View {
         // A QA snapshot instance renders off to the side and never steals focus.
         if ProcessInfo.processInfo.arguments.contains("--qa-snapshot-dir") {
             QASnapshot.startIfRequested()
+        } else if LoginItem.launchedAtLogin {
+            launchedAtLogin = true
         } else {
             NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+    /// `candid://` links (Sources/Candid/System/CandidURL.swift).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            CandidURLHandler.handle(url) { [weak self] in self?.reopenMainWindow?(); NSApp.activate(ignoringOtherApps: true) }
         }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

@@ -144,6 +144,7 @@ struct MenuBarPanel: View {
     private var statusLine: String {
         if session.isDemo { return L("合成样例") }
         var parts = [session.isRecording ? L("正在记录") : L("已暂停")]
+        if !session.isRecording, let resume = RecordingControl.shared.resumeAt { parts.append(L("%@ 自动继续", resume.clockText)) }
         if let saved = session.lastSaved { parts.append(L("最近保存 ") + saved.clockText) }
         return parts.joined(separator: " · ")
     }

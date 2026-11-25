@@ -23,6 +23,10 @@ SKIP_BEFORE = re.compile(
     r"|\bfirstIndex\(of:|\bsplit\(separator:|\bstarts\(with:|\bverbatim:\s*$|@available\(|==\s*$|!=\s*$|\bL\(\s*$|\bLocalizedStringKey\(\s*$)"
 )
 report = {"wrapped": 0, "skipped": {}}
+# App Intents titles, descriptions and phrases must stay literals (they are read at build time); their lines carry this
+# marker and their English text comes from en.lproj, generated from Localizable.en.json by build_and_run.sh.
+INTENT_MARK = "// intent-metadata"
+INTENT_LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 
 
 def skip(reason):
@@ -146,6 +150,8 @@ def rewrite(src, start, end, literal, parts):
     before = src[line_start:start]
     after = src[end:src.find("\n", end) if src.find("\n", end) >= 0 else len(src)]
     stripped_before = before.rstrip()
+    if INTENT_MARK in src[line_start:src.find("\n", end) if src.find("\n", end) >= 0 else len(src)]:
+        skip("intent metadata"); return literal
     if SKIP_BEFORE.search(before):
         skip("context"); return literal
     if re.search(r"\bcase\b[^:]*$", before):
@@ -199,12 +205,28 @@ def keys_in_sources():
     return keys
 
 
+def intent_keys():
+    """Chinese literals on `intent-metadata` lines, as the system looks them up (`\\(\\.$name)` becomes `${name}`)."""
+    keys = set()
+    for target in TARGETS:
+        for path in (ROOT / target).rglob("*.swift"):
+            for line in path.read_text().splitlines():
+                if INTENT_MARK not in line:
+                    continue
+                for m in INTENT_LITERAL.finditer(line.split(INTENT_MARK)[0]):
+                    body = re.sub(r"\\\(\\\.\$(\w+)\)", r"${\1}", m.group(1))
+                    body = re.sub(r"\\\(\.applicationName\)", "${applicationName}", body)
+                    if CJK.search(body) and "${applicationName}" not in body:  # phrases list both languages
+                        keys.add(body)
+    return keys
+
+
 def check():
     """Fails when a UI string is not wrapped, or a wrapped string has no English entry."""
     table = json.loads((ROOT.parent / "Resources" / "Localizable.en.json").read_text())
     unwrapped = [str(p.relative_to(ROOT)) for t in TARGETS for p in sorted((ROOT / t).rglob("*.swift"))
                  if transform(p.read_text()) != p.read_text()]
-    missing = sorted(k for k in keys_in_sources() if k not in table and "(?:" not in k and "\\[" not in k)
+    missing = sorted(k for k in keys_in_sources() | intent_keys() if k not in table and "(?:" not in k and "\\[" not in k)
     for path in unwrapped: print("unwrapped Chinese UI text in", path)
     for key in missing: print("no English entry:", json.dumps(key, ensure_ascii=False))
     if unwrapped or missing:
@@ -216,6 +238,10 @@ def check():
 def main():
     if "--check" in sys.argv:
         check(); return
+    if "--intent-strings" in sys.argv:
+        # English for the App Intents metadata, written to en.lproj/Localizable.strings by build_and_run.sh.
+        table = json.loads((ROOT.parent / "Resources" / "Localizable.en.json").read_text())
+        print(json.dumps({k: table[k] for k in sorted(intent_keys()) if k in table}, ensure_ascii=False, indent=1)); return
     if "--extract" in sys.argv:
         extract(); return
     apply = "--apply" in sys.argv

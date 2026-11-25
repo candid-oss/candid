@@ -15,8 +15,13 @@ if [[ "$MODE" == "--build-only" ]] && /usr/bin/pgrep -f "^$APP_BUNDLE/Contents/M
 fi
 CONFIGURATION="release"
 if [[ "$MODE" == "--debug" ]]; then CONFIGURATION="debug"; fi
-swift build --package-path "$ROOT_DIR" --configuration "$CONFIGURATION"
-BUILD_DIR="$(swift build --package-path "$ROOT_DIR" --configuration "$CONFIGURATION" --show-bin-path)"
+# App Intents (Sources/Candid/System/CandidIntents.swift): the compiler records the intents' literal titles and
+# parameters as const values, and appintentsmetadataprocessor (below) turns them into Contents/Resources/Metadata.appintents,
+# which Shortcuts, Spotlight and Focus filters read. Xcode does both steps itself; SwiftPM needs them spelled out.
+INTENT_FLAGS=(-Xswiftc -emit-const-values
+  -Xswiftc -Xfrontend -Xswiftc -const-gather-protocols-file -Xswiftc -Xfrontend -Xswiftc "$ROOT_DIR/script/appintents-protocols.json")
+swift build --package-path "$ROOT_DIR" --configuration "$CONFIGURATION" "${INTENT_FLAGS[@]}"
+BUILD_DIR="$(swift build --package-path "$ROOT_DIR" --configuration "$CONFIGURATION" "${INTENT_FLAGS[@]}" --show-bin-path)"
 # Only this app is stopped, never device/Hub/ASR services.
 if [[ "$MODE" != "--build-only" ]]; then
   /usr/bin/pkill -f "^$APP_BUNDLE/Contents/MacOS/$APP_NAME([[:space:]]|$)" >/dev/null 2>&1 || true
@@ -56,6 +61,38 @@ mkdir -p "$STAGED_APP/Contents/Helpers"
 cp "$ROOT_DIR/../../LICENSE" "$ROOT_DIR/../../THIRD_PARTY_LICENSES.txt" "$STAGED_APP/Contents/Resources/"
 # English UI text (Sources/CandidLocalization); Chinese is the source language.
 cp "$ROOT_DIR/Resources/Localizable.en.json" "$STAGED_APP/Contents/Resources/"
+# App Intents metadata. The processor ships with Xcode, not the Command Line Tools; without it the app still builds,
+# but Shortcuts, Spotlight and Focus filters won't list Candid's actions.
+INTENT_DEVELOPER_DIR="${DEVELOPER_DIR:-$(/usr/bin/xcode-select -p)}"
+if ! DEVELOPER_DIR="$INTENT_DEVELOPER_DIR" /usr/bin/xcrun --find appintentsmetadataprocessor >/dev/null 2>&1; then
+  INTENT_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
+fi
+# The Candid module's const values: Swift Build puts them under Candid-p.build/<Release|Debug>, the native build
+# system under <release|debug>/Candid.build.
+CONFIG_TITLE="$(echo "${CONFIGURATION:0:1}" | tr a-z A-Z)${CONFIGURATION:1}"
+CONST_VALUES="$(find "$ROOT_DIR/.build" -name "*.swiftconstvalues" \( -path "*/$CONFIG_TITLE/Candid-p.build/*" -o -path "*/$CONFIGURATION/Candid.build/*" \) 2>/dev/null || true)"
+if DEVELOPER_DIR="$INTENT_DEVELOPER_DIR" /usr/bin/xcrun --find appintentsmetadataprocessor >/dev/null 2>&1 && [[ -n "$CONST_VALUES" ]]; then
+  INTENT_WORK="$STAGING_ROOT/appintents"
+  mkdir -p "$INTENT_WORK/out"
+  echo "$CONST_VALUES" > "$INTENT_WORK/constvalues.list"
+  find "$ROOT_DIR/Sources/Candid" -name "*.swift" > "$INTENT_WORK/sources.list"
+  XCODE_BUILD="$(DEVELOPER_DIR="$INTENT_DEVELOPER_DIR" /usr/bin/xcodebuild -version 2>/dev/null | awk '/Build version/ {print $3}')"
+  DEVELOPER_DIR="$INTENT_DEVELOPER_DIR" /usr/bin/xcrun appintentsmetadataprocessor --quiet-warnings \
+    --output "$INTENT_WORK/out" --toolchain-dir "$INTENT_DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain" \
+    --module-name Candid --sdk-root "$(/usr/bin/xcrun --sdk macosx --show-sdk-path)" --xcode-version "${XCODE_BUILD:-0}" \
+    --platform-family macOS --deployment-target 14.0 --target-triple "$(uname -m)-apple-macos14.0" \
+    --binary-file "$BUILD_DIR/$APP_NAME" --source-file-list "$INTENT_WORK/sources.list" \
+    --swift-const-vals-list "$INTENT_WORK/constvalues.list" --no-app-shortcuts-localization >/dev/null
+  cp -R "$INTENT_WORK/out/Metadata.appintents" "$STAGED_APP/Contents/Resources/"
+  # Intent titles are looked up by the system in Localizable.strings: English from the same table, Chinese is the key.
+  mkdir -p "$STAGED_APP/Contents/Resources/en.lproj" "$STAGED_APP/Contents/Resources/zh-Hans.lproj"
+  python3 "$ROOT_DIR/script/localize_sources.py" --intent-strings > "$INTENT_WORK/intents.en.json"
+  /usr/bin/plutil -convert binary1 -o "$STAGED_APP/Contents/Resources/en.lproj/Localizable.strings" "$INTENT_WORK/intents.en.json"
+  echo '{}' > "$INTENT_WORK/empty.json"
+  /usr/bin/plutil -convert binary1 -o "$STAGED_APP/Contents/Resources/zh-Hans.lproj/Localizable.strings" "$INTENT_WORK/empty.json"
+else
+  echo "warning: appintentsmetadataprocessor (Xcode) or const values not found; Shortcuts actions are not packaged." >&2
+fi
 PI_SKELETON="$STAGED_APP/Contents/Resources/Pi"
 EXTENSION_DIR="$ROOT_DIR/../../agents/pi-extension"
 rm -rf "$PI_SKELETON" && mkdir -p "$PI_SKELETON"
@@ -113,6 +150,10 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>CFBundleURLTypes</key><array><dict>
+  <key>CFBundleURLName</key><string>io.github.candid-oss.candid</string>
+  <key>CFBundleURLSchemes</key><array><string>candid</string></array>
+</dict></array>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict></plist>
 PLIST

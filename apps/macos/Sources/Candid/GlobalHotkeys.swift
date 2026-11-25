@@ -73,7 +73,7 @@ struct HotkeySettingsView: View {
     private let model = GlobalHotkeys.shared
     @AppStorage("candid.floating") private var floating = false
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.l) {
+        ScrollView { VStack(alignment: .leading, spacing: Space.l) {
             Text(L("快捷操作")).typography(.title)
             ToggleChip(title: L("显示悬浮控件"), isOn: $floating)
             ForEach(QuickAction.allCases) { action in
@@ -85,6 +85,7 @@ struct HotkeySettingsView: View {
                 }
                 if let error = model.errors[action.rawValue] { Text(error).typography(.secondary).foregroundStyle(.red) }
             }
-        }.padding(Space.page)
+            SystemIntegrationSettings().padding(.top, Space.m)
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(Space.page) }.scrollIndicators(.hidden)
     }
 }

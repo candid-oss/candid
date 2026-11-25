@@ -96,6 +96,8 @@ struct HomeRootView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .candidActionError)) { actionError = $0.object as? String }
+        .onReceive(NotificationCenter.default.publisher(for: .candidOpenDay)) { note in if let day = note.object as? Date { pendingJump = day; page = .timeline } }
+        .onReceive(NotificationCenter.default.publisher(for: .candidOpenSearch)) { note in if let text = note.object as? String { session.searchText = text; page = .timeline } }
         .onReceive(NotificationCenter.default.publisher(for: .candidNoteReference)) { note in
             quickNote.target = note.object as? String; showingNote = true
         }
