@@ -23,6 +23,10 @@ const USAGE: &str = "用法:
   candid serve --root <数据根目录>     不带界面运行时间线服务（回环 HTTP，写 endpoint.json 与 cli.token）
         [--port 0] [--run-dir 目录] [--ledger 桌面账本目录] [--hub Hub目录] [--sync-interval 30] [--workers 2]
         [--socket 本地通道路径] [--parent-pid App进程号]   作为 App 的辅助进程运行时使用
+        [--power ac|battery]          没有 App 上报时声明电源状态（默认未知，按电池处理）
+  candid power status                后台处理档位与电源状态（经 App 核心的本地通道）
+  candid power pace <anytime|saver|manual>   设置后台处理：随时 / 省电（默认）/ 手动
+  candid energy summary [--start today] [--end now]   后台计算的能耗账（即 energy_summary 工具）
   candid encode-webp --width W --height H [--stride 每行字节] [--quality 60]
                                      从标准输入读 BGRA 像素，向标准输出写 WebP（App 截图用）
 
@@ -114,6 +118,11 @@ fn serve(args: &[String]) {
             "--socket" => opts.socket = Some(PathBuf::from(value())),
             "--parent-pid" => opts.parent_pid = Some(value().parse().unwrap_or_else(|_| fail("--parent-pid 需要整数", 2))),
             "--cli-path" => opts.cli_path = Some(value()),
+            "--power" => opts.power = Some(match value().as_str() {
+                "ac" => true,
+                "battery" => false,
+                _ => fail("--power 只能是 ac 或 battery", 2),
+            }),
             "--once" => once = true,
             other => fail(&format!("serve 没有参数 {other}\n\n{USAGE}"), 2),
         }
@@ -153,6 +162,25 @@ fn serve(args: &[String]) {
         std::thread::sleep(Duration::from_millis(200));
     }
     service.stop();
+}
+
+/// `power status` and `power pace <p>`: the running core's power gate, through its local channel in the run
+/// directory (the App's core, or `candid serve --socket`). Printed as JSON.
+fn power(args: &[String]) {
+    let body = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["status"] => serde_json::json!({"action": "status"}),
+        ["pace", pace] if candid_store::power::PACES.contains(pace) => serde_json::json!({"action": "set_pace", "pace": pace}),
+        _ => fail(&format!("用法：candid power status | candid power pace <anytime|saver|manual>\n\n{USAGE}"), 2),
+    };
+    let socket = candid_service::local::default_socket(&RunDirectory::path(&env()));
+    match candid_service::local_request(&socket, "POST", "/local/power", body.to_string().as_bytes()) {
+        Ok((200, data)) => {
+            let v: Value = serde_json::from_slice(&data).unwrap_or(Value::Null);
+            println!("{}", json::pretty(&v));
+        }
+        Ok((_, data)) => fail(&String::from_utf8_lossy(&data), 1),
+        Err(e) => fail(&format!("连不上核心的本地通道（{}）：{e}。请先打开 Candid，或用 candid serve --socket 启动。", socket.display()), 1),
+    }
 }
 
 /// `encode-webp`: raw BGRA on stdin, WebP on stdout. The App calls it per screenshot (data model v1 §9.1); it opens
@@ -215,11 +243,14 @@ fn main() {
             shell.run(stdin.lock(), std::io::stdout());
         }
         "serve" => serve(&argv[1..]),
+        "power" => power(&argv[1..]),
         "encode-webp" => encode_webp(&argv[1..]),
         "backup" | "restore" | "move-root" => std::process::exit(migrate::run(command, &argv[1..])),
         name => {
+            // `candid energy summary` is the `energy_summary` tool.
+            let (name, rest) = if name == "energy" && argv.get(1).map(String::as_str) == Some("summary") { ("energy_summary", &argv[2..]) } else { (name, &argv[1..]) };
             let Some(tool) = catalog::tool(name) else { fail(&format!("没有这个工具：{name}\n\n{USAGE}"), 2) };
-            let body = arguments(&tool, &argv[1..]);
+            let body = arguments(&tool, rest);
             let result = ServiceClient::discover(&env()).and_then(|c| c.call(tool.name, &body));
             match result {
                 Ok(data) => {

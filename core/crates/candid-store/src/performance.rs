@@ -69,11 +69,32 @@ impl TimelineStore {
 
     /// Due background jobs as `(job_id, kind, feature)` in the order the worker should try them: priority first,
     /// then oldest first. Cheap, so the worker can hydrate jobs one by one and stop at the first runnable one.
+    ///
+    /// The power gate applies here first, so held work is not prepared only to be refused every round: in the
+    /// manual pace only manual jobs come back; while heavy work is held, kinds registered as heavy and jobs already
+    /// parked by the gate stay out. Held jobs carry the gate's reason, and the reason is cleared once it no longer
+    /// applies (the job is then tried again and may wait for something else).
     pub fn pending_job_queue(&self) -> Result<Vec<(String, String, Option<String>)>> {
         let now = self.clock.now_ms();
+        let kinds = crate::job_priority::kind_filter();
+        let heavy = crate::job_priority::heavy_filter();
+        let held = format!("COALESCE(error_code,'') IN ('{}')", crate::power::REASONS.join("','"));
+        let gate = self.power_gate()?;
+        let (park, reason, skip) = match (gate.all, gate.heavy) {
+            (Some(r), _) => (Some(format!("{kinds}")), Some(r), "AND manual=1".to_string()),
+            (None, Some(r)) => (Some(heavy.clone()), Some(r), format!("AND (manual=1 OR NOT ({heavy} OR {held}))")),
+            (None, None) => (None, None, String::new()),
+        };
+        match (park, reason) {
+            (Some(park), Some(reason)) => {
+                self.db.execute(&format!("UPDATE jobs SET error_code=? WHERE state='queued' AND manual=0 AND {park} AND (error_code IS NULL OR ({held} AND error_code<>?))"), &[text(reason), text(reason)])?;
+                self.db.execute(&format!("UPDATE jobs SET error_code=NULL WHERE state='queued' AND {held} AND error_code<>? AND NOT (manual=0 AND {park})"), &[text(reason)])?;
+            }
+            _ => self.db.execute(&format!("UPDATE jobs SET error_code=NULL WHERE state='queued' AND {held}"), &[])?,
+        }
         // Screenshots are read in the order they were taken: a backlog is queued in one scan (same created_ms), and
         // chat merging appends after what the conversation already holds, so an out-of-order frame scrambles times.
-        let sql = format!("SELECT job_id,kind,feature,CASE WHEN kind='screen.excerpt' THEN COALESCE((SELECT COALESCE(e.start_ms,e.ingested_ms) FROM events e WHERE e.event_id=jobs.input_ref),created_ms) ELSE created_ms END FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND ((state='queued' AND (next_run_ms IS NULL OR next_run_ms<=?)) OR (state='running' AND lease_until_ms<=?)) AND {}", crate::job_priority::kind_filter());
+        let sql = format!("SELECT job_id,kind,feature,CASE WHEN kind='screen.excerpt' THEN COALESCE((SELECT COALESCE(e.start_ms,e.ingested_ms) FROM events e WHERE e.event_id=jobs.input_ref),created_ms) ELSE created_ms END FROM jobs INDEXED BY jobs_pending WHERE state IN ('queued','running') AND ((state='queued' AND (next_run_ms IS NULL OR next_run_ms<=?)) OR (state='running' AND lease_until_ms<=?)) AND {kinds} {}", if skip.is_empty() { String::new() } else { format!("AND (state='running' OR (1 {skip}))") });
         let mut rows = self.db.query(&sql, &[int(now), int(now)], |r| (r.text(0), r.text(1), r.opt_text(2), r.int(3)))?;
         rows.sort_by(|a, b| (crate::job_priority::job_priority(&a.1), a.3, &a.0).cmp(&(crate::job_priority::job_priority(&b.1), b.3, &b.0)));
         Ok(rows.into_iter().map(|(id, kind, feature, _)| (id, kind, feature)).collect())

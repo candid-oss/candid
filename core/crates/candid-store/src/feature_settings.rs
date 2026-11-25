@@ -171,6 +171,11 @@ impl TimelineStore {
             if p["allow_remote"] != true && !local {
                 return Err(denied("waiting_feature_remote"));
             }
+            // Fifth condition: may this call spend power now (power v1 §3.2)? The cost comes from the job's line in
+            // the register, resolved by where the model runs; a manual run (「现在处理」) passes this check only.
+            let (kind, manual) = self.preparing.borrow().clone().unwrap_or_else(|| (catalog_job_kind(step), false));
+            let cost = crate::power::resolve(crate::job_priority::job_cost(&kind), Some(local));
+            self.power_allows(cost, manual)?;
             let (used, limit) = self.feature_budget(step)?;
             if used >= limit {
                 return Err(denied("waiting_feature_budget"));
@@ -178,6 +183,12 @@ impl TimelineStore {
         }
         Ok(())
     }
+}
+
+/// The job kind a catalog feature queues; the feature id itself when the catalog has none.
+fn catalog_job_kind(step: &str) -> String {
+    let catalog: Value = serde_json::from_str(crate::workflows::CATALOG).unwrap_or_default();
+    catalog["features"].as_array().into_iter().flatten().find(|f| f["id"] == step).and_then(|f| f["job_kind"].as_str()).unwrap_or(step).to_string()
 }
 
 /// URL authority equality, never a host-prefix match.

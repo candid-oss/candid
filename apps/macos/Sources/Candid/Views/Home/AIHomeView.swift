@@ -124,12 +124,6 @@ struct AIHomeView: View {
                     Button(ProcessingSheet.screen.title) { processingSheet = .screen }
                         .disabled(model.workflows.featureSettings.items["screen-episodes"]?.enabled != true)
                     Button(ProcessingSheet.skillRuns.title) { processingSheet = .skillRuns }
-                    ForEach(DesktopRecognitionKind.allCases, id: \.self) { kind in
-                        if session.recognition.policy(kind).mode == .batch {
-                            Button(L("运行一批%@", kind.title)) { session.recognition.runBatchNow(kind) }
-                                .disabled(session.isDemo || session.recognition.activeKind != nil)
-                        }
-                    }
                 }
                 ChipButton(title: L("历史对话") + (model.history.isEmpty ? "" : " · \(model.history.count)"), systemImage: "clock.arrow.circlepath", emphasized: showingHistory) {
                     withAnimation(Motion.spring) { showingHistory.toggle(); if showingHistory { showingSkills = false } }

@@ -92,7 +92,7 @@ fn managed_voice_progress_and_cancel_release_the_core_execution_slot() {
     if !path.exists() { eprintln!("SKIP: public sample {} not downloaded (see services/voice/README.md)", path.display()); return; }
     store.media_command(&json!({"action":"import","id":id,"filename":"PUBLIC.wav","kind":"audio","source":"import","path":path})).unwrap();
     drop(store);
-    let mut options = ServeOptions::new(dir.join("root"), dir.join("run"));
+    let mut options = ServeOptions::new(dir.join("root"), dir.join("run")); options.power = Some(true);
     options.socket = Some(socket.clone());
     let service = Service::start(&options, |_| {}).unwrap();
     for _ in 0..2 {

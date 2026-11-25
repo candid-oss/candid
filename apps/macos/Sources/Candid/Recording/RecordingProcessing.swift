@@ -22,7 +22,7 @@ struct RecordingProcessing: Decodable, Equatable {
         if state == "cancelling" { return L("正在停止模型计算") }
         if state == "cancelled", reason == "user_cancelled" || reason == nil { return stopConfirmed == false ? L("结果已取消，停止未确认") : L("已停止") }
         if let reason, state != "done" {
-            return ["waiting_feature_source":L("此来源未开启该功能"), "waiting_feature_remote":L("此功能仅允许本机模型"), "waiting_feature_budget":L("已到每日调用上限"), "waiting_model":L("尚未选择模型"), "waiting_authorization":L("模型尚未授权"), "waiting_recording_transcript":L("等待转写完成"), "feature_disabled":L("语音识别已关闭"), "offline":L("模型服务离线"), "timeout":L("模型请求超时"), "http_429":L("模型服务繁忙"), "inference_failed":L("模型计算失败"), "cancel_unconfirmed":L("未收到服务停止确认"), "waiting_budget":L("等待预算额度"), "waiting_budget_cost_unknown":L("模型费用配置待确认")][reason] ?? L("处理未完成：%@", reason)
+            return ["waiting_feature_source":L("此来源未开启该功能"), "waiting_feature_remote":L("此功能仅允许本机模型"), "waiting_feature_budget":L("已到每日调用上限"), "waiting_model":L("尚未选择模型"), "waiting_authorization":L("模型尚未授权"), "waiting_recording_transcript":L("等待转写完成"), "feature_disabled":L("语音识别已关闭"), "offline":L("模型服务离线"), "timeout":L("模型请求超时"), "http_429":L("模型服务繁忙"), "inference_failed":L("模型计算失败"), "cancel_unconfirmed":L("未收到服务停止确认"), "waiting_budget":L("等待预算额度"), "waiting_budget_cost_unknown":L("模型费用配置待确认"), "waiting_power":L("等待接入电源"), "waiting_thermal":L("等待 Mac 降温"), "waiting_manual":L("等待手动处理")][reason] ?? L("处理未完成：%@", reason)
         }
         if state == "failed" { return L("识别失败") }
         if state == "done" { return L("已完成") }
@@ -63,6 +63,7 @@ struct RecordingProcessingView: View {
                     }
                     if status.state == "running", let seconds = status.stageSeconds, seconds >= 30 { Text(L("当前阶段 %@", MediaWorkspaceStore.clockText(elapsed: Double(seconds)))) }
                     Spacer()
+                    ProcessNowButton(reason: status.reason) { await store.runNow(item) }
                     if status.recoverySettings { QuietButton(title: L("设置")) { NotificationCenter.default.post(name: AIFunctionSettingsView.open, object: nil) } }
                 }.typography(.caption).foregroundStyle(.secondary)
                 if status.state == "running", status.stage == nil {
@@ -88,6 +89,7 @@ struct RecordingProcessingView: View {
                 if let status = item.aiProcessing?[step], status.isActive || status.state == "failed" || status.state == "cancelled" {
                     HStack {
                         Text("\(step == "title" ? L("重命名") : L("总结")) · \(status.label)").typography(.caption).foregroundStyle(.secondary)
+                        ProcessNowButton(reason: status.reason) { await store.runNow(item) }
                         if status.recoverySettings { QuietButton(title: L("设置")) { NotificationCenter.default.post(name: AIFunctionSettingsView.open, object: nil) } }
                         if status.isActive { QuietButton(title: L("停止"), role: .destructive) { Task { await store.cancelProcessing(item) } } }
                     }

@@ -192,6 +192,38 @@ pub struct Core {
     pub started: Instant,
     /// Held while a cutover runs, so two requests do not race.
     pub cutover_lock: Mutex<()>,
+    /// The background worker thread, unparked by [`Core::wake_background`].
+    pub background: Mutex<Option<std::thread::Thread>>,
+}
+
+impl Core {
+    /// Wakes the background worker after something that changes what it may run (power state, pace, a manual
+    /// run). Interim version until event wake-up lands (power v1 §9.1): the sync trigger plus unparking the worker.
+    pub fn wake_background(&self) {
+        self.trigger.request();
+        if let Some(t) = self.background.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
+            t.unpark();
+        }
+    }
+
+    /// `POST /local/power`: the platform layer's report, the pace, the status and the gate for its own work. A
+    /// changed decision is published as `power` on the change feed and wakes the worker.
+    fn power(&self, request: &HttpRequest) -> HttpResponse {
+        if request.method != "POST" { return HttpResponse::error(405, "method", "请用 POST。"); }
+        if !bearer(request).is_empty() { return HttpResponse::error(403, "internal_only", "此操作只供 App 使用。"); }
+        let v: Value = match decode(request, "电源") { Ok(v) => v, Err(e) => return e };
+        let result = lock(&self.store).power_command(&v);
+        match result {
+            Ok(out) => {
+                if out["changed"] == true {
+                    self.feed.publish("power");
+                    self.wake_background();
+                }
+                ok_json(&out)
+            }
+            Err(e) => store_error(&e),
+        }
+    }
 }
 
 /// Returns memory freed by a mirroring pass or a verification to the system, so the idle helper does not keep the
@@ -541,6 +573,9 @@ impl Core {
         if path.starts_with("/local/agents") && !bearer(request).is_empty() {
             return HttpResponse::error(403, "internal_only", "会话设置只供 App 使用。");
         }
+        if path == "/local/power" {
+            return self.power(request);
+        }
         if path == "/local/voiceprints" {
             if request.method != "POST" { return HttpResponse::error(405,"method","请使用 POST"); }
             if !bearer(request).is_empty() { return HttpResponse::error(403,"internal_only","此操作只供 App 使用。"); }
@@ -587,7 +622,8 @@ impl Core {
             }
             let result=match path.as_str() {"/local/media"=>store.media_command(&v),"/local/jobs"=>store.job_command(&v),_=>store.record_management(&v,&self.internal_client)};
             drop(store);
-            return match result {Ok(v)=>{self.feed.publish("data");ok_json(&v)},Err(e)=>store_error(&e)};
+            let run_now = path=="/local/jobs" && v["action"]=="run_now";
+            return match result {Ok(v)=>{self.feed.publish("data");if run_now{self.wake_background();}ok_json(&v)},Err(e)=>store_error(&e)};
         }
         if path == "/local/connectors" {
             if !bearer(request).is_empty() {

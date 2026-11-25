@@ -21,7 +21,7 @@ fn sample_ready() -> bool {
 fn start(url: &str) -> (Service, PathBuf, PathBuf, String) {
     let dir = std::env::temp_dir().join(format!("vp-{}", &uuid_v4()[..8]));
     let socket = dir.join("run/core.sock");
-    let mut o = ServeOptions::new(dir.join("root"), dir.join("run"));
+    let mut o = ServeOptions::new(dir.join("root"), dir.join("run")); o.power = Some(true);
     o.socket = Some(socket.clone());
     let svc = Service::start(&o, |_| {}).unwrap();
     assert_eq!(

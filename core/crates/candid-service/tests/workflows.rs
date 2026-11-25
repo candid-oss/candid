@@ -22,7 +22,7 @@ fn post(socket: &std::path::Path, path: &str, v: Value) -> Value {
 fn start() -> (Service, PathBuf, PathBuf) {
     let dir = std::env::temp_dir().join(format!("pw-{}", &uuid_v4()[..8]));
     let socket = dir.join("run/core.sock");
-    let mut o = ServeOptions::new(dir.join("root"), dir.join("run"));
+    let mut o = ServeOptions::new(dir.join("root"), dir.join("run")); o.power = Some(true);
     o.socket = Some(socket.clone());
     let svc = Service::start(&o, |_| {}).unwrap();
     (svc, dir, socket)
@@ -408,7 +408,7 @@ fn long_audio_chunks_resume_after_failure_and_core_restart_without_rebilling_com
     assert_eq!(requests.load(Ordering::SeqCst), 2);
     let job = first["id"].clone();
     svc.stop();
-    let mut options = ServeOptions::new(dir.join("root"), dir.join("run"));
+    let mut options = ServeOptions::new(dir.join("root"), dir.join("run")); options.power = Some(true);
     options.socket = Some(socket.clone());
     let svc = Service::start(&options, |_| {}).unwrap();
     post(&socket, "/local/jobs", json!({"action":"restart","id":job}));
@@ -553,7 +553,7 @@ fn screen_episode_summary_runs_through_real_queue_and_mock_model_once() {
     assert!(store.job_command(&json!({"action":"list"})).unwrap()["jobs"].as_array().unwrap().is_empty());
     store.screen_command(&json!({"action":"run","id":episode})).unwrap();
     drop(store);
-    let mut options=ServeOptions::new(root,dir.join("run"));options.socket=Some(socket.clone());
+    let mut options=ServeOptions::new(root,dir.join("run")); options.power = Some(true);options.socket=Some(socket.clone());
     let service=Service::start(&options, |_|{}).unwrap();
     let jobs=wait(&socket);assert!(jobs["jobs"].as_array().unwrap().iter().any(|j|j["kind"]=="screen.summarize"&&j["state"]=="done"),"{jobs}");
     let screen=post(&socket,"/local/screen",json!({"action":"status"}));assert_eq!(screen["episodes"][0]["summary"],"预算从100元改成200元，仍待确认。");

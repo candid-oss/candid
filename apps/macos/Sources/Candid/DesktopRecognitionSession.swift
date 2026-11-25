@@ -20,28 +20,31 @@ final class DesktopRecognitionSession {
     private(set) var resultRevision = 0
     private(set) var manualFeedback: (id: String, message: String)?
     private(set) var status: [DesktopRecognitionKind: String] = [:]
-    private(set) var powerBlocks: [DesktopRecognitionKind: String] = [:]
+    /// Why automatic recognition waits on the core's power gate (`waiting_power`, `waiting_thermal`,
+    /// `waiting_manual`), per kind; nil when it may run.
+    private(set) var powerWait: [DesktopRecognitionKind: String] = [:]
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let ocr = DesktopOCR()
-    @ObservationIgnored private var powerGate = DesktopRecognitionPowerGate()
-    @ObservationIgnored private var powerObservation: DesktopRecognitionPowerObservation?
+    @ObservationIgnored private var automaticEnabled = false
+    @ObservationIgnored private var powerObserver: NSObjectProtocol?
     @ObservationIgnored private var store: DesktopStore?
     /// Screenshots whose original could not be read this session; automatic passes skip them.
     @ObservationIgnored private var unreadable: Set<String> = []
     @ObservationIgnored private var timer: Task<Void, Never>?
     @ObservationIgnored private var job: Task<Void, Never>?
     @ObservationIgnored private var retryAfter: [DesktopRecognitionKind: Date] = [:]
-    @ObservationIgnored private var batches: [DesktopRecognitionKind: Batch] = [:]
     @ObservationIgnored private var lastAutomaticKind: DesktopRecognitionKind = .vision
     @ObservationIgnored private var configObserver: NSObjectProtocol?
     /// System OCR of uncompressed frames, by screenshot ID: run at capture, before the original is stored as WebP.
-    @ObservationIgnored private var frameOCR: [String: Task<DesktopRecognitionResult, any Error>] = [:]
-    @ObservationIgnored private var frameOCRTail: Task<DesktopRecognitionResult, any Error>?
+    @ObservationIgnored private var frameOCR: [String: Task<FrameOCR, any Error>] = [:]
+    @ObservationIgnored private var frameOCRTail: Task<FrameOCR, any Error>?
 
-    private struct Batch {
-        var next: Date
-        var remaining = 0
+    /// A capture-time OCR result with what it cost, for the energy ledger.
+    private struct FrameOCR: Sendable {
+        let result: DesktopRecognitionResult
+        let start: BackgroundPower.Mark
+        let end: BackgroundPower.Mark
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -57,15 +60,14 @@ final class DesktopRecognitionSession {
 
     func attach(to store: DesktopStore, automaticEnabled: Bool) {
         self.store = store
+        self.automaticEnabled = automaticEnabled
         if automaticEnabled {
-            powerObservation = DesktopRecognitionPowerObservation { [weak self] reset in
-                if reset { self?.powerGate.reset() }
-                self?.refreshPower()
-                self?.wake()
+            // The core's gate changed (power, heat, pace): look again.
+            powerObserver = NotificationCenter.default.addObserver(forName: BackgroundPower.changed, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.wake() }
             }
+            wake()
         }
-        refreshPower()
-        if automaticEnabled { wake() }
     }
 
     func stop() {
@@ -74,7 +76,9 @@ final class DesktopRecognitionSession {
         store = nil
         timer?.cancel()
         job?.cancel()
-        powerObservation = nil
+        automaticEnabled = false
+        if let powerObserver { NotificationCenter.default.removeObserver(powerObserver) }
+        powerObserver = nil
     }
 
     func policy(_ kind: DesktopRecognitionKind) -> DesktopRecognitionPolicy {
@@ -88,36 +92,23 @@ final class DesktopRecognitionSession {
         if previous.mode == .manual && policy.mode != .manual { updated.automaticSince = Date() }
         if kind == .ocr { ocrPolicy = updated } else { visionPolicy = updated }
         if let data = try? JSONEncoder().encode(updated) { defaults.set(data, forKey: "desktop.recognition.\(kind.rawValue)") }
-        if updated.mode != previous.mode || updated.batchIntervalMinutes != previous.batchIntervalMinutes {
-            setBatch(Batch(next: Date().addingTimeInterval(updated.batchInterval)), for: kind)
-        }
         if activeKind == kind { job?.cancel() }
         retryAfter[kind] = nil
         status[kind] = nil
-        refreshPower()
         wake()
-    }
-
-    func refreshPower() {
-        let power = DesktopRecognitionPowerSource.read()
-        let uptime = ProcessInfo.processInfo.systemUptime
-        for kind in DesktopRecognitionKind.allCases {
-            powerBlocks[kind] = powerGate.blockReason(policy: policy(kind), power: power, uptime: uptime)
-        }
-        if let activeKind, powerBlocks[activeKind] != nil { job?.cancel() }
     }
 
     func wake() {
         timer?.cancel()
-        guard store != nil, powerObservation != nil, job == nil,
+        guard store != nil, automaticEnabled, job == nil,
               DesktopRecognitionKind.allCases.contains(where: { policy($0).mode != .manual }) else { return }
         timer = Task { [weak self] in await self?.evaluate() }
     }
 
     /// Whether capture should hand over the uncompressed frame: automatic OCR of new screenshots with the system
-    /// engine, allowed by the power policy right now. Other modes recognise the stored WebP later.
+    /// engine, allowed by the core's power gate at its last answer. Otherwise the stored WebP is recognised later.
     var wantsRawFrames: Bool {
-        store != nil && ocrPolicy.mode == .immediate && powerBlocks[.ocr] == nil && AIRuntime.shared.model(for: "ocr") == nil
+        store != nil && ocrPolicy.mode == .immediate && powerWait[.ocr] == nil && AIRuntime.shared.model(for: "ocr") == nil
     }
 
     /// Starts system OCR on the uncompressed frame; the automatic pass uses it when it reaches this screenshot.
@@ -127,10 +118,12 @@ final class DesktopRecognitionSession {
         // Results the automatic pass never collected (deleted screenshot, policy changed) are dropped, not hoarded.
         while frameOCR.count >= 16, let stale = frameOCR.keys.first { frameOCR.removeValue(forKey: stale)?.cancel() }
         let previous = frameOCRTail
-        let task = Task.detached(priority: .utility) { () throws -> DesktopRecognitionResult in
+        let task = Task.detached(priority: .utility) { () throws -> FrameOCR in
             _ = try? await previous?.value
             try Task.checkCancellation()
-            return try DesktopOCR.recognize(frame: frame.image)
+            let start = BackgroundPower.Mark.now()
+            let result = try DesktopOCR.recognize(frame: frame.image)
+            return FrameOCR(result: result, start: start, end: .now())
         }
         frameOCR[screenshotID] = task
         frameOCRTail = task
@@ -140,25 +133,14 @@ final class DesktopRecognitionSession {
         try await store?.recognitionResults(for: screenshot.id) ?? [:]
     }
 
+    /// A manual run is 「现在处理」: it passes the power gate (power v1 §2.2).
     func runManually(_ kind: DesktopRecognitionKind, screenshot: DesktopRecord, promptOverride: String? = nil, focusMainPane: Bool? = nil) {
-        refreshPower()
         guard job == nil else {
             manualFeedback = (screenshot.id, DesktopRecognitionError.busy.localizedDescription)
             return
         }
-        if let reason = powerBlocks[kind] {
-            manualFeedback = (screenshot.id, reason)
-            return
-        }
         manualFeedback = nil
         start(kind, screenshot: screenshot, automatic: false, promptOverride: promptOverride, focusMainPane: focusMainPane)
-    }
-
-    func runBatchNow(_ kind: DesktopRecognitionKind) {
-        guard policy(kind).mode == .batch, powerObservation != nil, job == nil else { return }
-        retryAfter[kind] = nil
-        setBatch(Batch(next: Date()), for: kind)
-        wake()
     }
 
     func cancel() {
@@ -198,41 +180,30 @@ final class DesktopRecognitionSession {
                 }
             }
         }
-        refreshPower()
         let now = Date()
         let kinds: [DesktopRecognitionKind] = lastAutomaticKind == .ocr ? [.vision, .ocr] : [.ocr, .vision]
         for kind in kinds {
             let policy = policy(kind)
             guard policy.mode != .manual else { continue }
-            if let reason = powerBlocks[kind] {
-                status[kind] = reason
-                if let wait = powerGate.remainingPluggedWait(policy: policy, uptime: ProcessInfo.processInfo.systemUptime) {
-                    schedule(now.addingTimeInterval(wait))
-                }
-                continue
-            }
             if kind == .vision, !visionConfigured {
                 status[kind] = DesktopRecognitionError.missingModel.localizedDescription
                 continue
             }
-            if let retry = retryAfter[kind], retry > now { schedule(retry); continue }
-            var batch = batches[kind] ?? Batch(next: defaults.object(forKey: batchKey(kind)) as? Date ?? now)
-            if policy.mode == .batch && batch.remaining == 0 && batch.next > now {
-                status[kind] = L("下一批约在 ") + batch.next.formatted(date: .omitted, time: .shortened)
-                schedule(batch.next)
+            // The core's power gate decides; a change there posts `BackgroundPower.changed`, which wakes this pass.
+            let (work, role) = Self.work(kind)
+            let wait = await BackgroundPower.shared.allows(work, local: work == .vision ? BackgroundPower.modelIsLocal(role: role) : nil)
+            guard !Task.isCancelled, job == nil else { return }
+            powerWait[kind] = wait
+            if let wait {
+                status[kind] = BackgroundPower.label(wait)
                 continue
             }
+            if let retry = retryAfter[kind], retry > now { schedule(retry); continue }
             do {
                 let record = try await store.pendingRecognition(kind, since: policy.earliestAutomaticDate, skip: unreadable)
                 guard !Task.isCancelled, job == nil else { return }
-                if policy.mode == .batch {
-                    if batch.remaining == 0 { batch = Batch(next: now.addingTimeInterval(policy.batchInterval), remaining: policy.batchSize) }
-                    batch.remaining = record == nil ? 0 : batch.remaining - 1
-                    setBatch(batch, for: kind)
-                }
                 guard let record else {
                     status[kind] = L("没有待处理的截图")
-                    if policy.mode == .batch { schedule(batch.next) }
                     continue
                 }
                 lastAutomaticKind = kind
@@ -245,6 +216,12 @@ final class DesktopRecognitionSession {
                 schedule(retry)
             }
         }
+    }
+
+    /// Which registered app work a recognition kind is, and the model role it would use.
+    private static func work(_ kind: DesktopRecognitionKind) -> (AppBackgroundWork, String) {
+        if kind == .ocr { return (AIRuntime.shared.model(for: "ocr") == nil ? .ocr : .vision, "ocr") }
+        return (.vision, "vision")
     }
 
     private func start(_ kind: DesktopRecognitionKind, screenshot: DesktopRecord, automatic: Bool, promptOverride: String? = nil, focusMainPane: Bool? = nil) {
@@ -262,16 +239,17 @@ final class DesktopRecognitionSession {
                 wake()
             }
             do {
-                if kind == .ocr, let early = frameOCR.removeValue(forKey: screenshot.id), let result = try? await early.value {
+                if kind == .ocr, let early = frameOCR.removeValue(forKey: screenshot.id), let frame = try? await early.value {
                     try Task.checkCancellation()
-                    try await store.saveRecognition(result, kind: kind, screenshot: screenshot)
+                    try await store.saveRecognition(frame.result, kind: kind, screenshot: screenshot)
+                    BackgroundPower.shared.account(.ocr, subject: screenshot.id, cpuMs: frame.end.cpuMs - frame.start.cpuMs, wallMs: frame.end.wallMs - frame.start.wallMs)
                     resultRevision &+= 1
                     status[kind] = L("已完成")
                     return
                 }
                 let (jpeg, evidence) = try await store.recognitionInput(screenshot) // the stored original: WebP or JPEG
-                refreshPower()
                 try Task.checkCancellation()
+                let mark = BackgroundPower.Mark.now()
                 let result: DesktopRecognitionResult
                 switch kind {
                 case .ocr:
@@ -291,15 +269,14 @@ final class DesktopRecognitionSession {
                     result = try await modelVision(DesktopImageEncoder.jpegForModels(jpeg), prompt: requestPrompt, ocrReference: reference, windowContext: context,
                                                    focusMainPane: focusMainPane, axEvidence: evidence ?? screenshot.context?.axEvidence)
                 }
-                refreshPower()
                 try Task.checkCancellation()
+                BackgroundPower.shared.account(Self.work(kind).0, subject: screenshot.id, since: mark)
                 try await store.saveRecognition(result, kind: kind, screenshot: screenshot)
                 resultRevision &+= 1
                 status[kind] = L("已完成")
             } catch {
                 if Task.isCancelled {
-                    status[kind] = powerBlocks[kind] ?? L("已取消")
-                    if !automatic, let reason = powerBlocks[kind] { manualFeedback = (screenshot.id, reason) }
+                    status[kind] = L("已取消")
                     return
                 }
                 let message = error.localizedDescription
@@ -338,13 +315,6 @@ final class DesktopRecognitionSession {
         if response.finishReason == "length" || response.finishReason == "max_tokens" { throw DesktopRecognitionError.incompleteLayout }
         return DesktopRecognitionResult(source: response.servedModel ?? "ocr", text: text)
     }
-
-    private func setBatch(_ batch: Batch, for kind: DesktopRecognitionKind) {
-        if batches[kind]?.next != batch.next { defaults.set(batch.next, forKey: batchKey(kind)) }
-        batches[kind] = batch
-    }
-
-    private func batchKey(_ kind: DesktopRecognitionKind) -> String { "desktop.recognition.next.\(kind.rawValue)" }
 
     private static func readPolicy(_ kind: DesktopRecognitionKind, from defaults: UserDefaults) -> DesktopRecognitionPolicy {
         guard let data = defaults.data(forKey: "desktop.recognition.\(kind.rawValue)"),

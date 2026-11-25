@@ -48,7 +48,6 @@ public struct DesktopSamplingOptions: Codable, Sendable, Equatable {
     public var contentCapacity = 4
     public var imageCapacity = 4
     public var imageFallbackInterval: Double = 120
-    public var conserveBattery = true
     public init() {}
     public var isValid: Bool {
         Self.samplingIntervalRange.contains(minimumContentInterval) &&

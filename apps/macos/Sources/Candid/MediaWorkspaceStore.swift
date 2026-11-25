@@ -290,6 +290,15 @@ final class MediaWorkspaceStore {
         catch { self.error = error.localizedDescription }
     }
 
+    /// 「现在处理」: every waiting job of this recording (and its parts) runs once, past the power gate only.
+    func runNow(_ record: MediaLibraryRecord) async {
+        guard !isDemo, let channel = TimelineService.shared.channel else { return }
+        do {
+            _ = try await channel.send("POST", "/local/jobs", body: JSONSerialization.data(withJSONObject: ["action": "run_now", "input_ref": record.id.uuidString.lowercased()])).checked()
+            await refresh()
+        } catch { self.error = error.localizedDescription }
+    }
+
     func runAI(_ record: MediaLibraryRecord, step: String) async {
         guard !isDemo, let channel = TimelineService.shared.channel else { return }
         do {

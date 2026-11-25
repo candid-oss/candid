@@ -300,6 +300,14 @@ impl TimelineStore {
             if self.automation_validate(&r).is_err() {
                 continue;
             }
+            // The power gate (power v1 §3.2): automatic runs wait like any background job; a run the user started
+            // or asked for by id is manual.
+            let manual = wanted.is_some() || r["trigger"] == "manual" || self.db.scalar("SELECT manual FROM jobs WHERE job_id=?", &[text(r["id"].as_str().unwrap_or(""))])? == 1;
+            let cost = crate::power::resolve(crate::job_priority::job_cost("agent.skill"), self.role_model_is_local("agent_chat"));
+            if let Err(e) = self.power_allows(cost, manual) {
+                self.workflow_wait(r["id"].as_str().unwrap_or(""), &e.code())?;
+                continue;
+            }
             let id = r["id"].as_str().unwrap();
             let mut next = r.clone();
             let attempt = r["attempt"].as_i64().unwrap_or(0) + 1;

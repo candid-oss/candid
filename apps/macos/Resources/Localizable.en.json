@@ -2326,5 +2326,21 @@
  "选择存放备份的文件夹": "Choose a folder for the backup",
  "选择新位置（例如外置盘）。会在里面新建「Candid timeline」文件夹。": "Choose a new location (for example an external drive). A “Candid timeline” folder is created inside it.",
  "采集已暂停。请不要退出 Candid。": "Capture is paused. Please don't quit Candid.",
- "重新启动 Candid": "Restart Candid"
+ "重新启动 Candid": "Restart Candid",
+ "%@；在「AI 功能 → 后台处理」里调整何时处理。": "%@. Change when processing runs in AI Features → Background Processing.",
+ "不自动处理；在等待的条目上点「现在处理」才会运行。": "Nothing runs automatically; click Process Now on a waiting item to run it.",
+ "今天后台计算 %@ 分钟，等待 %@ 项": "Background computing today: %@ min, %@ waiting",
+ "何时处理": "When to process",
+ "后台处理": "Background Processing",
+ "数据一到就处理；Mac 过热时暂停，低电量模式下按省电处理。": "Processes data as soon as it arrives; pauses when the Mac is hot and acts like Power Saver in Low Power Mode.",
+ "本机模型作业：%@": "On-device model work: %@",
+ "正在排队": "Queuing",
+ "现在处理": "Process Now",
+ "用电池时不跑本机模型，接上电源后自动继续；远端模型和整理照常。": "On battery, on-device models don't run; they resume when you plug in. Remote models and organizing continue.",
+ "用电池时（后台处理不是「随时」，或低电量模式）自动降低频率：定时至少 60 秒，自动文字和截图至少 30 秒、每分钟最多 2 次。": "On battery (unless Background Processing is Anytime) or in Low Power Mode, sampling slows down: timed captures at least 60 s apart, automatic text and screenshots at least 30 s apart and at most 2 per minute.",
+ "省电": "Power Saver",
+ "等待手动处理": "Waiting for manual processing",
+ "等待接入电源": "Waiting for power",
+ "等待时间线核心": "Waiting for the timeline core",
+ "随时": "Anytime"
 }

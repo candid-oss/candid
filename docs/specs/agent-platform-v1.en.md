@@ -411,6 +411,17 @@ A pipeline definition only lists: the input recording's version, a transcribe st
 - Cancellation is persisted first, then the external model request is cancelled and later steps blocked; when a provider cannot cancel, the possible charge is recorded and late output is not published. Resource concurrency has one global cap, with capture and saving first.
 - Calls go to ai_calls, linked to the run/step, model version, destination, usage and errors; original text is never copied into logs. Settings migrations keep existing authorization; secrets are read only through the platform's secret interface.
 
+### Power: when to spend it
+
+Any computation the user is not waiting for is background work; background work runs only when spending power is allowed, runs once per input, never wakes without an event, and every run is accounted for (design: [power v1](../plans/power-v1.md), in Chinese).
+
+- **One switch, Background Processing** (top of the AI settings): Anytime (still paused when the Mac is hot, and acts like Power Saver in Low Power Mode), **Power Saver (default: on battery no on-device model runs; work resumes when plugged in)**, Manual (automatic jobs are still queued but all wait until Process Now). No battery percentages, plugged-in durations or batches, and no per-feature power options.
+- **The platform reports, the core keeps**: the app reports external power, battery level, Low Power Mode, thermal state and idle seconds on every change and every 5 minutes; a report older than 10 minutes is unknown, and unknown counts as battery. Power events in the timeline stay evidence; the gate never reads them.
+- **One decision**: every background job kind has a cost in the job register — heavy (on-device model), light (remote model or no model), by model (decided by the role's provider). `feature_check` asks `power_allows` as its fifth condition; the job queue does not even pick held work. Waiting reasons `waiting_power`, `waiting_thermal` and `waiting_manual` reuse the existing waiting display.
+- **Process Now** marks a waiting job as manual and queues it; it passes only the power condition, never authorization, sources or daily limits.
+- **Accounting**: each job records CPU milliseconds (core thread time plus the voice service's own `cpu_seconds`), wall milliseconds and the power state it ran on; `energy_summary` gives runs, CPU seconds, wall seconds and battery CPU seconds by day and job kind, plus what is waiting and why. The settings line ("background computing today: X min, N waiting") and the hourly `core.log` line come from it; counts only.
+- A new background job is one line in the register; its commit message answers three questions: what triggers it, when it may run, what it costs (see [AGENTS.md](../../AGENTS.md)).
+
 ### Sources, permissions and revisions
 
 Uses the artifact public envelope; samples and characters use half-open spans. Events record what happened, derived content records interpretations, manual corrections record the user's choices; originals are never overwritten. Model output must have locatable sources; out-of-range citations, missing sources or wrong types are refused.

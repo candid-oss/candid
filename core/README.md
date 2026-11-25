@@ -48,6 +48,7 @@ candid mcp
 - As the app's helper it receives `--socket` and `--parent-pid`, and exits when the app goes away. A second core on the same root or socket exits with code 75.
 - Run directory: `CANDID_RUN_DIR`, otherwise `~/Library/Application Support/Candid/run` on macOS. `CANDID_TOKEN` and `CANDID_ENDPOINT` override the token and address.
 - The CLI and MCP shell never open the database; they call the running service.
+- Background processing follows one power gate ([power v1](../docs/plans/power-v1.md)): `candid power status`, `candid power pace <anytime|saver|manual>` (through the app's local socket), and `candid energy summary` for what background work cost. A core run without the app has unknown power, which counts as battery; declare it with `candid serve --power ac|battery`.
 
 ## Connecting an AI client
 
@@ -69,6 +70,6 @@ Rust 核心负责时间线的一切：存储、入库、查询、权限与审计
 
 **构建与测试**（需 Rust 1.88+，在 `core/` 下执行）：`cargo build --release -p candid-cli`、`cargo test --workspace`。部分服务测试使用仓库根目录 `data/` 下的公开语音样例，缺失时跳过，获取方式见 [services/voice](../services/voice/README.md)。
 
-**运行**：`candid serve --root <数据根目录>` 只监听 `127.0.0.1`，把 `endpoint.json` 和命令行令牌（0600）写入运行目录；`--root` 必填，不会默认指向 App 的资料库。作为 App 辅助进程时由 App 传入 `--socket` 和 `--parent-pid`，App 退出后核心随之退出；同一资料库已有核心运行时退出码为 75。运行目录默认 `~/Library/Application Support/Candid/run`，可用 `CANDID_RUN_DIR` 覆盖。
+**运行**：`candid serve --root <数据根目录>` 只监听 `127.0.0.1`，把 `endpoint.json` 和命令行令牌（0600）写入运行目录；`--root` 必填，不会默认指向 App 的资料库。作为 App 辅助进程时由 App 传入 `--socket` 和 `--parent-pid`，App 退出后核心随之退出；同一资料库已有核心运行时退出码为 75。运行目录默认 `~/Library/Application Support/Candid/run`，可用 `CANDID_RUN_DIR` 覆盖。后台处理只听一个电源闸门（[功耗 v1](../docs/plans/power-v1.md)）：`candid power status`、`candid power pace <anytime|saver|manual>`（经 App 核心的本地通道），`candid energy summary` 查后台计算的账；没有 App 时电源状态未知、按电池处理，可用 `candid serve --power ac|battery` 声明。
 
 **接入 AI 客户端**：在 App 里登记访问方（或调用 `POST /local/clients`），得到只显示一次的令牌和 Claude Code、Codex、通用 MCP 的配置片段。每个访问方有独立范围，每次调用记入访问日志，撤销后令牌立即失效。`/local/…` 接口只在 Unix 套接字上提供，回环 HTTP 一律返回 403。

@@ -33,6 +33,9 @@ pub struct ServeOptions {
     pub parent_pid: Option<i32>,
     /// Command path for the setup snippets; defaults to this executable.
     pub cli_path: Option<String>,
+    /// `--power ac|battery`: a declared power state for a core run without the App (never goes stale). None
+    /// leaves the state unknown until a platform report arrives; unknown counts as battery.
+    pub power: Option<bool>,
 }
 
 impl ServeOptions {
@@ -49,6 +52,7 @@ impl ServeOptions {
             socket: None,
             parent_pid: None,
             cli_path: None,
+            power: None,
         }
     }
 }
@@ -209,6 +213,7 @@ impl Service {
             parent_pid: opts.parent_pid,
             started: std::time::Instant::now(),
             cutover_lock: Mutex::new(()),
+            background: Mutex::new(None),
         });
         core.load_capture_mode();
         let data = serde_json::to_vec(&endpoint).map_err(|e| failed(e.to_string()))?;
@@ -216,6 +221,7 @@ impl Service {
         {
             let store = shared.lock().map_err(|_| failed("store lock".into()))?;
             ensure_cli_token(&store, &opts.run_dir).map_err(|e| failed(format!("cli.token：{e}")))?;
+            store.power_declare(opts.power).map_err(|e| failed(format!("电源状态：{}", e.message())))?;
             let events = store.event_count().unwrap_or(0);
             core.update_status(|s| s.events = events);
         }
@@ -265,6 +271,7 @@ impl Service {
                 if !workflow_stop.load(Ordering::SeqCst) { std::thread::park_timeout(Duration::from_secs(2)); }
             }
         }).map_err(|e| failed(e.to_string()))?);
+        if let Some(w) = &workflows { *core.background.lock().unwrap_or_else(|p| p.into_inner()) = Some(w.thread().clone()); }
         let convert = crate::library_conversion::start(shared.clone(), stop.clone()).ok();
         Ok(Service { workflows, convert, store: shared, endpoint, core, run_dir: opts.run_dir.clone(), server, local, stop, sync })
     }
