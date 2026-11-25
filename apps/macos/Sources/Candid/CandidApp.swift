@@ -123,6 +123,7 @@ private struct DesktopRootView: View {
                 // The core first: capture settings may still live in the old ledger, which only the core opens.
                 TimelineService.shared.start(locations)
                 await session.bootstrap()
+                HealthMonitor.shared.start(session: session)
             }
     }
 }
@@ -207,7 +208,7 @@ private struct DesktopRootView: View {
 
     private func updateLabel() {
         withObservationTracking {
-            let alerting = !StatusAlerts.current(session: session, media: media).isEmpty
+            let alerting = !StatusAlerts.current(session: session, media: media).isEmpty || !HealthMonitor.shared.problems.isEmpty
             let state = CandidMark.state(recordingScreen: session.isRecording, recordingAudio: media.isRecording, alerting: alerting)
             item.button?.image = CandidMark.menuBarImage(state)
             item.button?.title = media.recordingClock.map { " " + $0 } ?? ""

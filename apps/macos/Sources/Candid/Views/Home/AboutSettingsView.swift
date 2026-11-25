@@ -26,7 +26,12 @@ struct AboutSettingsView: View {
                 SettingRow(title: L("源代码"), detail: "github.com/candid-oss/candid") {
                     QuietButton(title: L("打开"), emphasized: true) { NSWorkspace.shared.open(Self.repository) }
                 }
+                HairlineDivider()
+                SettingRow(title: L("首次使用引导"), detail: L("重新选择记录范围、授权和 AI 连接")) {
+                    QuietButton(title: L("打开引导")) { OnboardingLinks.showGuide() }
+                }
             }
+            HealthSettingsGroup()
             SettingsGroup(title: L("隐私")) {
                 Text(L("没有遥测、统计或账号。资料只保存在这台 Mac 上；只有你为某个功能配置了远程模型时，那部分内容才会发给该服务。每次启动默认暂停采集，菜单栏圆点始终显示是否在记录。"))
                     .typography(.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
