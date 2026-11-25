@@ -3,14 +3,14 @@
   "rules": [
     {"step": "excerpt", "when": ["可以，我准时到", "报价单记得周三前发我"],
      "reply": {"kind": "chat", "title": "张三", "excerpt": "", "messages": [
-       {"from": "other", "sender": "", "text": "周四下午三点开评审会可以吗？"},
-       {"from": "me", "sender": "", "text": "可以，我准时到"},
-       {"from": "other", "sender": "", "text": "报价单记得周三前发我"}]}},
+       {"frame": 1, "from": "other", "sender": "", "text": "周四下午三点开评审会可以吗？"},
+       {"frame": 1, "from": "me", "sender": "", "text": "可以，我准时到"},
+       {"frame": 1, "from": "other", "sender": "", "text": "报价单记得周三前发我"}]}},
     {"step": "excerpt", "when": ["好的，周三上午发你"],
      "reply": {"kind": "chat", "title": "张三", "excerpt": "", "messages": [
-       {"from": "other", "sender": "", "text": "报价单记得周三前发我"},
-       {"from": "me", "sender": "", "text": "好的，周三上午发你"},
-       {"from": "other", "sender": "", "text": "顺便把合同草稿也带上"}]}},
+       {"frame": 1, "from": "other", "sender": "", "text": "报价单记得周三前发我"},
+       {"frame": 1, "from": "me", "sender": "", "text": "好的，周三上午发你"},
+       {"frame": 1, "from": "other", "sender": "", "text": "顺便把合同草稿也带上"}]}},
 
     {"step": "activity", "when": ["张三", "评审会"],
      "reply": {"title": "和张三约评审会、催报价单", "summary": "张三约周四下午三点评审会，要求周三前发报价单和合同草稿；已答应周三上午发。", "citations": ["m1"]}},

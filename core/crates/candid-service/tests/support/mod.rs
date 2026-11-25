@@ -41,6 +41,8 @@ pub fn day_batches(world: &Value, day: i64, days: &[String], source: &str, image
         }
         let mut events = vec![];
         let ocr = m.remove("ocr");
+        // Optional OCR line boxes `[x, y, width, height]` on the 0–1000 grid, one per OCR line, as the App stores them.
+        let boxes = m.remove("ocr_boxes");
         if let Some(ocr) = ocr {
             let bytes = std::fs::read(image).unwrap();
             let path = store.staging_directory().join(format!("{}.jpg", uuid_v4()));
@@ -49,7 +51,10 @@ pub fn day_batches(world: &Value, day: i64, days: &[String], source: &str, image
             let key = m["source_key"].as_str().unwrap().to_string();
             events.push(e.clone());
             events.push(json!({"source_key": format!("{key}-ocr"), "kind": "image.text", "start_ms": at, "parent_key": key,
-                "app_name": e["app_name"], "payload": {"image_event_id": "pending", "method": "ocr"},
+                "app_name": e["app_name"], "payload": match &boxes {
+                    Some(b) => json!({"image_event_id": "pending", "method": "ocr", "boxes": b}),
+                    None => json!({"image_event_id": "pending", "method": "ocr"}),
+                },
                 "text": [{"field": "ocr", "content": ocr}]}));
         } else {
             events.push(e);
