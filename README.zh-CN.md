@@ -60,7 +60,7 @@ flowchart LR
 - **[apps/macos/](apps/macos/README.md)**：SwiftUI App，以辅助进程运行核心。
 - **[agents/](agents/README.md)**：AI 页挂接 agent 的扩展与技能。
 - **[services/voice/](services/voice/README.md)**：可选的本地语音服务。
-- **[docs/](docs/README.md)**：设计文档，包括时间线规格、agent 平台、设计系统与决策记录。
+- **[docs/](docs/README.md)**：[产品定位](docs/product.md)、[架构总图](docs/architecture.md)、[工程规范](docs/engineering.md)、契约清单、各模块规格与决策记录。
 
 ## 快速开始
 
@@ -112,6 +112,8 @@ Candid 的核心承诺只有一句：**没有你的知情，就不记录、不�
 | Rust 核心 | `cd core && cargo test --workspace` |
 | Mac App | `apps/macos/script/test.sh` |
 | 语音服务 | `.venv-asr-mlx/bin/python -m pytest -q services/voice/tests` |
+
+也可以用一条命令按改动自动选择要跑的检查：`scripts/check.sh`（`--list` 先看会跑什么）。产品定位、架构总图和工程规范见 [docs/](docs/README.md)。
 
 ## 许可证
 

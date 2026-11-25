@@ -38,6 +38,16 @@ jobs:
         working-directory: core
         run: cargo test --workspace --locked
 
+  docs:
+    name: Docs
+    # Links resolve, specs and decisions exist in both languages and are listed in docs/README.md.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check
+        run: python3 scripts/check_docs.py
+
   licenses:
     name: Dependency licenses and advisories
     runs-on: ubuntu-latest

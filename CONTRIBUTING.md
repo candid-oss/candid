@@ -21,6 +21,10 @@ Thanks for helping. Candid handles people's most private data, so changes are he
 | macOS app | `apps/macos/script/test.sh` (needs `npm ci --prefix agents/pi-extension --ignore-scripts` for the agent tests) |
 | Voice service | `.venv-asr-mlx/bin/python -m pytest -q services/voice/tests` |
 
+`scripts/check.sh` picks and runs the checks your change needs (`--list` previews them, `--all` runs everything).
+Design principles, code rules and the definition of done are in [docs/engineering.md](docs/engineering.md) (Chinese);
+what counts as a contract is listed in [docs/contracts](docs/contracts/README.md).
+
 Optional public speech samples for the core's audio tests: `sh services/voice/scripts/fetch_samples.sh`.
 
 CI on pushes and pull requests runs the basic checks only: Rust core, voice service (on Linux, without MLX), licenses
@@ -49,4 +53,4 @@ By contributing you agree that your contributions are licensed under [Apache-2.0
 5. **表结构变更**要升级版本，并带升级测试（含失败回滚）。
 6. **新增接口**要测试正常、拒绝和重试三种路径。
 
-**构建与测试**：见上方英文表格。**提交 PR**：一个 PR 只做一件事并写明验证方式；用 `git commit -s` 签署 [DCO](https://developercertificate.org/)；同步更新受影响的模块 README 或设计文档；安全问题按 [SECURITY.md](SECURITY.md) 私下报告。贡献内容按 [Apache-2.0](LICENSE) 授权。
+**构建与测试**：见上方英文表格；`scripts/check.sh` 会按改动自动选择并执行要跑的检查。设计原则、代码规范和完成的定义见[工程规范](docs/engineering.md)，对外契约见[契约清单](docs/contracts/README.md)。**提交 PR**：一个 PR 只做一件事并写明验证方式；用 `git commit -s` 签署 [DCO](https://developercertificate.org/)；同步更新受影响的模块 README 或设计文档；安全问题按 [SECURITY.md](SECURITY.md) 私下报告。贡献内容按 [Apache-2.0](LICENSE) 授权。

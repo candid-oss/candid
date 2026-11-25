@@ -60,7 +60,7 @@ flowchart LR
 - **[apps/macos/](apps/macos/README.md)** — the SwiftUI app; it runs the core as a helper process.
 - **[agents/](agents/README.md)** — the extension and skills for the attached agent on the AI page.
 - **[services/voice/](services/voice/README.md)** — an optional local speech service.
-- **[docs/](docs/README.md)** — design documents: timeline spec, agent platform, design system, decisions.
+- **[docs/](docs/README.md)** — [product](docs/product.md), [architecture](docs/architecture.md), [engineering rules](docs/engineering.md), contracts, module specs and decisions.
 
 ## Quick start
 
@@ -112,6 +112,9 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the gro
 | Rust core | `cd core && cargo test --workspace` |
 | macOS app | `apps/macos/script/test.sh` |
 | Voice service | `.venv-asr-mlx/bin/python -m pytest -q services/voice/tests` |
+
+Or let one command pick the checks your change needs: `scripts/check.sh` (`--list` to preview). The project's
+direction, architecture and engineering rules are in [docs/](docs/README.md).
 
 ## License
 
