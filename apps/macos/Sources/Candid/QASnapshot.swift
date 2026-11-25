@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// QA only, enabled by `--qa-snapshot-dir DIR`. Polls DIR/request for one line:
-/// `shot NAME` renders this app's own window into DIR/NAME.png (no screen
+/// `ballshot NAME` renders the floating ball and its panel; `shot NAME` renders this app's own window into DIR/NAME.png (no screen
 /// capture permission involved); other lines are posted as `qaCommand` for the
 /// views to apply (`page timeline`, `mode rhythm`, `open`, `close`, `step 1`, `search 预算`, `settings data`).
 @MainActor enum QASnapshot {
@@ -12,7 +12,8 @@ import Foundation
     private static var timer: Timer?
 
     static func startIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments) {
-        guard let index = arguments.firstIndex(of: "--qa-snapshot-dir"), index + 1 < arguments.count else { return }
+        // `--qa-floating-dir` drives the floating ball the same way, keeping the real model settings.
+        guard let index = arguments.firstIndex(of: "--qa-snapshot-dir") ?? arguments.firstIndex(of: "--qa-floating-dir"), index + 1 < arguments.count else { return }
         let directory = URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         timer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
@@ -28,6 +29,9 @@ import Foundation
             if line.hasPrefix("shot ") {
                 let name = String(line.dropFirst(5)).replacingOccurrences(of: "/", with: "_")
                 write(directory.appendingPathComponent(name + ".png"))
+            } else if line.hasPrefix("ballshot ") {
+                let name = String(line.dropFirst(9)).replacingOccurrences(of: "/", with: "_")
+                FloatingControl.shared.snapshot(to: directory.appendingPathComponent(name + ".png"))
             } else {
                 NotificationCenter.default.post(name: command, object: line)
             }
