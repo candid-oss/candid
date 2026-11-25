@@ -366,6 +366,7 @@ fn write_backup(o: &Options, root: &Path, partial: &Path, report: &mut Report) -
 
     let mut files = vec![];
     let mut missing = vec![];
+    let mut locked_dbs: Vec<Value> = vec![];
     let total: u64 = items.iter().filter_map(|(p, _)| fs::metadata(p).ok()).map(|m| m.len()).sum();
     report.phase("copy", total);
     for (src, rel) in &items {
@@ -375,7 +376,13 @@ fn write_backup(o: &Options, root: &Path, partial: &Path, report: &mut Report) -
         }
         let dst = partial.join(rel);
         let (bytes, sha) = if rel.ends_with(".sqlite") {
-            snapshot(src, &dst)?;
+            // Secondary databases (the old media Hub) may be held under an exclusive lock by their own process
+            // and are already mirrored into the timeline library: skip them with a reason instead of failing.
+            if let Err(error) = snapshot(src, &dst) {
+                let _ = fs::remove_file(&dst);
+                locked_dbs.push(json!({"path": rel, "error": error}));
+                continue;
+            }
             report.add(fs::metadata(src).map(|m| m.len()).unwrap_or(0));
             (fs::metadata(&dst).map(|m| m.len()).unwrap_or(0), sha256_file(&dst)?)
         } else {
@@ -406,6 +413,7 @@ fn write_backup(o: &Options, root: &Path, partial: &Path, report: &mut Report) -
         "bytes": bytes,
         "files": files,
         "missing": missing,
+        "skipped": locked_dbs,
     });
     fs::write(partial.join(MANIFEST), candid_store::json::pretty(&manifest)).map_err(|e| format!("无法写入清单：{e}"))?;
     // SAFETY: sync(2) has no preconditions; one flush for the whole tree instead of an fsync per file.
@@ -416,6 +424,7 @@ fn write_backup(o: &Options, root: &Path, partial: &Path, report: &mut Report) -
         "events": events,
         "schema_version": schema,
         "missing": missing.len(),
+        "skipped": locked_dbs,
         "seconds": started.elapsed().as_secs_f64(),
     }))
 }

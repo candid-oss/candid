@@ -269,3 +269,24 @@ fn move_root_relocates_the_library_behind_a_link_and_back() {
         let _ = fs::remove_dir_all(d);
     }
 }
+
+#[test]
+fn a_locked_secondary_database_is_skipped_not_fatal() {
+    // The old media Hub keeps its vault database under an exclusive lock while it runs.
+    let src = library();
+    let locked = src.join("MediaWorkspace/Hub/vault/media_timeline/service.sqlite");
+    fs::create_dir_all(locked.parent().unwrap()).unwrap();
+    let holder = Db::open(&locked, false, true).unwrap();
+    holder.script("PRAGMA journal_mode=DELETE; PRAGMA locking_mode=EXCLUSIVE; CREATE TABLE t(x); INSERT INTO t VALUES(1);").unwrap();
+    let dest = dir("backup-locked");
+    let summary = ok(&candid(&["backup", dest.to_str().unwrap(), "--json"], &src));
+    let skipped = summary["skipped"].as_array().unwrap();
+    assert_eq!(skipped.len(), 1, "{summary}");
+    assert_eq!(skipped[0]["path"], "app/MediaWorkspace/Hub/vault/media_timeline/service.sqlite");
+    assert!(!dest.join("app/MediaWorkspace/Hub/vault/media_timeline/service.sqlite").exists());
+    // The rest of the backup is complete and restores.
+    assert!(dest.join("app/MediaWorkspace/Hub/memory.sqlite").exists());
+    let target = dir("restore-locked");
+    ok(&candid(&["restore", dest.to_str().unwrap(), "--json"], &target));
+    drop(holder);
+}

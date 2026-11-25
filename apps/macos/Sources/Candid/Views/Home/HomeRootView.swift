@@ -40,7 +40,8 @@ struct HomeRootView: View {
     /// The AI page and the floating ball share one conversation.
     private var assistant: FloatingAssistant { FloatingAssistant.shared(session: session, media: media) }
 
-    var body: some View {
+    /// The window surface; `body` adds the routing handlers (split in two so the compiler can type-check it).
+    private var surface: some View {
         ZStack(alignment: .top) {
             WindowBackdrop(tint: page == .timeline ? ambientTint : page == .ai ? MediaGlyph.tint(.audio) : .accentColor)
             content
@@ -69,6 +70,10 @@ struct HomeRootView: View {
         .onChange(of: floating) { _, value in
             if enablesFloatingBall { FloatingControl.shared.setVisible(value, session: session, media: media) }
         }
+    }
+
+    var body: some View {
+        surface
         .onReceive(NotificationCenter.default.publisher(for: .candidOpenAIChat)) { note in
             page = .ai
             assistant.ai.show(note.object as? String == "today" ? .today : .chat)
