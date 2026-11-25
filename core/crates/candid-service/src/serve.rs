@@ -232,7 +232,17 @@ impl Service {
                     .name("candid-sync".into())
                     .spawn(move || {
                         crate::scheduling::background();
+                        // A full pass (mail, ledger, Hub, every agent folder) runs on request and at the latest after
+                        // `interval`; in between the App's folder watcher asks for single transcript files.
+                        let mut request = crate::local::SyncRequest::Full;
+                        let mut next_full = std::time::Instant::now();
                         while !stop.load(Ordering::SeqCst) {
+                            if let crate::local::SyncRequest::Files(files) = &request {
+                                core.sync_agent_files(&files.iter().cloned().collect::<Vec<_>>());
+                                request = core.trigger.wait(next_full.saturating_duration_since(std::time::Instant::now()), &stop);
+                                continue;
+                            }
+                            next_full = std::time::Instant::now() + interval;
                             let before = core.status();
                             core.sync_pass();
                             let s = core.status();
@@ -241,7 +251,7 @@ impl Service {
                                 log(&format!("同步：事件 {}{}{}", s.events, s.last_change.map(|c| format!("，{c}")).unwrap_or_default(),
                                     if s.problems.is_empty() { String::new() } else { format!("，问题 {}", s.problems.len()) }));
                             }
-                            core.trigger.wait(interval, &stop);
+                            request = core.trigger.wait(next_full.saturating_duration_since(std::time::Instant::now()), &stop);
                         }
                     })
                     .map_err(|e| failed(e.to_string()))?,
@@ -253,10 +263,14 @@ impl Service {
             (Some(l), Some(path)) => Some(LocalServer::start(l, path, opts.workers, core.clone()).map_err(|e| failed(e.to_string()))?),
             _ => None,
         };
-        // Every write to the library wakes the background thread, whichever path made it.
+        // Every write to a table some background step reads wakes the thread, whichever path made it.
         {
             let wake = core.feed.wake().clone();
-            shared.lock().map_err(|_| failed("store lock".into()))?.on_write(move || wake.wake());
+            shared.lock().map_err(|_| failed("store lock".into()))?.on_write(move |table| {
+                if crate::background::wakes_on(table) {
+                    wake.wake();
+                }
+            });
         }
         let (workflow_store, workflow_stop, workflow_core) = (shared.clone(), stop.clone(), core.clone());
         let workflows = Some(std::thread::Builder::new().name("candid-workflows".into()).spawn(move || {

@@ -83,6 +83,20 @@ pub const VOICE_CLEANUP: Trigger = Trigger { name: "voice_cleanup", reads: &["st
 /// Re-encoding recording parts once imports and jobs have been quiet for the grace period.
 pub const AUDIO_COMPACTION: Trigger = Trigger { name: "audio_compaction", reads: &["media_parts", "media_objects", "jobs"] };
 
+/// The service's own steps (the store's scans are [`candid_store::background::SCANS`]).
+pub const STEPS: &[Trigger] = &[JOB_QUEUE, VOICE_CLEANUP, AUDIO_COMPACTION];
+
+/// Whether a write to `table` can give some step work: only those wake the thread (an audit row of an App query
+/// does not).
+pub fn wakes_on(table: &str) -> bool {
+    static TABLES: std::sync::OnceLock<std::collections::HashSet<&'static str>> = std::sync::OnceLock::new();
+    TABLES
+        .get_or_init(|| {
+            candid_store::background::SCANS.iter().map(|s| &s.trigger).chain(STEPS).flat_map(|t| t.reads.iter()).map(|r| r.split(':').next().unwrap_or(r)).collect()
+        })
+        .contains(table)
+}
+
 /// Everything the background thread runs, and when each part is next due.
 #[derive(Default)]
 pub struct Background {

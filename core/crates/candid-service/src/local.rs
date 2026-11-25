@@ -164,31 +164,49 @@ impl Feed {
     }
 }
 
-/// A request for the sync thread: run a pass now.
+/// What the sync thread was asked to do: a full pass, or only some agent transcript files.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SyncRequest {
+    Full,
+    Files(std::collections::BTreeSet<PathBuf>),
+}
+
+/// A request for the sync thread: run a pass now. Requests made while it runs are merged; a full request wins.
 #[derive(Default)]
 pub struct SyncTrigger {
-    requested: Mutex<bool>,
+    requested: Mutex<Option<SyncRequest>>,
     signal: Condvar,
 }
 
 impl SyncTrigger {
     pub fn request(&self) {
-        *self.requested.lock().unwrap_or_else(|p| p.into_inner()) = true;
+        *self.requested.lock().unwrap_or_else(|p| p.into_inner()) = Some(SyncRequest::Full);
         self.signal.notify_all();
     }
 
-    /// Waits until requested or timed out. The stop path sets `stop` and calls `request` to wake us.
-    pub fn wait(&self, timeout: Duration, stop: &AtomicBool) {
+    /// Only these agent transcript files changed (the App's folder watcher); nothing else is synced.
+    pub fn request_files(&self, paths: impl IntoIterator<Item = PathBuf>) {
+        let mut requested = self.requested.lock().unwrap_or_else(|p| p.into_inner());
+        match &mut *requested {
+            Some(SyncRequest::Full) => {}
+            Some(SyncRequest::Files(files)) => files.extend(paths),
+            None => *requested = Some(SyncRequest::Files(paths.into_iter().collect())),
+        }
+        self.signal.notify_all();
+    }
+
+    /// Waits until requested or timed out (then a full pass is due). The stop path sets `stop` and calls `request`.
+    pub fn wait(&self, timeout: Duration, stop: &AtomicBool) -> SyncRequest {
         let deadline = Instant::now() + timeout;
         let mut requested = self.requested.lock().unwrap_or_else(|p| p.into_inner());
-        while !*requested && !stop.load(Ordering::SeqCst) {
+        while requested.is_none() && !stop.load(Ordering::SeqCst) {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 break;
             }
             requested = self.signal.wait_timeout(requested, left).unwrap_or_else(|p| p.into_inner()).0;
         }
-        *requested = false;
+        requested.take().unwrap_or(SyncRequest::Full)
     }
 }
 
@@ -427,6 +445,22 @@ impl Core {
         });
         self.feed.publish("data");
         Ok(record)
+    }
+
+    /// Reads only these agent transcript files (what the App's folder watcher reported), without listing folders or
+    /// touching the other sources.
+    pub fn sync_agent_files(&self, paths: &[PathBuf]) {
+        let result = lock(&self.store).sync_agent_files(paths);
+        match result {
+            Ok(r) if r["inserted"].as_u64().unwrap_or(0) + r["revised"].as_u64().unwrap_or(0) > 0 => {
+                let change = format!("AI +{} 修订 {}", r["inserted"], r["revised"]);
+                self.record_event_count(&lock(&self.store));
+                self.update_status(|s| s.last_change = Some(change));
+                self.feed.publish("data");
+            }
+            Ok(_) => {}
+            Err(e) => self.update_status(|s| s.problems = vec![format!("AI 会话：{}", e.code())]),
+        }
     }
 
     /// One mirroring pass with the App's status bookkeeping; the first pass of a process also verifies (with hashes
@@ -708,7 +742,13 @@ impl Core {
                 ok_json(&json!({"revoked": req.client_id}))
             }
             ("POST", "/local/sync") => {
-                self.trigger.request();
+                // `{"paths": [...]}`: only these agent transcript files changed; no body means a full pass.
+                let paths: Option<Vec<PathBuf>> = serde_json::from_slice::<Value>(&request.body).ok()
+                    .and_then(|v| v["paths"].as_array().map(|a| a.iter().filter_map(|p| p.as_str()).take(10_000).map(PathBuf::from).collect()));
+                match paths {
+                    Some(p) => self.trigger.request_files(p),
+                    None => self.trigger.request(),
+                }
                 HttpResponse { status: 202, body: br#"{"queued":true}"#.to_vec() }
             }
             ("POST", "/local/verify") => {

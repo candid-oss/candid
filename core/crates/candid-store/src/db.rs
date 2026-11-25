@@ -126,7 +126,7 @@ pub struct WriteCounters {
     /// SQL statements run through [`Db`]'s helpers (reads included), so tests can assert that idle work runs none.
     statements: std::sync::atomic::AtomicU64,
     /// Called after every counted write (the background thread's wake-up); set once.
-    listener: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
+    listener: std::sync::OnceLock<Box<dyn Fn(&str) + Send + Sync>>,
 }
 
 #[derive(Default)]
@@ -163,9 +163,9 @@ impl WriteCounters {
         }
     }
 
-    /// Calls `f` after every write through this connection, whichever path made it, so whatever depends on the data
-    /// can be woken instead of polling. Only the first listener is kept.
-    pub fn set_listener(&self, f: impl Fn() + Send + Sync + 'static) -> bool {
+    /// Calls `f(table)` after every write through this connection, whichever path made it, so whatever depends on
+    /// the data can be woken instead of polling. Only the first listener is kept.
+    pub fn set_listener(&self, f: impl Fn(&str) + Send + Sync + 'static) -> bool {
         self.listener.set(Box::new(f)).is_ok()
     }
 
@@ -190,7 +190,7 @@ impl WriteCounters {
             if db == "main" {
                 counters.record(table, rowid);
                 if let Some(f) = counters.listener.get() {
-                    f();
+                    f(table);
                 }
             }
         }));

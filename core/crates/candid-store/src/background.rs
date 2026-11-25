@@ -155,8 +155,8 @@ impl TimelineStore {
         self.db.write_revision(reads)
     }
 
-    /// Calls `f` after every write to the library (see [`crate::db::WriteCounters::set_listener`]).
-    pub fn on_write(&self, f: impl Fn() + Send + Sync + 'static) -> bool {
+    /// Calls `f(table)` after every write to the library (see [`crate::db::WriteCounters::set_listener`]).
+    pub fn on_write(&self, f: impl Fn(&str) + Send + Sync + 'static) -> bool {
         self.db.writes.set_listener(f)
     }
 

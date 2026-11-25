@@ -396,6 +396,8 @@ fn long_audio_chunks_resume_after_failure_and_core_restart_without_rebilling_com
         "/local/models",
         json!({"action":"save","config":config(&format!("http://{addr}/v1"))}),
     );
+    // Only speech calls are counted below; the automatic title would start right after transcription and race them.
+    post(&socket, "/local/workflows", json!({"action":"settings","settings":{"version":1,"titles":false}}));
     let id = import(&socket, path.clone());
     post(
         &socket,

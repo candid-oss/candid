@@ -160,7 +160,7 @@ fn lifecycle_three_days_through_the_real_worker() {
     let wake = Arc::new(background::Wake::default());
     {
         let wake = wake.clone();
-        store.lock().unwrap().on_write(move || wake.wake());
+        store.lock().unwrap().on_write(move |table| if background::wakes_on(table) { wake.wake() });
     }
     let (calls_before, writes_before, statements_before) = {
         let s = store.lock().unwrap();

@@ -155,3 +155,11 @@ fn wait_quiet(wake: &Wake) -> u64 {
     });
     n
 }
+
+#[test]
+fn only_tables_a_step_reads_wake_the_thread() {
+    assert!(background::wakes_on("events"));
+    assert!(background::wakes_on("jobs"));
+    assert!(background::wakes_on("store_meta"));
+    assert!(!background::wakes_on("access_log"), "an App query's audit row must not wake background work");
+}
