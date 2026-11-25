@@ -14,8 +14,10 @@ import SwiftUI
     private var panel: NSPanel?
     private let model = ComposeModel()
 
-    func show() {
+    /// `instruction` (dictated to the floating ball) is drafted right away.
+    func show(instruction: String? = nil) {
         model.reset(snapshot: ComposeSnapshot.capture())
+        if let instruction, !instruction.isEmpty { model.instruction = instruction; model.submit() }
         if panel == nil {
             let window = KeyPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 260), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             window.level = .floating

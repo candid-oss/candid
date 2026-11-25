@@ -154,6 +154,7 @@ private struct DesktopRootView: View {
         // Older builds kept their own vision endpoint and prompt; move them onto the model roles once.
         if !ProcessInfo.processInfo.arguments.contains("--qa-snapshot-dir") { AIRuntime.shared.migrateLegacyVision() }
         // A QA snapshot instance renders off to the side and never steals focus.
+        if ProcessInfo.processInfo.arguments.contains("--qa-floating-dir") { QASnapshot.startIfRequested() }
         if ProcessInfo.processInfo.arguments.contains("--qa-snapshot-dir") {
             QASnapshot.startIfRequested()
         } else if LoginItem.launchedAtLogin {

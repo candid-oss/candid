@@ -32,6 +32,13 @@ struct HomeRootView: View {
             || (session.isDemo && ProcessInfo.processInfo.arguments.contains("--qa-snapshot-dir")
                 && ProcessInfo.processInfo.arguments.contains("--qa-controls"))
     }
+    /// The floating ball also shows on demo data when asked (`--mock --floating-ball`), to try it without capture.
+    private var enablesFloatingBall: Bool {
+        enablesQuickControls || (session.isDemo && ProcessInfo.processInfo.arguments.contains("--floating-ball"))
+    }
+    private var forcesFloatingBall: Bool { session.isDemo && ProcessInfo.processInfo.arguments.contains("--floating-ball") }
+    /// The AI page and the floating ball share one conversation.
+    private var assistant: FloatingAssistant { FloatingAssistant.shared(session: session, media: media) }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -56,10 +63,17 @@ struct HomeRootView: View {
         .visualStyleFromSettings()
         .onAppear { if showMediaOnLaunch { page = .library } else if showsSpecimen { page = .specimen } }
         .onAppear {
-            if enablesQuickControls { GlobalHotkeys.shared.start(); FloatingControl.shared.setVisible(floating, session: session, media: media) }
+            if enablesQuickControls { GlobalHotkeys.shared.start() }
+            if enablesFloatingBall { FloatingControl.shared.setVisible(floating || forcesFloatingBall, session: session, media: media) }
         }
         .onChange(of: floating) { _, value in
-            if enablesQuickControls { FloatingControl.shared.setVisible(value, session: session, media: media) }
+            if enablesFloatingBall { FloatingControl.shared.setVisible(value, session: session, media: media) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .candidOpenAIChat)) { note in
+            page = .ai
+            assistant.ai.show(note.object as? String == "today" ? .today : .chat)
+            NSApp.windows.first { $0.contentView != nil && $0.frame.width > 600 }?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
         }
         .onReceive(NotificationCenter.default.publisher(for: .candidQuickAction)) { note in
             if note.object as? String == "settings" { page = .settings; NSApp.windows.first { $0.frame.width > 600 }?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
@@ -128,7 +142,7 @@ struct HomeRootView: View {
                 MediaWorkspaceView(store: media, showInTimeline: { date in pendingJump = date; page = .timeline })
                     .transition(pageTransition)
             case .ai:
-                AIHomeView(session: session, requestedSkill: $requestedSkill, showInTimeline: { date in pendingJump = date; page = .timeline })
+                AIHomeView(session: session, requestedSkill: $requestedSkill, model: assistant.ai, showInTimeline: { date in pendingJump = date; page = .timeline })
                     .transition(pageTransition)
             case .connections:
                 ConnectionsView(session: session, media: media, deviceStore: deviceStore,

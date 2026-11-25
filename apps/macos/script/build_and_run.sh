@@ -144,7 +144,8 @@ cat > "$STAGED_APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDevelopmentRegion</key><string>zh-Hans</string>
 <key>CFBundleLocalizations</key><array><string>zh-Hans</string><string>en</string></array>
 <key>NSScreenCaptureUsageDescription</key><string>在你开启截图时保存画面；在你开始系统内录时获取播放声音，内录不保存屏幕画面。</string>
-<key>NSMicrophoneUsageDescription</key><string>在你点击录音或通话提醒的开始内录后使用麦克风，与系统声音混合按段保存，可随时停止。</string>
+<key>NSMicrophoneUsageDescription</key><string>在你点击录音或通话提醒的开始内录后使用麦克风，与系统声音混合按段保存，可随时停止；按住悬浮球说话时也用麦克风，松开即关闭，录音片段不保存。</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>按住悬浮球说话时，把你的话转成文字放进输入框。只在其他识别引擎不可用时使用。</string>
 <key>NSCalendarsFullAccessUsageDescription</key><string>AI 页显示今天的日程；只在你批准某条提案后才写入日历。日程不保存进资料库。</string>
 <key>NSRemindersFullAccessUsageDescription</key><string>AI 页显示今天到期和逾期的提醒；只在你批准某条提案后才新建提醒。提醒不保存进资料库。</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
