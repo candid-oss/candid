@@ -111,6 +111,8 @@ final class DesktopSession {
     @ObservationIgnored private let outboxLimits: DesktopOutbox.Limits
     @ObservationIgnored private var bootstrapped = false
     @ObservationIgnored private var storageReady = false
+    /// Launch has finished loading settings; start and pause do nothing before this.
+    var isReady: Bool { storageReady && store != nil }
     @ObservationIgnored private var scheduledCapture: Task<Void, Never>?
     @ObservationIgnored private var manualCaptureTask: Task<Void, Never>?
     @ObservationIgnored private var manualCaptureGeneration: UInt64 = 0
