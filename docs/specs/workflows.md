@@ -58,7 +58,7 @@ Candid 同时是两样东西：
 |---|---|---|---|
 | **核心内自动** | 时间线浏览与搜索 | 规则和索引，不用模型 | 已实现（见 [查询接口](query.md)） |
 | | 时间分布 | 纯规则统计（`pv_overview`） | 已实现 |
-| | 转写、多人分段、已有声纹匹配 | 录音保存后自动（流程 `transcribe`，作业 `speech.recognize`；设置 `automatic` 默认开） | 已实现 |
+| | 转写、多人分段、已有声纹匹配 | 录音结束后自动（流程 `transcribe`，作业 `speech.recording`；设置 `automatic` 默认开） | 已实现 |
 | | 录音标题 | 转写完成后自动（`title`，设置 `titles` 默认开）；人工改过的标题不被重跑覆盖 | 已实现 |
 | | 录音摘要 | 整段结束后（`summary`）。目录写默认开，但扫描只在设置 `summary == true` 时排队，实际默认关 | 已实现（默认值两处不一致，见第 11 节） |
 | | 截图文字 | 本机系统 OCR 在 App 采集侧；视觉模型整理：`screen-excerpt`（新截图内容出现时，默认关，每日 300 次）与手动 `screenshot` | 部分实现（OCR 在采集侧，未核对） |
@@ -108,7 +108,7 @@ Candid 同时是两样东西：
 
 | id | 方式 | 触发 | 角色（目录值） | 作业种类 | 默认 |
 |---|---|---|---|---|---|
-| `transcribe` | 核心 | 录音保存后 | diarization | `speech.recognize` | 开，每日 100 |
+| `transcribe` | 核心 | 录音结束后 | diarization | `speech.recording` | 开，每日 100 |
 | `title` | 核心 | 转写完成后 | title | `workflow.title` | 开，每日 100 |
 | `summary` | 核心 | 整段录音结束后 | summary | `workflow.summary` | 目录开；扫描实际要求设置 `summary == true` |
 | `decisions` | 核心 | 手动 | summary | `workflow.decisions` | 开 |
@@ -124,9 +124,9 @@ Candid 同时是两样东西：
 
 `workflows` 里另有六个版本化定义：`recording`（transcribe → title → 可选 summary，触发 `sealed_audio`）、`conversation`、`decisions`、`tags`、`screenshot`、`daily`，各声明输出类型。目录里的角色名（asr、diarization、title、summary、vision、episode）与「只用 `vision`、`summary`、`agent_chat`」的仓库规则不一致，角色的权威定义在 [模型](models.md)，见第 11 节。
 
-首次贯通的流程是「连续录音 → 转写 → 标题 → 可选摘要」：保存分段后即可增量转写，整段结束时收束；多人分段和已有声纹匹配按开关追加，未知身份保持匿名；先用时间生成可用标题，模型标题为草稿；摘要关闭或失败不阻断原音、转写与播放。增加一个流程只需加定义、输出校验器、提示模板与合成验收样例；现有模型适配足够时不新增调度器、存储或界面状态机。
+首次贯通的流程是「连续录音 → 转写 → 标题 → 可选摘要」：录音进行中只保存分段、不跑模型；录音结束后入队一个录音作业（`speech.recording`），按 10 分钟窗口（重叠 1 分钟）各调用一次模型，同一次调用得到转写、说话人和声纹，再拼接成一份转写；对话模式用多人模型，快速模式用小模型只出文字；未知身份保持匿名；先用时间生成可用标题，模型标题为草稿；摘要关闭或失败不阻断原音、转写与播放。增加一个流程只需加定义、输出校验器、提示模板与合成验收样例；现有模型适配足够时不新增调度器、存储或界面状态机。
 
-调度、成本、幂等与恢复（队列、租约、预算、取消、`ai_calls`）见 [模型](models.md)。
+调度、成本、幂等与恢复（队列、租约、预算、取消、`ai_calls`）见 [模型](models.md)；后台作业何时允许运行见[模型 · 何时花电](models.md#power)。
 
 <a id="tasks-provenance"></a>
 

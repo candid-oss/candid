@@ -179,8 +179,8 @@ private struct CaptureSettings: View {
         HairlineDivider()
         SettingRow(title: L("同一窗口每分钟上限"), detail: L("失败也计数；手动截图每分钟最多 12 次。")) { capacityStepper(optionBinding(\.imageCapacity)) }
         HairlineDivider()
-        SwitchRow(title: L("电池供电时降低频率"), detail: L("定时至少 60 秒，自动文字和截图至少 30 秒、每分钟最多 2 次。"),
-                  isOn: optionBinding(\.conserveBattery))
+        Text(L("用电池时（后台处理不是「随时」，或低电量模式）自动降低频率：定时至少 60 秒，自动文字和截图至少 30 秒、每分钟最多 2 次。"))
+            .typography(.secondary).foregroundStyle(.secondary).padding(.vertical, Space.row)
         HStack(spacing: Space.xxs) {
             QuietButton(title: L("快速试采"), action: session.applyFastSamplingFrequency)
                 .help(L("内容检查和截图 3 秒、每分钟 20 次；定时和补图 10 秒"))
@@ -379,6 +379,7 @@ private struct StorageSettings: View {
                     Text(ByteCountFormatter.string(fromByteCount: session.statistics.storageBytes, countStyle: .file))
                         .typography(.body, .medium, digits: true)
                 }
+                .refresh(on: TimelineService.shared.dataVersion) { await session.refreshStatistics() }
                 let budget = session.storageBudget
                 if budget.message != nil || budget.freedSummary != nil {
                     InlinePanel {

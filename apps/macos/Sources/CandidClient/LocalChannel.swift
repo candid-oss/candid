@@ -35,6 +35,12 @@ public struct LocalChannel: Sendable {
         _ = try await send("POST", "/local/sync", body: Data("{}".utf8)).checked()
     }
 
+    /// Only these agent transcript files changed (the App's folder watcher): the core reads them alone, without
+    /// listing folders or touching other sources.
+    public func syncFiles(_ paths: [String]) async throws {
+        _ = try await send("POST", "/local/sync", body: JSONSerialization.data(withJSONObject: ["paths": paths])).checked()
+    }
+
     /// Hashing every screenshot can take a while on a large library.
     public func verify(hashBlobs: Bool) async throws -> CoreVerification {
         try await post("/local/verify", body: ["hash_blobs": hashBlobs], timeout: 600)

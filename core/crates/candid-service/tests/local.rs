@@ -413,9 +413,10 @@ fn mirroring_runs_in_the_core_with_first_pass_verification_and_sync_now() {
     let (s202, queued) = call(&f.socket, "POST", "/local/sync", Value::Null);
     assert_eq!((s202, queued["queued"].as_bool()), (202, Some(true)));
     expect_event(&mut feed, "data");
+    // The background worker announces its own `data` events too (right after the first pass), so wait for the pass.
+    wait_until("the requested pass mirrored the new record", || call(&f.socket, "GET", "/local/status", Value::Null).1["last_change"] == "桌面 +1");
     let (_, s) = call(&f.socket, "GET", "/local/status", Value::Null);
     assert!(s["last_sync_ms"].as_i64().unwrap() >= first_sync);
-    assert_eq!(s["last_change"], "桌面 +1");
     // 重新核对 with and without hashes.
     let (code, v) = call(&f.socket, "POST", "/local/verify", json!({"hash_blobs": false}));
     assert_eq!((code, v["ok"].as_bool(), v["hashed"].as_bool()), (200, Some(true), Some(false)));

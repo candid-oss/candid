@@ -16,7 +16,7 @@
 | 平台端 | Mac App、`apps/macos/` | 每个平台一份的界面、系统采集、系统权限和日历通知等平台能力 | 和核心：平台端不写业务逻辑、不碰数据库 | [架构](architecture.md#processes) |
 | 本地通道 | `/local/…`、Unix 域套接字 | App 和核心之间的专用通道，外部访问不了 | 和回环 HTTP：同一个核心的两个入口，本地通道只给 App | [查询](specs/query.md#local-channel) |
 | 回环 HTTP | `127.0.0.1`、`endpoint.json` | 核心在本机监听的接口，命令行、MCP 外壳、Pi 用它，带令牌 | 和 MCP：MCP 只是外壳，背后还是回环 HTTP | [存储](specs/storage.md#deployment) |
-| MCP | `candid mcp` | 外部 agent 接入的标准入口，22 个工具 | 和命令行：同一套工具的两种壳 | [查询](specs/query.md#tools) |
+| MCP | `candid mcp` | 外部 agent 接入的标准入口，23 个工具 | 和命令行：同一套工具的两种壳 | [查询](specs/query.md#tools) |
 | 数据根目录 | root、`--root` | 存放时间线库和原件的整个目录，可整体搬走 | 和运行目录：运行目录只放地址和令牌，不放数据 | [存储](specs/storage.md#deployment) |
 | 运行目录 | `CANDID_RUN_DIR` | 放 `endpoint.json` 和命令行令牌的目录，让客户端找到核心 | 和数据根目录 | [存储](specs/storage.md#deployment) |
 | 时间线库 | `timeline.sqlite` | 唯一的事实仓库（SQLite）加原件目录 | 和「时间线」界面：界面只是读它 | [存储](specs/storage.md#overview) |

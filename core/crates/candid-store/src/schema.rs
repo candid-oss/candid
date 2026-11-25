@@ -1,6 +1,6 @@
 //! Timeline database v4; v1–v3 roots upgrade transactionally through schema_upgrade.
 
-pub const SCHEMA_VERSION: i64 = 12;
+pub const SCHEMA_VERSION: i64 = 13;
 pub const LAYOUT: &str = "timeline-root/1";
 
 pub struct Kind {
@@ -329,8 +329,12 @@ CREATE TABLE jobs (
   error_code TEXT, output_ref TEXT,
   created_ms INTEGER NOT NULL, updated_ms INTEGER NOT NULL,
   feature TEXT,
+  cpu_ms INTEGER, wall_ms INTEGER,
+  power_state TEXT CHECK (power_state IN ('ac','battery','unknown')),
+  manual INTEGER NOT NULL DEFAULT 0,
   UNIQUE (kind, input_ref, config_version)
 ) STRICT;
+CREATE INDEX jobs_updated ON jobs(updated_ms);
 
 CREATE TABLE changes (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,

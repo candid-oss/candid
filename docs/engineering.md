@@ -74,7 +74,7 @@ App、挂接的 Pi、外部 agent 读同一份整理好的数据，经同一套�
 
 - 怎么用：新增后台作业时回答三问：谁触发（哪个事件，不能是定时器）、何时允许跑、花多少。
 - 反例：每三十秒扫一遍有没有新东西；一张截图先后被两个流程各送一次视觉模型。
-- 检查：靠自觉；功耗规则的自动检查正在另行制定（见[待办](roadmap.md)）。
+- 检查：`every_job_kind_is_registered`（作业种类必须登记成本）、`candid-service/tests/no_polling.rs`（不许新增循环睡眠和重复定时器，例外写进 `core/fixtures/polling/allowlist.txt` 并注明理由）、lifecycle 里的电源闸门断言。规则全文见[模型 · 何时花电](specs/models.md#power)。
 
 ### 2.8 简单优先
 
@@ -311,4 +311,4 @@ CI 上每次推送跑：Rust 核心、语音服务（Linux，不含 MLX）、依
 
 - 原则与禁止事项：原 `AGENTS.md`、[CONTRIBUTING.md](../CONTRIBUTING.md)、[ADR-024](decisions/024-rust-core.md) 的边界规则。
 - 测试分层与快照规则：原 `AGENTS.md` 的「全流程测试与快照」。
-- 功耗原则：正在进行的功耗计划（在另一个会话手上）。
+- 功耗原则：[功耗 v1](plans/power-v1.md)。

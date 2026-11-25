@@ -32,21 +32,10 @@ class LibraryCommand(BaseModel):
     refs: list[str] | None = None
 
 
-_models = None
+def install_voiceprint_api(app, gate, pool, *, path=None, analyzer=None):
+    """`pool` is the resident `ModelPool`; window and analysis requests load the speaker models on first use."""
+    from .models import measured
 
-
-def window_models():
-    """Models kept loaded between windows of one recording; a recording is many calls in a row."""
-    global _models
-    if _models is None:
-        from .speaker_models import Models
-        models = Models()
-        models.load()
-        _models = models
-    return _models
-
-
-def install_voiceprint_api(app, gate, *, path=None, analyzer=None, models=None):
     def store():
         from .speaker_store import SpeakerStore
         location = Path(path) if path else library_path()
@@ -70,7 +59,9 @@ def install_voiceprint_api(app, gate, *, path=None, analyzer=None, models=None):
             source, decoded = root / "upload", root / "decoded.wav"
             source.write_bytes(data)
             decode_original(source, decoded, max_seconds=MAX_SECONDS)
-            result = SpeakerPipeline(library).analyze(decoded)
+            with pool.use():
+                pipeline = SpeakerPipeline(library, pool.lazy("speaker"))
+                result = measured(pipeline.analyze, decoded)
             # The model's source is the processing WAV, not the compressed original.
             # Retain the original digest separately for an unambiguous UI reference.
             import hashlib
@@ -82,7 +73,8 @@ def install_voiceprint_api(app, gate, *, path=None, analyzer=None, models=None):
         permitted(request)
         try:
             return {"format": "candid-voiceprints/1",
-                    "capabilities": ["template_withdrawal", "recording_reconciliation", "recording_windows"],
+                    "capabilities": ["template_withdrawal", "recording_reconciliation", "recording_windows",
+                                     "recording_windows_quick"],
                     "people": await run_in_threadpool(lambda: store().people())}
         except Exception as exc:
             raise HTTPException(503, "本机声纹库暂时不可用") from exc
@@ -142,22 +134,28 @@ def install_voiceprint_api(app, gate, *, path=None, analyzer=None, models=None):
             if gate.locked():
                 raise HTTPException(429, "语音服务正在处理其他请求", headers={"Retry-After": "5"})
             import json
-            from .recording_windows import read_window, recognize_window
+            from .recording_windows import read_window, recognize_window, transcribe_window
             from .speaker_models import TokenLimit
             from .speaker_store import VoiceRefs
             info = json.loads(meta)
-            if not isinstance(info, dict):
+            if not isinstance(info, dict) or info.get("mode", "conversation") not in ("quick", "conversation"):
                 raise ValueError("Invalid window metadata")
             audio = read_window(data)
+
+            def run(refs):
+                # One window per call; the caller saves it before asking for the next, so stopping between
+                # windows is the cancellation point and nothing here needs to be killed.
+                with pool.use():
+                    if info.get("mode") == "quick":
+                        return measured(transcribe_window, audio, pool.get("asr"), info.get("scope"), info.get("index"))
+                    return measured(recognize_window, audio, pool.get("speaker"), refs, info.get("scope"), info.get("index"))
+
             async with gate:
                 library = store()
-                engine = models or await run_in_threadpool(window_models)
                 try:
-                    result = await run_in_threadpool(recognize_window, audio, engine, VoiceRefs(library.path.parent),
-                                                     info.get("scope"), info.get("index"))
+                    return await run_in_threadpool(run, VoiceRefs(library.path.parent))
                 except TokenLimit as exc:
                     raise HTTPException(422, "window_too_dense") from exc
-                return result
         except HTTPException:
             raise
         except (ValueError, TypeError, KeyError) as exc:
@@ -183,7 +181,7 @@ def install_voiceprint_api(app, gate, *, path=None, analyzer=None, models=None):
             value = json.loads(body)
             async with gate:
                 library = store()
-                return await run_in_threadpool(stitch, value, library, VoiceRefs(library.path.parent))
+                return await run_in_threadpool(measured, stitch, value, library, VoiceRefs(library.path.parent))
         except (ValueError, TypeError, KeyError) as exc:
             raise HTTPException(400, "录音拼接输入无效") from exc
         except HTTPException:

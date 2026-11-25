@@ -23,11 +23,11 @@
 
 | # | 契约 | 谁依赖 | 规格 | 守护它的测试或快照 | 状态 |
 |---|---|---|---|---|---|
-| 1 | MCP 工具：22 个工具的名字、说明、参数 schema | 外部 agent、Pi | [查询接口](../specs/query.md#tools) | `core/crates/candid-service/tests/mcp_contract.rs`；快照 `core/fixtures/contract/mcp-tools.json`、`mcp-initialize.json` | 已守护 |
+| 1 | MCP 工具：23 个工具的名字、说明、参数 schema | 外部 agent、Pi | [查询接口](../specs/query.md#tools) | `core/crates/candid-service/tests/mcp_contract.rs`；快照 `core/fixtures/contract/mcp-tools.json`、`mcp-initialize.json` | 已守护 |
 | 2 | MCP 查询的输出字段 | 外部 agent、技能 | [查询接口](../specs/query.md) | 全流程测试的 `core/fixtures/lifecycle/snapshots/mcp/` | 已守护，抽样 7 个查询 |
 | 3 | `candid` 命令行 | 脚本、外部 agent | [查询接口](../specs/query.md#access)、[core/README](../../core/README.md) | `core/crates/candid-cli/tests/contract.rs`；快照 `core/fixtures/contract/candid-tools.txt` | 已守护 |
 | 4 | 入库协议（`IngestBatch`） | Mac 采集、各连接器；以后的 Windows 与手机端 | [连接器与入库协议](../specs/connectors.md#ingest-connectors) | `core/crates/candid-store/tests/ingest.rs`、`merge.rs` | 部分：行为有测试，协议的字段没有快照 |
-| 5 | 本地通道（`/local/…`，约 33 条路径） | Mac App；以后的其他平台端 | [查询接口的本地通道附录](../specs/query.md#local-channel) | `core/crates/candid-service/tests/local.rs`；Swift 的 `CandidClientTests` | 缺口：没有接口清单快照 |
+| 5 | 本地通道（`/local/…`，约 34 条路径） | Mac App；以后的其他平台端 | [查询接口的本地通道附录](../specs/query.md#local-channel) | `core/crates/candid-service/tests/local.rs`；Swift 的 `CandidClientTests` | 缺口：没有接口清单快照 |
 | 6 | 表结构与升级（当前版本 12） | 用户已有的库 | [存储](../specs/storage.md)、[数据模型](../specs/data-model.md#migration) | `candid-store/tests/schema_upgrade.rs`、`migration.rs`；`core/fixtures/schema-v*.sql` | 已守护 |
 | 7 | 模型调用的输入 | 质量、成本 | [模型调用](../specs/models.md#call-list)；提示词在 `core/prompts/` | 全流程测试的 `snapshots/model-calls/` | 已守护 |
 | 8 | 备份与恢复 | 用户换机器 | [数据位置与迁移](../data-migration.md) | `core/crates/candid-cli/tests/migrate.rs`：往返一致、不带走密钥、恢复前先全部校验 | 已守护 |

@@ -281,7 +281,7 @@ AI 页「待你处理」分日程、提醒、备忘三组，加「可能是同�
 | 全流程 | `core/fixtures/lifecycle/` | `core/crates/candid-service/tests/lifecycle.rs` |
 | 界面 | `apps/macos/Sources/Candid/PeopleCandidatesModel.swift`、`AIAgenda.swift` | 存在性已核对，行为未验证 |
 
-表结构见 `schema.rs`、`schema_upgrade.rs`（`SCHEMA_VERSION = 12`）。
+表结构见 `schema.rs`、`schema_upgrade.rs`（`SCHEMA_VERSION = 13`）。
 
 <a id="open"></a>
 

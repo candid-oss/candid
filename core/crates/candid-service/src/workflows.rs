@@ -14,9 +14,9 @@ pub(crate) enum Lane {
     Background,
 }
 static EXECUTIONS: OnceLock<Mutex<std::collections::HashSet<(usize, Lane)>>> = OnceLock::new();
-struct Execution(usize, Lane);
+pub(crate) struct Execution(usize, Lane);
 impl Execution {
-    fn acquire(store: &SharedStore, lane: Lane) -> Option<Self> {
+    pub(crate) fn acquire(store: &SharedStore, lane: Lane) -> Option<Self> {
         let id = std::sync::Arc::as_ptr(store) as usize;
         if EXECUTIONS
             .get_or_init(Default::default)
@@ -53,13 +53,17 @@ pub fn authorize(v: &Value) {
     }
     AUTHORIZATION_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
+/// Moves whenever model secrets are (re)authorized: jobs waiting for authorization are checked again.
+pub(crate) fn authorization_revision() -> u64 {
+    AUTHORIZATION_REVISION.load(std::sync::atomic::Ordering::Relaxed)
+}
 pub(crate) fn secret(reference: &str) -> Option<String> {
     SECRETS.get_or_init(Default::default).lock().unwrap().get(reference).cloned()
 }
 fn execute(r: &Value) -> Result<(Value, Value), String> {
-    execute_http(r, None)
+    execute_http(r)
 }
-fn execute_http(r: &Value, audio: Option<Vec<u8>>) -> Result<(Value, Value), String> {
+fn execute_http(r: &Value) -> Result<(Value, Value), String> {
     let p = &r["provider"];
     let raw = p["base_url"]
         .as_str()
@@ -72,14 +76,10 @@ fn execute_http(r: &Value, audio: Option<Vec<u8>>) -> Result<(Value, Value), Str
     };
     let base = ollama.as_str();
     let anthropic = p["api"] == "anthropic-messages";
-    let url = if r["speech"] == true {
-        format!("{base}/voice")
-    } else {
-        match p["api"].as_str() {
-            Some("openai-chat" | "ollama") => format!("{base}/chat/completions"),
-            Some("anthropic-messages") => format!("{}/v1/messages", base.trim_end_matches("/v1")),
-            _ => return Err("unsupported_model_api".into()),
-        }
+    let url = match p["api"].as_str() {
+        Some("openai-chat" | "ollama") => format!("{base}/chat/completions"),
+        Some("anthropic-messages") => format!("{}/v1/messages", base.trim_end_matches("/v1")),
+        _ => return Err("unsupported_model_api".into()),
     };
     let timeout = r["assignment"]["limits_json"]["timeout_ms"]
         .as_u64()
@@ -123,20 +123,7 @@ fn execute_http(r: &Value, audio: Option<Vec<u8>>) -> Result<(Value, Value), Str
             }
         }
     }
-    if r["speech"] == true {
-        let path = r["path"].as_str().ok_or("missing_source")?;
-        let bytes = match audio {
-            Some(bytes) => bytes,
-            None => std::fs::read(path).map_err(|_| "missing_source")?,
-        };
-        let form = reqwest::blocking::multipart::Form::new()
-            .text("mode", r["mode"].as_str().unwrap_or("quick").to_string())
-            .part(
-                "file",
-                reqwest::blocking::multipart::Part::bytes(bytes).file_name("source.wav"),
-            );
-        req = req.multipart(form);
-    } else {
+    {
         let mut messages=r.get("messages").filter(|v|!v.is_null()).cloned().unwrap_or(json!([{"role":"system","content":r["prompt"]},{"role":"user","content":r["content"]}]));
         // Each step states what its answer needs (`max_tokens`); a role limit only lowers it. A fixed 1024 default
         // cut multi-frame chat JSON short, and a thinking model spends part of the budget before it answers.
@@ -201,9 +188,7 @@ fn execute_http(r: &Value, audio: Option<Vec<u8>>) -> Result<(Value, Value), Str
         return Err("output_limit".into());
     }
     let v: Value = serde_json::from_slice(&b).map_err(|_| "bad_json")?;
-    if r["speech"] == true {
-        checked_speech(v,r)
-    } else if anthropic {
+    if anthropic {
         let text = v["content"]
             .as_array()
             .ok_or("invalid_output")?
@@ -223,92 +208,44 @@ fn execute_http(r: &Value, audio: Option<Vec<u8>>) -> Result<(Value, Value), Str
         Ok((json!(text), v["usage"].clone()))
     }
 }
-pub(crate) fn checked_speech(mut v:Value,r:&Value)->Result<(Value,Value),String> {
-        if v["format"] != "candid-voice-result/1" || v["source_hash"] != r["digest"] {
-            return Err("source_mismatch".into());
-        }
-        for key in [
-            "model_id",
-            "model_revision",
-            "processor_version",
-            "timestamp_kind",
-        ] {
-            if v["producer"][key]
-                .as_str()
-                .is_none_or(|s| s.trim().is_empty())
-            {
-                return Err("invalid_producer".into());
-            }
-        }
-        v["producer"]["revision"] = json!(format!(
-            "{}:{}",
-            v["producer"]["model_revision"]
-                .as_str()
-                .unwrap_or("unknown"),
-            v["producer"]["processor_version"]
-                .as_str()
-                .unwrap_or("unknown")
-        ));
-        Ok((v, Value::Null))
-}
-
 /// A timeout or interrupted attempt is never automatically sent again: charging may already have occurred.
+/// One full pass without any gating: voice cleanup, every scan, then at most one job. Tests drive the worker with it;
+/// the service runs [`crate::background::Background`], which only runs what changed or came due.
 pub fn tick(store: &SharedStore, on_start: &dyn Fn()) {
-    tick_inner(store, on_start, true);
-}
-
-/// Poll only indexed revision counters between changes. The bounded fallback covers time-based hooks,
-/// model budget resets and offline cleanup without repeatedly hydrating the historical jobs list.
-#[derive(Default)]
-pub(crate) struct Worker {
-    stamp: Option<(i64, i64, i64, u64)>,
-    last_poll: Option<Instant>,
-    next_due: Option<i64>,
-    cleanup: Option<(i64, Instant)>,
-}
-impl Worker {
-    pub fn tick(&mut self, store: &SharedStore, on_start: &dyn Fn()) {
-        let (stamp, now) = {
-            let s = lock(store);
-            let Ok(jobs) = s.background_revision("jobs") else { return };
-            let Ok(workflows) = s.background_revision("workflows") else { return };
-            let Ok(seq) = s.background_data_revision() else { return };
-            ((jobs, workflows, seq, AUTHORIZATION_REVISION.load(std::sync::atomic::Ordering::Relaxed)), s.clock.now_ms())
-        };
-        if self.stamp == Some(stamp)
-            && self.last_poll.is_some_and(|t| t.elapsed() < Duration::from_secs(30))
-            && !self.next_due.is_some_and(|t| t <= now)
-        { return; }
-        let cleanup = self.cleanup.is_none_or(|(revision, t)| revision != stamp.1 || t.elapsed() >= Duration::from_secs(30));
-        self.stamp = Some(stamp);
-        self.last_poll = Some(Instant::now());
-        if cleanup { self.cleanup = Some((stamp.1, Instant::now())); }
-        tick_inner(store, on_start, cleanup);
-        self.next_due = lock(store).next_workflow_deadline().ok().flatten();
-    }
-}
-
-fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
     let Some(_execution) = Execution::acquire(store, Lane::Background) else {
         return;
     };
-    if cleanup { crate::voiceprints::reconcile(store); }
+    crate::voiceprints::reconcile(store);
+    {
+        let s = lock(store);
+        for scan in candid_store::background::SCANS {
+            if (scan.run)(&s).is_ok_and(|v| v["changed"] == true) {
+                on_start();
+            }
+        }
+    }
+    run_queue(store, on_start);
+}
+
+/// What one look at the job queue found.
+#[derive(Default)]
+pub(crate) struct QueueOutcome {
+    /// A job was claimed and run (its result is stored).
+    pub ran: bool,
+    /// Some kind hit its daily limit or budget: it waits for the next local day.
+    pub budget_blocked: bool,
+}
+
+/// Prepares due jobs in priority order and runs the first runnable one. The caller holds the background lane.
+pub(crate) fn run_queue(store: &SharedStore, on_start: &dyn Fn()) -> QueueOutcome {
+    let mut outcome = QueueOutcome::default();
     let request = {
         let s = lock(store);
-        let _ = s.workflow_scan();
-        let _ = s.curated_sync();
-        let _ = s.people_sync();
-        if s.people_judge_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        if s.excerpt_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        if s.items_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        if s.screen_scan().is_ok_and(|v|v["changed"]==true) {on_start();}
-        let _ = s.automation_scan();
         // Kinds that hit their daily limit this round; their remaining jobs are skipped without preparing.
         let mut blocked: std::collections::HashSet<String> = Default::default();
-        let _ = s.expire_stale_jobs();
         let queue = match s.pending_job_queue() {
             Ok(v) => v,
-            Err(_) => return,
+            Err(_) => return outcome,
         };
         let mut prepared = None;
         for (id, kind, _) in queue {
@@ -361,6 +298,9 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
                 }
                 Err(e) => {
                     let reason = e.message();
+                    if reason.contains("budget") {
+                        outcome.budget_blocked = true;
+                    }
                     if reason.contains("waiting_feature_budget") {
                         blocked.insert(kind.to_string());
                     }
@@ -379,32 +319,90 @@ fn tick_inner(store: &SharedStore, on_start: &dyn Fn(), cleanup: bool) {
         }
         prepared
     };
-    let Some(r) = request else { return };
+    let Some(r) = request else { return outcome };
+    outcome.ran = true;
+    run_job(store, r, on_start);
+    outcome
+}
+
+fn run_job(store: &SharedStore, r: Value, on_start: &dyn Fn()) {
     on_start();
     let started = Instant::now();
-    let result = if r["reconcile_speakers"]==true {crate::voiceprints::reconcile_recording_job(store,&r)} else {execute_workflow(store, &r)};
+    // The ledger: this thread's CPU while the job runs, plus what the voice service reports for itself.
+    let cpu_started = crate::scheduling::thread_cpu_ms();
+    VOICE_CPU_MS.with(|c| c.set(0));
+    let power_state = lock(store).power_state_now().unwrap_or("unknown");
+    let recording = r["recording"] == true;
+    let result = if recording {crate::voiceprints::recording_job(store,&r)} else {execute_workflow(store, &r)};
     let unused_refs=result.as_ref().ok().map(|o|o["voice_refs"].clone());
+    // CPU seconds the model service reported for this job's calls (`cpu_seconds`), passed on with the result.
+    let model_cpu = result.as_ref().ok().and_then(|o| o["cpu_seconds"].as_f64());
+    if let Ok(output) = &result { note_voice_cpu(output); }
     let s = lock(store);
     let job = &r["job"];
+    let _accounted = Accounting { store: &s, job: job["id"].as_str().unwrap_or(""), cpu_started, started, power_state };
     let error = match result {
-        Ok(output) => if r["reconcile_speakers"]==true{s.recording_speakers_complete(&r,&output)}else if r["speech"]==true{s.workflow_complete(&r,&output)}else{s.media_command(&json!({"action":"result","format":"candid-workflow-result/1","request":r,"output":output}))}.err().map(|e|e.message()),
+        Ok(output) => if recording{s.recording_complete(&r,&output)}else{s.media_command(&json!({"action":"result","format":"candid-workflow-result/1","request":r,"output":output}))}.err().map(|e|e.message()),
         Err(e) => Some(e),
     };
     let kind = job["kind"].as_str().unwrap_or("?");
     let ms = started.elapsed().as_millis();
     if error.is_none() {
-        eprintln!("任务：{kind} 完成 {ms}ms");
+        match model_cpu {
+            Some(cpu) => eprintln!("任务：{kind} 完成 {ms}ms，模型 CPU {cpu:.1}s"),
+            None => eprintln!("任务：{kind} 完成 {ms}ms"),
+        }
     }
     if let Some(code) = error {
-        if r["reconcile_speakers"]==true {if let Some(refs)=unused_refs {let _=s.discard_recording_speaker_refs(&refs);}}
+        if recording {if let Some(refs)=unused_refs {let _=s.discard_recording_speaker_refs(&refs);}}
         let _ = s.screen_request_rejected(&r, &code);
         let attempt = job["attempt"].as_u64().unwrap_or(0);
         // Speaker reconciliation reports "voice service busy/offline" in words rather than the shared codes.
-        let transient = if r["reconcile_speakers"]==true && (code.contains("离线")||code.contains("正在处理")||code.contains("声纹服务未完成")) { "offline" } else { code.as_str() };
+        let transient = if recording && (code.contains("离线")||code.contains("正在处理")||code.contains("声纹服务未完成")) { "offline" } else { code.as_str() };
         match crate::retry::retry_delay_ms(attempt, transient) {
             Some(delay) => {eprintln!("任务：{kind} 失败 {}（第 {} 次，{}s 后重试）{ms}ms", code_only(&code), attempt + 1, delay / 1000);let _=s.job_command(&json!({"action":"retry","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"delay_ms":delay,"error_code":transient}));}
             None => {eprintln!("任务：{kind} 失败 {}（第 {} 次，不再重试）{ms}ms", code_only(&code), attempt + 1);let _=s.job_command(&json!({"action":"finish","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"error_code":code}));}
         }
+    }
+}
+
+thread_local! {
+    /// CPU the voice service reported (`cpu_seconds`) for the job this thread runs, in milliseconds.
+    static VOICE_CPU_MS: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// Adds a voice service result's own `cpu_seconds` (top level of the output or of the usage) to the running job's
+/// ledger. Missing fields are ignored. Call it for every voice service answer a background job receives.
+pub(crate) fn note_voice_cpu(output: &Value) {
+    if let Some(seconds) = output["cpu_seconds"].as_f64().filter(|s| s.is_finite() && *s >= 0.0) {
+        VOICE_CPU_MS.with(|c| c.set(c.get() + (seconds * 1000.0).round() as i64));
+    }
+}
+
+/// Writes one run's cost onto its job when the run ends, whatever the outcome; then, at most once an hour and only
+/// when the worker is doing something anyway, a count-only summary line for `core.log`.
+struct Accounting<'a> {
+    store: &'a candid_store::TimelineStore,
+    job: &'a str,
+    cpu_started: i64,
+    started: Instant,
+    power_state: &'static str,
+}
+impl Drop for Accounting<'_> {
+    fn drop(&mut self) {
+        let cpu = crate::scheduling::thread_cpu_ms() - self.cpu_started + VOICE_CPU_MS.with(|c| c.replace(0));
+        let _ = self.store.job_account(self.job, cpu, self.started.elapsed().as_millis() as i64, self.power_state);
+        hourly_summary(self.store);
+    }
+}
+
+fn hourly_summary(store: &candid_store::TimelineStore) {
+    static LAST: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(i64::MIN);
+    let now = store.clock.now_ms();
+    let hour = now.div_euclid(3_600_000);
+    let last = LAST.swap(hour, std::sync::atomic::Ordering::Relaxed);
+    if last != hour && last != i64::MIN {
+        if let Ok(line) = store.energy_log_line(now - 3_600_000, now) { eprintln!("{line}"); }
     }
 }
 
@@ -460,13 +458,14 @@ pub fn complete(store: &SharedStore, v: &Value) -> Result<Value, String> {
     }
 }
 
-fn call_once(store: &SharedStore, r: &Value, audio: Option<Vec<u8>>) -> Result<Value, String> {
+fn call_once(store: &SharedStore, r: &Value) -> Result<Value, String> {
     let call = lock(store)
         .workflow_call_start(r)
         .map_err(|e| e.message())?;
-    let response = if r["speech"] == true {crate::voice_jobs::execute(store,r,audio.as_deref()).unwrap_or_else(||execute_http(r,audio))}else{execute_http(r,audio)};
+    let response = execute_http(r);
     match response {
         Ok((output, usage)) => {
+            if r["speech"] == true { note_voice_cpu(&output); note_voice_cpu(&usage); }
             let s = lock(store);
             let allowed = s.workflow_reply_allowed(r).is_ok();
             s.workflow_call_finish(
@@ -509,81 +508,12 @@ fn repair_json_once(store: &SharedStore, r: &Value, output: Value) -> Result<Val
     }
     let mut again = r.clone();
     again["messages"] = crate::retry::json_repair_messages(&r["messages"], output.as_str().unwrap_or(""));
-    call_once(store, &again, None)
+    call_once(store, &again)
 }
 
 fn execute_workflow(store: &SharedStore, r: &Value) -> Result<Value, String> {
-    if r["speech"] != true {
-        let output = call_once(store, r, None)?;
-        return repair_json_once(store, r, output);
-    }
-    let path = std::path::Path::new(r["path"].as_str().ok_or("missing_source")?);
-    let plan = crate::audio_chunks::AudioChunks::open(path)?;
-    let chunk_frames = plan.chunk_frames();
-    if plan.frames <= chunk_frames
-        && std::fs::metadata(path).map_err(|_| "missing_source")?.len() <= 32 * 1024 * 1024
-    {
-        return call_once(store, r, None);
-    }
-    let job = &r["job"];
-    let mut checkpoint = job["checkpoint"].clone();
-    if checkpoint["format"] != "voice-checkpoint/1"
-        || checkpoint["source_digest"] != r["digest"]
-        || checkpoint["config_revision"] != r["config_revision"]
-    {
-        checkpoint = json!({"format":"voice-checkpoint/1","source_digest":r["digest"],"config_revision":r["config_revision"],"next_sample":0,"segments":[],"producer":null});
-    }
-    let mut start = checkpoint["next_sample"].as_u64().unwrap_or(0);
-    if start > plan.frames {
-        return Err("invalid_checkpoint".into());
-    }
-    while start < plan.frames {
-        {
-            let s = lock(store);
-            s.workflow_prepare(job).map_err(|e| e.message())?;
-            s.job_command(&json!({"action":"heartbeat","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"lease_ms":180000})).map_err(|e|e.message())?;
-        }
-        let count = (plan.frames - start).min(chunk_frames);
-        let bytes = plan.bytes(start, count)?;
-        let mut chunk = r.clone();
-        chunk["digest"] = json!(candid_store::sha256_hex(&bytes));
-        chunk["audio_total_seconds"] = json!(plan.frames as f64 / plan.rate as f64);
-        chunk["audio_offset_seconds"] = json!(start as f64 / plan.rate as f64);
-        let output = call_once(store, &chunk, Some(bytes))?;
-        let offset = start as f64 / plan.rate as f64;
-        let duration = count as f64 / plan.rate as f64;
-        let segments = output["segments"].as_array().ok_or("invalid_output")?;
-        for segment in segments {
-            let a = segment["start_seconds"].as_f64().ok_or("invalid_output")?;
-            let b = segment["end_seconds"].as_f64().ok_or("invalid_output")?;
-            if a < 0.0 || b <= a || b > duration {
-                return Err("chunk_bounds".into());
-            }
-            let mut segment = segment.clone();
-            segment["start_seconds"] = json!(a + offset);
-            segment["end_seconds"] = json!(b + offset);
-            if let Some(speaker) = segment["speaker"].as_str() {
-                let label = speaker.to_string();
-                segment["source_speaker"] = json!(label);
-                segment["speaker"] = json!(format!("分块{} · {}", start / chunk_frames + 1, label));
-                segment["speaker_scope_start_sample"] = json!(start);
-            }
-            segment["processing_chunk_start_sample"] = json!(start);
-            segment["processing_sample_rate"] = json!(plan.rate);
-            segment["producer"] = output["producer"].clone();
-            checkpoint["segments"]
-                .as_array_mut()
-                .ok_or("invalid_checkpoint")?
-                .push(segment);
-        }
-        start += count;
-        checkpoint["next_sample"] = json!(start);
-        checkpoint["producer"] = output["producer"].clone();
-        lock(store).job_command(&json!({"action":"checkpoint","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"checkpoint":checkpoint})).map_err(|e|e.message())?;
-    }
-    Ok(
-        json!({"format":"candid-voice-result/1","source_hash":r["digest"],"producer":checkpoint["producer"],"segments":checkpoint["segments"]}),
-    )
+    let output = call_once(store, r)?;
+    repair_json_once(store, r, output)
 }
 
 fn message_text(v: &Value) -> String {

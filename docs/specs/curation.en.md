@@ -269,7 +269,7 @@ Without an evaluation set, the thresholds above are only guesses.
 
 | Content | Code (`core/crates/candid-store/src/`) | Tests |
 |---|---|---|
-| Table structure (conversations, messages, excerpts, full-text indexes, triggers; v12 upgrade) | `curated.rs`, `schema.rs`, `schema_upgrade.rs` (`SCHEMA_VERSION = 12`) | `tests/schema_upgrade.rs`, `tests/curated.rs` |
+| Table structure (conversations, messages, excerpts, full-text indexes, triggers; v12 upgrade) | `curated.rs`, `schema.rs`, `schema_upgrade.rs` (`SCHEMA_VERSION = 13`) | `tests/schema_upgrade.rs`, `tests/curated.rs` |
 | Record projection and speakers | `curated.rs` | `tests/curated.rs` |
 | Accessibility text excerpts | `curated_screen.rs` | `tests/curated.rs` |
 | Screenshot excerpts | `screen_excerpt.rs`; `core/prompts/screen-excerpt.md`, `screen-chat.md` | `tests/screen_excerpt.rs` |

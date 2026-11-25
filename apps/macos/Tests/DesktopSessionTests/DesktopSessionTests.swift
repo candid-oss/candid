@@ -247,7 +247,7 @@ struct DesktopSessionTests {
         defer { session.prepareToQuit() }
         await session.bootstrap()
         var options = DesktopSamplingOptions(); options.minimumContentInterval = 2; options.contentCapacity = 8
-        options.imageCapacity = 10; options.imageFallbackInterval = 30; options.conserveBattery = false
+        options.imageCapacity = 10; options.imageFallbackInterval = 30
         session.setSamplingOptions(options); session.setMinimumCaptureInterval(2); session.setPeriodicInterval(30)
         // Two UI edits before the asynchronous save completes must compose on
         // desired state, rather than each copying the last displayed policy.
@@ -268,7 +268,7 @@ struct DesktopSessionTests {
                 session.samplingOptions.minimumContentInterval == 3 && session.samplingOptions.imageFallbackInterval == 10 &&
                 session.samplingOptions.contentCapacity == 20 && session.samplingOptions.imageCapacity == 20
         }
-        #expect(!session.samplingOptions.conserveBattery && !session.periodicEnabled)
+        #expect(!session.periodicEnabled)
         #expect(!session.isRecording && !session.automaticCaptureAvailable)
         session.restoreSamplingDefaults()
         try await eventually("defaults restored") { session.samplingOptions == DesktopSamplingOptions() && session.periodicInterval == 60 && session.minimumCaptureInterval == 15 }
@@ -356,7 +356,9 @@ struct DesktopSessionTests {
         let session = DesktopSession(dataRoot: root, core: try await TestCore.ready(root), monitor: monitor, capture: SyntheticCapture(), captureSleep: { try await clock.sleep($0) }, captureClock: { clock.now })
         defer { session.prepareToQuit(); clock.cancelAll() }
         await session.bootstrap(); try await enableImages(session, bundle: monitor.editor.bundleID)
-        var options = session.samplingOptions; options.minimumContentInterval = 2; options.contentCapacity = 2; options.conserveBattery = false
+        // 后台处理 随时: capture is not throttled on battery.
+        session.capturePace = { .anytime }
+        var options = session.samplingOptions; options.minimumContentInterval = 2; options.contentCapacity = 2
         session.setSamplingOptions(options); session.setPeriodicEnabled(true)
         try await eventually("custom text policy saved") { session.samplingOptions == options && session.periodicEnabled }
         session.startRecording(); try await eventually("started") { session.isRecording }
@@ -469,7 +471,14 @@ struct DesktopSessionTests {
         defer { session.prepareToQuit() }
         await session.bootstrap(); session.setTimelineVisible(false)
         let reloads = session.samplingDiagnostics.listReloads
-        session.addMarker(); try await eventually("hidden write committed") { session.statistics.recordCount == 1 }
+        session.addMarker()
+        // Hidden, deliveries refresh the counts at most once a minute (each refresh counts the whole library); a
+        // settings page on screen asks for them, as this does.
+        for _ in 0..<500 where session.statistics.recordCount != 1 {
+            await session.refreshStatistics(maxAge: 0)
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(session.statistics.recordCount == 1, "hidden write committed")
         #expect(session.samplingDiagnostics.listReloads == reloads)
         #expect(session.records.isEmpty)
         session.setTimelineVisible(true)

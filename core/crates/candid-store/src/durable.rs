@@ -194,14 +194,16 @@ impl TimelineStore {
                     else {let state=if action=="retry"{"queued"}else if v["error_code"].is_string(){"failed"}else{"done"};self.db.execute("UPDATE jobs SET state=?,output_ref=?,error_code=?,lease_until_ms=NULL,next_run_ms=?,updated_ms=? WHERE job_id=?",&[text(state),crate::db::opt_text(v["output_ref"].as_str()),crate::db::opt_text(v["error_code"].as_str()),int(now+v["delay_ms"].as_i64().unwrap_or(0).max(0)),int(now),text(id)])?;}
                 },
                 "get"=>return self.job_get(id),
+                "run_now"=>return self.job_run_now(v),
                 "list"=>return Ok(json!({"jobs":self.db.query("SELECT job_id FROM jobs ORDER BY created_ms",&[],|r|r.text(0))?.iter().map(|id|self.job_get(id)).collect::<Result<Vec<_>>>()?})),
                 _=>return Err(bad("未知任务操作"))
             }self.job_get(id)
         })
     }
     fn job_get(&self, id: &str) -> Result<Value> {
-        let mut result=self.db.first("SELECT j.job_id,j.kind,j.input_ref,j.config_version,j.state,j.attempts,j.lease_until_ms,c.owner,c.checkpoint,j.error_code,j.output_ref,j.feature,j.created_ms,j.updated_ms FROM jobs j LEFT JOIN job_checkpoints c USING(job_id) WHERE j.job_id=?",&[text(id)],|r|json!({"id":r.text(0),"kind":r.text(1),"input_ref":r.text(2),"config_version":r.text(3),"state":r.text(4),"attempt":r.int(5),"lease_until_ms":r.opt_int(6),"owner":r.opt_text(7),"checkpoint":serde_json::from_str::<Value>(&r.text(8)).unwrap_or(json!({})),"error_code":r.opt_text(9),"output_ref":r.opt_text(10),"feature":r.opt_text(11),"created_ms":r.int(12),"updated_ms":r.int(13)}))?.ok_or_else(||TimelineError::NotFound("任务".into()))?;
-        if result["kind"] == "speech.recognize" {
+        let mut result=self.db.first("SELECT j.job_id,j.kind,j.input_ref,j.config_version,j.state,j.attempts,j.lease_until_ms,c.owner,c.checkpoint,j.error_code,j.output_ref,j.feature,j.created_ms,j.updated_ms,j.manual FROM jobs j LEFT JOIN job_checkpoints c USING(job_id) WHERE j.job_id=?",&[text(id)],|r|json!({"id":r.text(0),"kind":r.text(1),"input_ref":r.text(2),"config_version":r.text(3),"state":r.text(4),"attempt":r.int(5),"lease_until_ms":r.opt_int(6),"owner":r.opt_text(7),"checkpoint":serde_json::from_str::<Value>(&r.text(8)).unwrap_or(json!({})),"error_code":r.opt_text(9),"output_ref":r.opt_text(10),"feature":r.opt_text(11),"created_ms":r.int(12),"updated_ms":r.int(13),"manual":r.int(14)==1}))?.ok_or_else(||TimelineError::NotFound("任务".into()))?;
+        // Checkpoints of recording jobs hold transcript text (per-file results, finished windows).
+        if matches!(result["kind"].as_str(), Some("speech.recording" | "speech.recognize" | "workflow.speakers")) {
             let id = result["input_ref"].as_str().unwrap_or("");
             let allowed = self.media_item(id).ok().is_some_and(|m| {
                 self.media_text_allowed(id, m["source"].as_str().unwrap_or(""))
@@ -220,6 +222,7 @@ fn feature_of(kind: &str) -> Option<String> {
     let step = kind.strip_prefix("workflow.");
     Some(match (kind, step) {
         ("speech.recognize", _) => "recording".into(),
+        ("speech.recording", _) => "transcribe".into(),
         (_, Some("title" | "summary")) => "recording".into(),
         (_, Some(step)) => step.into(),
         _ => return None,

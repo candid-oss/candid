@@ -3,7 +3,13 @@ import DesktopCore
 import Foundation
 import IOKit.ps
 
+/// Reads the Mac's power state for the core's power gate (power v1 §3.1); the core decides, this only reports.
 public enum DesktopRecognitionPowerSource {
+    /// Seconds since the last keyboard or mouse event.
+    public static func idleSeconds() -> Int {
+        Int(CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!))
+    }
+
     public static func read() -> DesktopRecognitionPower {
         let process = ProcessInfo.processInfo
         var external: Bool?
@@ -28,8 +34,15 @@ public enum DesktopRecognitionPowerSource {
                 }
             }
         }
+        let thermal = switch process.thermalState {
+        case .nominal: "nominal"
+        case .fair: "fair"
+        case .serious: "serious"
+        case .critical: "critical"
+        @unknown default: "serious"
+        }
         return DesktopRecognitionPower(onExternalPower: external, hasInternalBattery: internalBattery, batteryPercent: percent,
-            lowPower: process.isLowPowerModeEnabled, thermalBlocked: [.serious, .critical].contains(process.thermalState))
+            lowPower: process.isLowPowerModeEnabled, thermal: thermal)
     }
 }
 

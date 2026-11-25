@@ -2,7 +2,7 @@
 
 **中文** · [English](query.en.md)
 
-**状态**：部分实现。22 个对外工具、四种访问方式、范围过滤、审计和提案已实现；整理层的独立 `raw` 授权、限时媒体地址、提案过期未实现。
+**状态**：部分实现。23 个对外工具、四种访问方式、范围过滤、审计和提案已实现；整理层的独立 `raw` 授权、限时媒体地址、提案过期未实现。
 
 本文规定外部 AI 和 App 如何读取时间线：工具清单、共同规则、访问方式与鉴权、访问方（clients）与范围、审计（access_log）、提案（proposals）。
 不规定工具读到的数据怎么产生（见 [整理层](curation.md)、[存储](storage.md)），不规定提案批准后由谁执行和固定流程（见 [工作流](workflows.md)），不规定连接器（见 [连接器](connectors.md)）。
@@ -12,7 +12,7 @@
 
 ## 1. 概览
 
-时间线服务对外只有一套**工具**（22 个），工具名和参数在四种访问方式上完全相同。每次调用先解析访问方，再按访问方的范围在 SQL 里过滤、之后才排序和截取片段，最后写一条审计记录。
+时间线服务对外只有一套**工具**（23 个），工具名和参数在四种访问方式上完全相同。每次调用先解析访问方，再按访问方的范围在 SQL 里过滤、之后才排序和截取片段，最后写一条审计记录。
 
 | 方式 | 谁用 | 见 |
 |---|---|---|
@@ -44,7 +44,7 @@
 
 ## 3. 工具清单
 
-共 22 个，顺序与快照一致。层次：**整理好的内容**（读整理层，优先使用）、**原始记录**（读事件和索引）、**写与提案**、**状态与用量**。
+共 23 个，顺序与快照一致。层次：**整理好的内容**（读整理层，优先使用）、**原始记录**（读事件和索引）、**写与提案**、**状态与用量**。
 
 | 工具 | 一句话用途 | 层次 |
 |---|---|---|
@@ -69,6 +69,7 @@
 | `media` | 取截图或录音原件（默认无权，需访问方 `media` 范围） | 原始记录 |
 | `status` | 本库和各来源是否正常、是否在记录；不确定数据是否齐全时先调用 | 状态与用量 |
 | `usage` | Candid 里 AI 调用的次数、token 和费用（区分实际值和估算值）；`include_external` 时现算外部 agent 用量 | 状态与用量 |
+| `energy_summary` | 后台计算的能耗账：按天和作业种类给出次数、CPU 秒、墙钟秒、用电池时的 CPU 秒，以及等待中的作业数量和原因 | 状态与用量 |
 | `propose` | 提交提案，只进入待批准列表（唯一的写工具，MCP 注解 `readOnlyHint: false`） | 写与提案 |
 
 要点（行为，细节以快照和测试为准）：
@@ -122,7 +123,7 @@
 规则：
 
 - 管理、变更推送、健康检查和入库等 `/local/…`、`/health` 路径在回环 HTTP 上一律拒绝（403 `local_only`），无论令牌。完整清单见[附录](#local-channel)。
-- 回环 HTTP 和本地通道上的 `/v1/<工具>` 走同一段代码（`run_tool`），范围过滤与审计一致。回环 HTTP 只认 22 个对外工具；App 自用的 `app_*` 读工具和 agent 写工具不在对外目录里，本地通道带令牌调用它们返回 403 `internal_only`。
+- 回环 HTTP 和本地通道上的 `/v1/<工具>` 走同一段代码（`run_tool`），范围过滤与审计一致。回环 HTTP 只认 23 个对外工具；App 自用的 `app_*` 读工具和 agent 写工具不在对外目录里，本地通道带令牌调用它们返回 403 `internal_only`。
 - 令牌只在登记时显示一次，库里只存 SHA-256；访问方被撤销后令牌立即失效（401），已知访问方被撤销后的调用写 `client_revoked`。
 - 访问方在 设置 →「外部访问」登记（`POST /local/clients`）：每个工具一个令牌，同时给出 Claude Code 命令、Codex 配置和通用 JSON。登记默认范围见[第 6 节](#clients)。
 - 环境变量 `CANDID_TOKEN`、`CANDID_ENDPOINT`、`CANDID_RUN_DIR` 覆盖令牌、地址和运行目录；命令行和 MCP 外壳按 App 的「网络代理」设置连接（默认系统代理，可选不走代理），`CANDID_PROXY` 可覆盖。
@@ -215,7 +216,7 @@
 
 | 路径 | 方法 | 一句话用途 |
 |---|---|---|
-| `/v1/<22 个工具>` | POST | 查询工具；无令牌按 App，有令牌按该访问方 |
+| `/v1/<23 个工具>` | POST | 查询工具；无令牌按 App，有令牌按该访问方 |
 | `/v1/app_*`（10 个：`app_person_correct`、`app_people_candidates`、`app_activities`、`app_activity`、`app_media`、`app_recognition`、`app_pending_recognition`、`app_ocr`、`app_retention_count`、`app_day_counts`） | POST | App 自用的读写工具，只认内部访问方 |
 | `/v1/<agent 写工具>`（6 个，见第 8 节） | POST | agent 写工具；App 无令牌，Pi 用自己的运行令牌 |
 | `/health` | GET | 进程、库和端点身份 |
@@ -237,6 +238,7 @@
 | `/local/agents/consent` | POST | 保存某 agent 的授权（可同时删除已存内容） |
 | `/local/agents/query` | POST | 以 App 身份现读 AI 会话（同 `agent` 工具） |
 | `/local/connectors` | GET / POST | 连接器管理（列出、授权、更新、撤销、同步、密钥、分级） |
+| `/local/power` | POST | 电源状态上报、「后台处理」档位、状态查询、平台层后台工作的许可与记账（见[模型](models.md#power)） |
 | `/local/media` | POST | 媒体管理命令（App） |
 | `/local/jobs` | POST | 作业管理命令（App） |
 | `/local/records` | POST | 记录管理；带令牌时只允许 `action=query` |
@@ -253,7 +255,7 @@
 | `/local/pi/run` | GET | 当前运行状态 |
 | `/local/pi/model` | POST | Pi 的模型网关：用运行冻结的模型做一次对话补全；只认 Pi 的运行令牌 |
 
-`/local/…` 路径共 33 条（含 `/local/events`），另有 `/health`、`/v1/…` 三组。已知缺口：各命令类接口（`/local/models`、`/local/workflows`、`/local/automation`、`/local/screen`、`/local/media`、`/local/jobs`、`/local/records`、`/local/voiceprints`、`/local/connectors`）按 `action` 分派，动作清单在各自的代码里，这里不列。
+`/local/…` 路径共 34 条（含 `/local/events`），另有 `/health`、`/v1/…` 三组。已知缺口：各命令类接口（`/local/models`、`/local/workflows`、`/local/automation`、`/local/screen`、`/local/media`、`/local/jobs`、`/local/records`、`/local/voiceprints`、`/local/connectors`）按 `action` 分派，动作清单在各自的代码里，这里不列。
 
 <a id="code"></a>
 
@@ -281,7 +283,7 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `/local/` 接口清单的快照守护 | 未实现 | 对外只有 22 个工具有快照（`mcp-tools.json`、`candid-tools.txt`）；本地通道路径、方法和各命令的 `action` 没有成文契约，第 9 节靠人工从代码整理。应补一份路径清单快照和路由测试 |
+| `/local/` 接口清单的快照守护 | 未实现 | 对外只有 23 个工具有快照（`mcp-tools.json`、`candid-tools.txt`）；本地通道路径、方法和各命令的 `action` 没有成文契约，第 9 节靠人工从代码整理。应补一份路径清单快照和路由测试 |
 | 整理层独立的 `raw` 授权 | 未实现 | 设计曾定「默认只开整理层，原始层需单独的 `raw` 授权，`evidence` 需要它」。`ClientScope` 里没有 `raw` 开关；`evidence` 与其他工具一样受 `text`、`derived` 和来源范围约束 |
 | 原始事件 ID 不直接暴露给 AI | 未实现 | 设计曾定整理层对象只带自己的 `id` 和出处说明。现在消息的 `ref` 是依据事件的 id，`evidence` 返回事件摘要 |
 | 旧原始工具降级为 `evidence` 下的能力 | 未实现 | `search`、`timeline`、`context`、`get_event` 等仍在对外目录里，只靠服务器说明和调用顺序降低优先级 |

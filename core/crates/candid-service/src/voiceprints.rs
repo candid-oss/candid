@@ -447,12 +447,13 @@ fn require_withdrawal(v: &Value) -> Result<(), String> {
 }
 
 
-/// Speaker grouping for one recording: whole-recording windows when the voice service supports them,
-/// otherwise the older clustering of per-file speakers.
-pub fn reconcile_recording_job(store:&SharedStore,r:&Value)->Result<Value,String> {
-    let windows=remote(&r["provider"],"list",&Value::Null,None).ok()
-        .is_some_and(|v|v["capabilities"].as_array().is_some_and(|c|c.iter().any(|x|x=="recording_windows")));
-    if windows {recording_windows(store,r)} else {reconcile_recording(r)}
+/// A recording's one job: the whole recording in long windows, then stitched into one transcript. The voice
+/// service must offer recording windows; earlier services without them are reported, not worked around.
+pub fn recording_job(store:&SharedStore,r:&Value)->Result<Value,String> {
+    let windows=remote(&r["provider"],"list",&Value::Null,None)?["capabilities"].as_array()
+        .is_some_and(|c|c.iter().any(|x|x=="recording_windows"));
+    if !windows {return Err("voice_service_outdated".into());}
+    recording_windows(store,r)
 }
 
 pub const WINDOW_SECONDS: f64 = 600.0;
@@ -500,9 +501,11 @@ fn window_audio(files: &[(crate::audio_chunks::AudioChunks, f64)], start: f64, e
     Ok(wav)
 }
 
-/// Whole-recording speakers in windows of several minutes. Each finished window is saved in the job's
-/// checkpoint, so stopping the app or cancelling loses at most the window in progress, and a window the
-/// model cannot fit is retried at half the length.
+/// The whole recording in windows of several minutes: transcript, speakers and voiceprints from one model call per
+/// window (`mode=conversation`), or text only on the small model (`mode=quick`). Each finished window is saved in
+/// the job's checkpoint, so stopping the app or cancelling loses at most the window in progress, and a window the
+/// model cannot fit is retried at half the length. Each window and the stitch is one entry in the call ledger, and
+/// the service's `cpu_seconds` for all of them is summed into the result.
 fn recording_windows(store:&SharedStore,r:&Value)->Result<Value,String> {
     let input=&r["input"];
     let job=&r["job"];
@@ -513,7 +516,8 @@ fn recording_windows(store:&SharedStore,r:&Value)->Result<Value,String> {
     }
     let total=files.iter().map(|(p,o)|o+p.frames as f64/16000.).fold(0.,f64::max);
     if total<=0. {return Err("missing_source".into());}
-    let identity=json!({"format":"speaker-windows/1","revision":input["revision"],"config_revision":r["config_revision"],"total":total});
+    let mode=r["mode"].as_str().unwrap_or("conversation");
+    let identity=json!({"format":"speaker-windows/1","mode":mode,"revision":input["revision"],"config_revision":r["config_revision"],"total":total});
     let mut state=job["checkpoint"]["speaker_windows"].clone();
     if state["identity"]!=identity {state=json!({"identity":identity,"size":WINDOW_SECONDS,"windows":[]});}
     loop {
@@ -524,11 +528,12 @@ fn recording_windows(store:&SharedStore,r:&Value)->Result<Value,String> {
             let s=lock(store);
             s.workflow_reply_allowed(r).map_err(|e|e.message())?;
             s.job_command(&json!({"action":"heartbeat","id":job["id"],"owner":job["owner"],"attempt":job["attempt"],"lease_ms":600000})).map_err(|e|e.message())?;
-            let _=s.media_job_progress(job,&json!({"stage":"speaker_grouping","completed_seconds":start,"total_seconds":total,"cancellation_supported":true}));
+            let _=s.media_job_progress(job,&json!({"stage":"transcribing","completed_seconds":start,"total_seconds":total,"cancellation_supported":true}));
         }
         let index=state["windows"].as_array().map_or(0,|w|w.len());
-        let meta=json!({"scope":input["scope"],"index":index});
-        match remote(&r["provider"],"window",&meta,Some(window_audio(&files,start,end)?)) {
+        let meta=json!({"scope":input["scope"],"index":index,"mode":mode});
+        let audio=window_audio(&files,start,end)?;
+        match ledgered(store,r,|| remote(&r["provider"],"window",&meta,Some(audio))) {
             Ok(result) => {
                 state["windows"].as_array_mut().ok_or("invalid_checkpoint")?.push(json!({"start":start,"end":end,"result":result}));
             }
@@ -543,70 +548,18 @@ fn recording_windows(store:&SharedStore,r:&Value)->Result<Value,String> {
     }
     lock(store).workflow_reply_allowed(r).map_err(|e|e.message())?;
     let entries:Vec<Value>=input["entries"].as_array().into_iter().flatten().map(|e|json!({"interval":e["interval"],"correction_key":e["correction_key"],"protected":e["protected"]})).collect();
-    let mut out=remote(&r["provider"],"stitch",&json!({"scope":input["scope"],"revision":input["revision"],"windows":state["windows"],"entries":entries}),None)?;
+    let _=lock(store).media_job_progress(job,&json!({"stage":"finalizing","completed_seconds":total,"total_seconds":total,"cancellation_supported":true}));
+    let mut out=ledgered(store,r,|| remote(&r["provider"],"stitch",&json!({"scope":input["scope"],"revision":input["revision"],"mode":mode,"windows":state["windows"],"entries":entries}),None))?;
+    let cpu:f64=state["windows"].as_array().into_iter().flatten().filter_map(|w|w["result"]["cpu_seconds"].as_f64()).sum::<f64>()+out["cpu_seconds"].as_f64().unwrap_or(0.);
+    out["cpu_seconds"]=json!((cpu*1000.).round()/1000.);
     out["policy"]=input["policy"].clone();
     Ok(out)
 }
 
-/// The model service sees bounded clean snippets and opaque source groups, never paths or transcript text.
-pub fn reconcile_recording(r:&Value)->Result<Value,String> {
-    use base64::Engine;
-    let mut input=r["input"].clone();
-    let files=input["files"].as_array().ok_or("missing_source")?;
-    let mut plans=std::collections::HashMap::new();
-    for file in files {
-        let plan=crate::audio_chunks::AudioChunks::for_voice(std::path::Path::new(file["path"].as_str().ok_or("missing_source")?))?;
-        plans.insert(file["id"].as_str().unwrap_or("").to_string(),(plan,file["offset"].as_f64().unwrap_or(0.)));
-    }
-    let entries=input["entries"].as_array().ok_or("invalid_output")?.clone();
-    let mut selected:Vec<usize>=(0..entries.len()).collect();
-    selected.sort_by(|a,b| {let duration=|i:usize|entries[i]["interval"][1].as_f64().unwrap_or(0.)-entries[i]["interval"][0].as_f64().unwrap_or(0.);duration(*b).total_cmp(&duration(*a))});
-    let mut budget=0usize;
-    for i in selected.into_iter().take(512) {
-        let e=&entries[i];
-        let a=e["interval"][0].as_f64().ok_or("invalid_output")?;
-        let b=e["interval"][1].as_f64().ok_or("invalid_output")?;
-        let mut pieces=vec![(a,b)];
-        for other in &entries {
-            if other["source_group"]==e["source_group"] {continue;}
-            let x=other["interval"][0].as_f64().unwrap_or(0.);let y=other["interval"][1].as_f64().unwrap_or(0.);
-            pieces=pieces.into_iter().flat_map(|(a,b)|if y<=a||x>=b{vec![(a,b)]}else{let mut v=Vec::new();if a<x{v.push((a,x));}if y<b{v.push((y,b));}v}).collect();
-        }
-        let Some((a,b))=pieces.into_iter().max_by(|a,b|(a.1-a.0).total_cmp(&(b.1-b.0))) else{continue};
-        if b-a<1.5 {continue;}
-        let file=e["source_segment_id"].as_str().unwrap_or(input["scope"].as_str().unwrap_or(""));
-        let (plan,offset)=plans.get(file).ok_or("missing_source")?;
-        let start=((a-offset).max(0.)*plan.rate as f64).round() as u64;
-        let count=((b-a).min(6.)*plan.rate as f64).round() as u64;
-        if start>=plan.frames {continue;}
-        let bytes=plan.bytes(start,count.min(plan.frames-start))?;
-        budget+=bytes.len();if budget>24*1024*1024 {break;}
-        input["entries"][i]["sample"]=json!(base64::engine::general_purpose::STANDARD.encode(bytes));
-    }
-    let mut pooled=serde_json::Map::new();
-    let groups:std::collections::BTreeSet<&str>=entries.iter().filter_map(|e|e["source_group"].as_str()).collect();
-    for group in groups {
-        if input["entries"].as_array().unwrap().iter().any(|e|e["source_group"]==group&&e["sample"].is_string()) {continue;}
-        let mut pcm=Vec::new();
-        for e in &entries {
-            if e["source_group"]!=group {continue;}
-            let a=e["interval"][0].as_f64().unwrap_or(0.);let b=e["interval"][1].as_f64().unwrap_or(0.);
-            if entries.iter().any(|other|other["source_group"]!=group && other["interval"][0].as_f64().unwrap_or(0.)<b && other["interval"][1].as_f64().unwrap_or(0.)>a) {continue;}
-            let file=e["source_segment_id"].as_str().unwrap_or(input["scope"].as_str().unwrap_or(""));
-            let (plan,offset)=plans.get(file).ok_or("missing_source")?;
-            let start=((a-offset).max(0.)*16000.).round() as u64;
-            let count=(((b-a)*16000.).round() as u64).min(128000u64.saturating_sub(pcm.len() as u64/2));
-            if start>=plan.frames || count==0 {continue;}
-            let count=count.min(plan.frames-start);let bytes=plan.bytes(start,count)?;
-            pcm.extend_from_slice(&bytes[bytes.len()-count as usize*2..]);
-            if pcm.len()>=256000 {break;}
-        }
-        if pcm.len()<48000 {continue;}
-        budget+=pcm.len();if budget>24*1024*1024 {break;}
-        let mut wav=b"RIFF".to_vec();wav.extend((36u32+pcm.len() as u32).to_le_bytes());wav.extend(b"WAVEfmt ");wav.extend(16u32.to_le_bytes());wav.extend([1,0,1,0]);wav.extend(16000u32.to_le_bytes());wav.extend(32000u32.to_le_bytes());wav.extend([2,0,16,0]);wav.extend(b"data");wav.extend((pcm.len() as u32).to_le_bytes());wav.extend(pcm);
-        pooled.insert(group.to_string(),json!(base64::engine::general_purpose::STANDARD.encode(wav)));
-    }
-    input["group_samples"]=Value::Object(pooled);
-    input.as_object_mut().unwrap().remove("files");
-    remote(&r["provider"],"reconcile_recording",&input,None)
+/// One model call in the shared call ledger (`ai_calls`), so daily limits and usage count windows like any call.
+fn ledgered(store:&SharedStore,r:&Value,call:impl FnOnce()->Result<Value,String>)->Result<Value,String> {
+    let id=lock(store).workflow_call_start(r).map_err(|e|e.message())?;
+    let out=call();
+    let _=lock(store).workflow_call_finish(&id,if out.is_ok(){"ok"}else{"error"},out.as_ref().err().map(String::as_str),&Value::Null);
+    out
 }

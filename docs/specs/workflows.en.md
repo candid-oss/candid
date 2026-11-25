@@ -58,7 +58,7 @@ The status column is the result of a line-by-line check against the code. "Defau
 |---|---|---|---|
 | **Automatic inside the core** | Timeline browsing and search | Rules and indexes, no model | Implemented (see [Query Interface](query.en.md)) |
 | | Time distribution | Pure rule statistics (`pv_overview`) | Implemented |
-| | Transcription, multi-speaker segmentation, matching existing voiceprints | Automatic after a recording is saved (workflow `transcribe`, job `speech.recognize`; setting `automatic` is on by default) | Implemented |
+| | Transcription, multi-speaker segmentation, matching existing voiceprints | Automatic after a recording ends (workflow `transcribe`, job `speech.recording`; setting `automatic` is on by default) | Implemented |
 | | Recording title | Automatic after transcription (`title`, setting `titles` is on by default); a manually changed title is not overwritten by a rerun | Implemented |
 | | Recording summary | After the whole recording ends (`summary`). The catalog writes default on, but the scan queues it only when the setting `summary == true`, so it is actually off by default | Implemented (the two defaults disagree, see Section 11) |
 | | Screenshot text | Local system OCR on the app capture side; vision-model curation: `screen-excerpt` (when new screenshot content appears, off by default, 300 per day) and manual `screenshot` | Partly implemented (OCR is on the capture side, not checked) |
@@ -108,7 +108,7 @@ The loop: pick saved inputs → follow the versioned fixed steps → rules or a 
 
 | id | Way | Trigger | Role (catalog value) | Job kind | Default |
 |---|---|---|---|---|---|
-| `transcribe` | Core | After a recording is saved | diarization | `speech.recognize` | On, 100 per day |
+| `transcribe` | Core | After a recording ends | diarization | `speech.recording` | On, 100 per day |
 | `title` | Core | After transcription is done | title | `workflow.title` | On, 100 per day |
 | `summary` | Core | After the whole recording ends | summary | `workflow.summary` | On in the catalog; the scan actually requires setting `summary == true` |
 | `decisions` | Core | Manual | summary | `workflow.decisions` | On |
@@ -124,9 +124,9 @@ The loop: pick saved inputs → follow the versioned fixed steps → rules or a 
 
 `workflows` also has six versioned definitions: `recording` (transcribe → title → optional summary, triggered by `sealed_audio`), `conversation`, `decisions`, `tags`, `screenshot` and `daily`, each declaring its output type. The role names in the catalog (asr, diarization, title, summary, vision, episode) do not match the repository rule "use only `vision`, `summary`, `agent_chat`". The authoritative definition of roles is in [Models](models.en.md); see Section 11.
 
-The first workflow wired end to end is "continuous recording → transcription → title → optional summary": transcription can run incrementally once a segment is saved, and finishes when the whole recording ends; multi-speaker segmentation and existing voiceprint matching are added by switch, and unknown identities stay anonymous; a usable title is generated from the time first, and the model title is a draft; if the summary is off or fails, the original audio, transcript and playback are not blocked. Adding a workflow needs only a definition, an output validator, a prompt template and a synthetic acceptance sample. When the existing model adapters are enough, no new scheduler, storage or UI state machine is added.
+The first workflow wired end to end is "continuous recording → transcription → title → optional summary": while recording, parts are only saved and no model runs. Once the recording ends, one recording job (`speech.recording`) sends it to the model in 10-minute windows overlapping by 1 minute, gets transcript, speakers and voiceprints from the same call, and stitches one transcript; conversation mode uses the multi-speaker model, quick mode the small text-only model. Unknown identities stay anonymous. A usable title is generated from the time first, and the model title is a draft; if the summary is off or fails, the original audio, transcript and playback are not blocked. Adding a workflow needs only a definition, an output validator, a prompt template and a synthetic acceptance sample. When the existing model adapters are enough, no new scheduler, storage or UI state machine is added.
 
-Scheduling, cost, idempotence and recovery (queue, lease, budget, cancel, `ai_calls`) are in [Models](models.en.md).
+Scheduling, cost, idempotence and recovery (queue, lease, budget, cancel, `ai_calls`) are in [Models](models.en.md); when background jobs may run is in [Models · When to spend power](models.en.md#power).
 
 <a id="tasks-provenance"></a>
 

@@ -9,11 +9,11 @@
 //! |---|---|
 //! | `GET /health` | process, store and endpoint identity |
 //! | `GET /local/status` | sync phase, event count, last change, problems, last verification |
-//! | `GET /local/events` | change feed: newline-delimited JSON (`hello`, `status`, `data`, `clients`) until either side closes |
+//! | `GET /local/events` | change feed: newline-delimited JSON (`hello`, `status`, `data`, `jobs`, `clients`) until either side closes; `jobs` is job progress, at most one a second |
 //! | `GET /local/clients` | registered external clients with their recent use |
 //! | `POST /local/clients` | `{"name"}` → token (shown once) and setup snippets for Claude Code, Codex and generic JSON |
 //! | `POST /local/clients/revoke` | `{"client_id"}` |
-//! | `POST /local/sync` | run a mirroring pass now (202; the result arrives as a `status` event) |
+//! | `POST /local/sync` | run a mirroring pass now (202; the result arrives as a `status` event); `{"paths": [...]}` reads only those agent transcript files |
 //! | `POST /local/verify` | `{"hash_blobs"}` → compare the desktop ledger with the timeline |
 //! | `GET /local/sources`, `POST /local/sources` | list, or register once by kind and name, the App's own sources |
 //! | `POST /local/ingest` | one `IngestBatch` (timeline-v1 §6.1) → ingest result; desktop batches only after the cutover |
@@ -99,10 +99,13 @@ impl Default for SyncStatus {
 }
 
 /// Subscribers of `GET /local/events`. A subscriber that cannot take a line within a second is dropped.
+/// Publishing `data` or `power` also wakes the background thread ([`crate::background`]); the thread itself
+/// announces without waking.
 #[derive(Default)]
 pub struct Feed {
     subscribers: Mutex<Vec<UnixStream>>,
     seq: AtomicU64,
+    wake: Arc<crate::background::Wake>,
 }
 
 impl Feed {
@@ -127,8 +130,24 @@ impl Feed {
         }
     }
 
-    /// Sends `{"type": kind, "seq": n}` to every subscriber.
+    /// Sends `{"type": kind, "seq": n}` to every subscriber; `data` wakes the background thread and `power` makes it
+    /// look at waiting jobs again.
     pub fn publish(&self, kind: &str) {
+        match kind {
+            "data" => self.wake.wake(),
+            "power" => self.wake.invalidate(),
+            _ => {}
+        }
+        self.announce(kind);
+    }
+
+    /// The background thread's wake signal.
+    pub fn wake(&self) -> &Arc<crate::background::Wake> {
+        &self.wake
+    }
+
+    /// Sends `{"type": kind, "seq": n}` without waking anything (the background thread reporting its own work).
+    pub fn announce(&self, kind: &str) {
         let line = self.line(kind);
         let mut subs = self.subscribers.lock().unwrap_or_else(|p| p.into_inner());
         subs.retain_mut(|s| s.write_all(&line).and_then(|_| s.flush()).is_ok());
@@ -145,31 +164,49 @@ impl Feed {
     }
 }
 
-/// A request for the sync thread: run a pass now.
+/// What the sync thread was asked to do: a full pass, or only some agent transcript files.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SyncRequest {
+    Full,
+    Files(std::collections::BTreeSet<PathBuf>),
+}
+
+/// A request for the sync thread: run a pass now. Requests made while it runs are merged; a full request wins.
 #[derive(Default)]
 pub struct SyncTrigger {
-    requested: Mutex<bool>,
+    requested: Mutex<Option<SyncRequest>>,
     signal: Condvar,
 }
 
 impl SyncTrigger {
     pub fn request(&self) {
-        *self.requested.lock().unwrap_or_else(|p| p.into_inner()) = true;
+        *self.requested.lock().unwrap_or_else(|p| p.into_inner()) = Some(SyncRequest::Full);
         self.signal.notify_all();
     }
 
-    /// Waits until requested or timed out. The stop path sets `stop` and calls `request` to wake us.
-    pub fn wait(&self, timeout: Duration, stop: &AtomicBool) {
+    /// Only these agent transcript files changed (the App's folder watcher); nothing else is synced.
+    pub fn request_files(&self, paths: impl IntoIterator<Item = PathBuf>) {
+        let mut requested = self.requested.lock().unwrap_or_else(|p| p.into_inner());
+        match &mut *requested {
+            Some(SyncRequest::Full) => {}
+            Some(SyncRequest::Files(files)) => files.extend(paths),
+            None => *requested = Some(SyncRequest::Files(paths.into_iter().collect())),
+        }
+        self.signal.notify_all();
+    }
+
+    /// Waits until requested or timed out (then a full pass is due). The stop path sets `stop` and calls `request`.
+    pub fn wait(&self, timeout: Duration, stop: &AtomicBool) -> SyncRequest {
         let deadline = Instant::now() + timeout;
         let mut requested = self.requested.lock().unwrap_or_else(|p| p.into_inner());
-        while !*requested && !stop.load(Ordering::SeqCst) {
+        while requested.is_none() && !stop.load(Ordering::SeqCst) {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 break;
             }
             requested = self.signal.wait_timeout(requested, left).unwrap_or_else(|p| p.into_inner()).0;
         }
-        *requested = false;
+        requested.take().unwrap_or(SyncRequest::Full)
     }
 }
 
@@ -192,6 +229,29 @@ pub struct Core {
     pub started: Instant,
     /// Held while a cutover runs, so two requests do not race.
     pub cutover_lock: Mutex<()>,
+    /// Wakes the one-time library conversion thread when a mirroring pass imported something.
+    pub conversion: Arc<crate::background::Wake>,
+}
+
+impl Core {
+    /// `POST /local/power`: the platform layer's report, the pace, the status and the gate for its own work. A
+    /// changed decision is published as `power` on the change feed and wakes the worker.
+    fn power(&self, request: &HttpRequest) -> HttpResponse {
+        if request.method != "POST" { return HttpResponse::error(405, "method", "请用 POST。"); }
+        if !bearer(request).is_empty() { return HttpResponse::error(403, "internal_only", "此操作只供 App 使用。"); }
+        let v: Value = match decode(request, "电源") { Ok(v) => v, Err(e) => return e };
+        let result = lock(&self.store).power_command(&v);
+        match result {
+            Ok(out) => {
+                if out["changed"] == true {
+                    self.feed.publish("power");
+                    self.wake_background();
+                }
+                ok_json(&out)
+            }
+            Err(e) => store_error(&e),
+        }
+    }
 }
 
 /// Returns memory freed by a mirroring pass or a verification to the system, so the idle helper does not keep the
@@ -261,6 +321,12 @@ struct NewSource {
 }
 
 impl Core {
+    /// Wakes the background thread and has it look at waiting jobs again. For changes outside the library (power
+    /// state, authorization, an explicit request); writes to the library wake it on their own.
+    pub fn wake_background(&self) {
+        self.feed.wake.invalidate();
+    }
+
     pub fn status(&self) -> SyncStatus {
         self.status.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
@@ -404,6 +470,22 @@ impl Core {
         Ok(record)
     }
 
+    /// Reads only these agent transcript files (what the App's folder watcher reported), without listing folders or
+    /// touching the other sources.
+    pub fn sync_agent_files(&self, paths: &[PathBuf]) {
+        let result = lock(&self.store).sync_agent_files(paths);
+        match result {
+            Ok(r) if r["inserted"].as_u64().unwrap_or(0) + r["revised"].as_u64().unwrap_or(0) > 0 => {
+                let change = format!("AI +{} 修订 {}", r["inserted"], r["revised"]);
+                self.record_event_count(&lock(&self.store));
+                self.update_status(|s| s.last_change = Some(change));
+                self.feed.publish("data");
+            }
+            Ok(_) => {}
+            Err(e) => self.update_status(|s| s.problems = vec![format!("AI 会话：{}", e.code())]),
+        }
+    }
+
     /// One mirroring pass with the App's status bookkeeping; the first pass of a process also verifies (with hashes
     /// when the library was empty before it).
     pub fn sync_pass(&self) {
@@ -467,6 +549,7 @@ impl Core {
         });
         if changed {
             self.feed.publish("data");
+            self.conversion.wake();
         }
         if first_pass && self.status().capture_mode != "direct" {
             self.verify(empty_before);
@@ -541,6 +624,9 @@ impl Core {
         if path.starts_with("/local/agents") && !bearer(request).is_empty() {
             return HttpResponse::error(403, "internal_only", "会话设置只供 App 使用。");
         }
+        if path == "/local/power" {
+            return self.power(request);
+        }
         if path == "/local/voiceprints" {
             if request.method != "POST" { return HttpResponse::error(405,"method","请使用 POST"); }
             if !bearer(request).is_empty() { return HttpResponse::error(403,"internal_only","此操作只供 App 使用。"); }
@@ -562,7 +648,7 @@ impl Core {
             if method != "POST" {return HttpResponse::error(405,"method","请用 POST。");}
             if !bearer(request).is_empty(){return HttpResponse::error(403,"internal_only","此操作只供 App 使用。");}
             let v:Value=match decode(request,"固定流程"){Ok(v)=>v,Err(e)=>return e};
-            if path=="/local/models/authorize" {crate::workflows::authorize(&v);return ok_json(&json!({"authorized":true}));}
+            if path=="/local/models/authorize" {crate::workflows::authorize(&v);self.wake_background();return ok_json(&json!({"authorized":true}));}
             if path=="/local/compose" {
                 // Draft from the user's history (plan M3): the store builds the request, the call runs unlocked.
                 let prepared=match lock(&self.store).compose_prepare(&v){Ok(p)=>p,Err(e)=>return store_error(&e)};
@@ -587,7 +673,8 @@ impl Core {
             }
             let result=match path.as_str() {"/local/media"=>store.media_command(&v),"/local/jobs"=>store.job_command(&v),_=>store.record_management(&v,&self.internal_client)};
             drop(store);
-            return match result {Ok(v)=>{self.feed.publish("data");ok_json(&v)},Err(e)=>store_error(&e)};
+            let run_now = path=="/local/jobs" && v["action"]=="run_now";
+            return match result {Ok(v)=>{self.feed.publish("data");if run_now{self.wake_background();}ok_json(&v)},Err(e)=>store_error(&e)};
         }
         if path == "/local/connectors" {
             if !bearer(request).is_empty() {
@@ -683,7 +770,13 @@ impl Core {
                 ok_json(&json!({"revoked": req.client_id}))
             }
             ("POST", "/local/sync") => {
-                self.trigger.request();
+                // `{"paths": [...]}`: only these agent transcript files changed; no body means a full pass.
+                let paths: Option<Vec<PathBuf>> = serde_json::from_slice::<Value>(&request.body).ok()
+                    .and_then(|v| v["paths"].as_array().map(|a| a.iter().filter_map(|p| p.as_str()).take(10_000).map(PathBuf::from).collect()));
+                match paths {
+                    Some(p) => self.trigger.request_files(p),
+                    None => self.trigger.request(),
+                }
                 HttpResponse { status: 202, body: br#"{"queued":true}"#.to_vec() }
             }
             ("POST", "/local/verify") => {

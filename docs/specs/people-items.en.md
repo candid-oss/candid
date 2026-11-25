@@ -281,7 +281,7 @@ The `kind` enum of `memories` is `fact | preference | judgment | commitment | pe
 | Full lifecycle | `core/fixtures/lifecycle/` | `core/crates/candid-service/tests/lifecycle.rs` |
 | Interface | `apps/macos/Sources/Candid/PeopleCandidatesModel.swift`, `AIAgenda.swift` | Existence checked, behavior unverified |
 
-For table definitions see `schema.rs` and `schema_upgrade.rs` (`SCHEMA_VERSION = 12`).
+For table definitions see `schema.rs` and `schema_upgrade.rs` (`SCHEMA_VERSION = 13`).
 
 <a id="open"></a>
 

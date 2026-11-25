@@ -30,32 +30,26 @@ fn import(fx: &Fx, grouped: bool) {
     fx.store.media_command(&request).unwrap();
 }
 
-fn claim(fx: &Fx) -> Value {
-    fx.store
-        .media_command(&json!({"action":"recognize","id":PART,"mode":"quick"}))
-        .unwrap();
-    fx.store
-        .job_command(&json!({"action":"claim","owner":"synthetic-acceptance"}))
-        .unwrap()
+/// The recording's one job answers with a single line of text.
+fn submit(fx: &Fx, id: &str, text: &str, start: f64, end: f64) -> Result<Value> {
+    testing::transcribe_recording(&fx.store, id, &[json!({"start_seconds":start,"end_seconds":end,"text":text})])
 }
 
-fn submit(fx: &Fx, job: &Value, text: &str, end: f64) -> Result<Value> {
-    fx.store.media_command(&json!({"action":"result","job_id":job["id"],"owner":"synthetic-acceptance","attempt":job["attempt"],"mode":"quick","result":{"producer":{"model_id":"SYNTHETIC","revision":"fixture/1"},"segments":[{"start_seconds":0.0,"end_seconds":end,"text":text}]}}))
+fn recording_jobs(fx: &Fx) -> Vec<Value> {
+    fx.store.job_command(&json!({"action":"list"})).unwrap()["jobs"].as_array().unwrap().iter().filter(|j| j["kind"] == RECORDING_JOB).cloned().collect()
 }
 
 #[test]
 fn explicitly_recognizing_a_finished_recording_really_queues_a_new_attempt() {
     let fx = Fx::make("native-rerun-acceptance");
     import(&fx, false);
-    let job = claim(&fx);
-    submit(&fx, &job, "SYNTHETIC first result", 1.0).unwrap();
-    let next = claim(&fx);
-    assert_eq!(next["checkpoint"], json!({}));
-    assert!(
-        !next.is_null(),
-        "the explicit re-recognize action must do work after success"
-    );
-    submit(&fx, &next, "SYNTHETIC replacement result", 1.0).unwrap();
+    submit(&fx, PART, "SYNTHETIC first result", 0.0, 1.0).unwrap();
+    fx.store.media_command(&json!({"action":"recognize","id":PART,"mode":"quick"})).unwrap();
+    let next = recording_jobs(&fx);
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0]["state"], "queued", "the explicit re-recognize action must do work after success");
+    assert_eq!(next[0]["checkpoint"], json!({}));
+    submit(&fx, PART, "SYNTHETIC replacement result", 0.0, 1.0).unwrap();
     let old = fx
         .store
         .call_tool(
@@ -75,10 +69,9 @@ fn explicitly_recognizing_a_finished_recording_really_queues_a_new_attempt() {
 fn model_intervals_cannot_extend_beyond_the_source_audio() {
     let fx = Fx::make("native-range-acceptance");
     import(&fx, false);
-    let job = claim(&fx);
-    assert!(submit(&fx, &job, "SYNTHETIC invalid range", 100.0).is_err());
-    assert!(submit(&fx, &job, "SYNTHETIC empty range", 0.0).is_err());
-    submit(&fx, &job, "SYNTHETIC valid range", 1.0).unwrap();
+    assert!(submit(&fx, PART, "SYNTHETIC invalid range", 0.0, 100.0).is_err());
+    assert!(submit(&fx, PART, "SYNTHETIC empty range", 0.0, 0.0).is_err());
+    submit(&fx, PART, "SYNTHETIC valid range", 0.0, 1.0).unwrap();
 }
 
 #[test]
@@ -142,37 +135,16 @@ fn record_queries_audit_success_and_denial() {
 }
 
 #[test]
-fn result_mode_hash_and_retry_validation_preserves_the_lease_and_human_edits() {
+fn a_new_transcript_keeps_human_edits_and_replaces_model_text() {
     let fx = Fx::make("native-provenance-acceptance");
     import(&fx, false);
     fx.store.media_command(&json!({"action":"edit","id":PART,"title":"SYNTHETIC human title","notes":"human correction"})).unwrap();
-    let job = claim(&fx);
-    let mut request = json!({"action":"result","job_id":job["id"],"owner":"synthetic-acceptance","attempt":job["attempt"],"mode":"conversation","result":{"producer":{"model_id":"SYNTHETIC","revision":"fixture/1"},"segments":[{"start_seconds":0.,"end_seconds":1.,"text":"SYNTHETIC new text"}]}});
-    assert!(fx.store.media_command(&request).is_err());
-    request["mode"] = json!("invalid");
-    assert!(fx.store.media_command(&request).is_err());
-    request["mode"] = json!("quick");
-    request["result"]["source_sha256"] = json!("wrong");
-    assert!(fx.store.media_command(&request).is_err());
-    request["result"]["source_sha256"] = json!(fx.texts("SELECT digest FROM media_objects")[0]);
-    request["result"]["segments"][0]["sample_end"] = json!(8001);
-    assert!(fx.store.media_command(&request).is_err());
-    request["result"]["segments"][0]["sample_start"] = json!(0);
-    request["result"]["segments"][0]["sample_end"] = json!(8000);
-    request["result"]["segments"][0]["sample_rate"] = json!(8000);
-    fx.store.job_command(&json!({"action":"checkpoint","id":job["id"],"owner":"synthetic-acceptance","attempt":job["attempt"],"checkpoint":{"finished_parts":99}})).unwrap();
-    fx.store.media_command(&request).unwrap();
-    fx.store.media_command(&request).unwrap();
-    let next = claim(&fx);
-    assert!(next["attempt"].as_i64().unwrap() > job["attempt"].as_i64().unwrap());
-    submit(&fx, &next, "SYNTHETIC replacement model text", 1.).unwrap();
+    submit(&fx, PART, "SYNTHETIC new text", 0.0, 1.0).unwrap();
+    fx.store.media_command(&json!({"action":"recognize","id":PART,"mode":"quick"})).unwrap();
+    submit(&fx, PART, "SYNTHETIC replacement model text", 0.0, 1.0).unwrap();
     let item = fx.store.media_item(PART).unwrap();
     assert_eq!(item["title"], "SYNTHETIC human title");
     assert_eq!(item["notes"], "human correction");
-    assert_eq!(
-        fx.scalar("SELECT COUNT(*) FROM media_recognitions WHERE mode LIKE 'history:%'"),
-        2
-    );
     assert!(fx
         .store
         .call_tool(
@@ -204,14 +176,8 @@ fn grouped_query_timestamps_samples_references_and_default_visibility_follow_the
     let other = "20000000-0000-4000-8000-000000000003";
     let path = fx.root.join("SYNTHETIC.wav");
     fx.store.media_command(&json!({"action":"import","id":other,"filename":"SYNTHETIC.wav","kind":"audio","source":"mac_microphone","path":path,"occurred_at":"2026-11-12T00:00:02Z","recording":{"recording_id":RECORDING,"segment_index":1,"sample_start":16000,"sample_count":8000,"sample_rate":8000,"recording_started_at":"2026-11-12T00:00:00Z"}})).unwrap();
-    fx.store
-        .media_command(&json!({"action":"recognize","id":other,"mode":"quick"}))
-        .unwrap();
-    let job = fx
-        .store
-        .job_command(&json!({"action":"claim","owner":"synthetic-acceptance"}))
-        .unwrap();
-    submit(&fx, &job, "SYNTHETIC second part offset", 1.).unwrap();
+    fx.store.media_command(&json!({"action":"state","id":RECORDING,"state":"stopped"})).unwrap();
+    submit(&fx, RECORDING, "SYNTHETIC second part offset", 2., 3.).unwrap();
     let at = chrono::DateTime::parse_from_rfc3339("2026-11-12T00:00:02Z")
         .unwrap()
         .timestamp_millis();
@@ -286,7 +252,7 @@ fn grouped_query_timestamps_samples_references_and_default_visibility_follow_the
     fx.store
         .media_command(&json!({"action":"delete","id":RECORDING}))
         .unwrap();
-    assert_eq!(fx.scalar("SELECT COUNT(*) FROM media_recognitions"), 0);
+    assert_eq!(fx.scalar("SELECT COUNT(*) FROM store_meta WHERE key GLOB 'workflows.speakers.result/1:*'"), 0, "the recording's transcript goes with it");
     assert!(fx
         .store
         .call_tool(
@@ -295,4 +261,22 @@ fn grouped_query_timestamps_samples_references_and_default_visibility_follow_the
             &fx.client
         )
         .is_err());
+}
+
+#[test]
+fn a_worker_outside_the_core_completes_the_recording_job_under_its_lease() {
+    let fx = Fx::make("native-recording-result");
+    import(&fx, false);
+    // A first answer through the helper sets up the voice service; then a new attempt is answered over the API.
+    submit(&fx, PART, "SYNTHETIC first", 0.0, 1.0).unwrap();
+    fx.store.media_command(&json!({"action":"recognize","id":PART,"mode":"quick"})).unwrap();
+    let job = fx.store.job_command(&json!({"action":"claim","kind":RECORDING_JOB,"owner":"SYNTHETIC-worker"})).unwrap();
+    let mut result = json!({"action":"result","format":"candid-recording-result/1","job_id":job["id"],"attempt":job["attempt"],"owner":"someone else",
+        "result":{"speaker_count":0,"unresolved_segments":0,"producer":{"model_id":"SYNTHETIC","model_revision":"fixture/1"},
+                  "segments":[{"start_seconds":0.0,"end_seconds":0.5,"text":"SYNTHETIC from the worker"}]}});
+    assert!(fx.store.media_command(&result).is_err(), "only the lease holder may answer");
+    result["owner"] = json!("SYNTHETIC-worker");
+    let item = fx.store.media_command(&result).unwrap();
+    assert_eq!(item["processing_status"], "ready");
+    assert_eq!(item["segments"][0]["text"], "SYNTHETIC from the worker");
 }

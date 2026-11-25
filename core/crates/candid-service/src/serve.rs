@@ -33,6 +33,9 @@ pub struct ServeOptions {
     pub parent_pid: Option<i32>,
     /// Command path for the setup snippets; defaults to this executable.
     pub cli_path: Option<String>,
+    /// `--power ac|battery`: a declared power state for a core run without the App (never goes stale). None
+    /// leaves the state unknown until a platform report arrives; unknown counts as battery.
+    pub power: Option<bool>,
 }
 
 impl ServeOptions {
@@ -45,10 +48,12 @@ impl ServeOptions {
             created_by: format!("candid/{}", crate::VERSION),
             ledger: None,
             hub: None,
-            sync_interval: Duration::from_secs(30),
+            // A fallback only: the App asks for a pass when an agent folder changes (`POST /local/sync`).
+            sync_interval: Duration::from_secs(10 * 60),
             socket: None,
             parent_pid: None,
             cli_path: None,
+            power: None,
         }
     }
 }
@@ -209,6 +214,7 @@ impl Service {
             parent_pid: opts.parent_pid,
             started: std::time::Instant::now(),
             cutover_lock: Mutex::new(()),
+            conversion: Default::default(),
         });
         core.load_capture_mode();
         let data = serde_json::to_vec(&endpoint).map_err(|e| failed(e.to_string()))?;
@@ -216,6 +222,7 @@ impl Service {
         {
             let store = shared.lock().map_err(|_| failed("store lock".into()))?;
             ensure_cli_token(&store, &opts.run_dir).map_err(|e| failed(format!("cli.token：{e}")))?;
+            store.power_declare(opts.power).map_err(|e| failed(format!("电源状态：{}", e.message())))?;
             let events = store.event_count().unwrap_or(0);
             core.update_status(|s| s.events = events);
         }
@@ -231,7 +238,17 @@ impl Service {
                     .name("candid-sync".into())
                     .spawn(move || {
                         crate::scheduling::background();
+                        // A full pass (mail, ledger, Hub, every agent folder) runs on request and at the latest after
+                        // `interval`; in between the App's folder watcher asks for single transcript files.
+                        let mut request = crate::local::SyncRequest::Full;
+                        let mut next_full = std::time::Instant::now();
                         while !stop.load(Ordering::SeqCst) {
+                            if let crate::local::SyncRequest::Files(files) = &request {
+                                core.sync_agent_files(&files.iter().cloned().collect::<Vec<_>>());
+                                request = core.trigger.wait(next_full.saturating_duration_since(std::time::Instant::now()), &stop);
+                                continue;
+                            }
+                            next_full = std::time::Instant::now() + interval;
                             let before = core.status();
                             core.sync_pass();
                             let s = core.status();
@@ -240,7 +257,7 @@ impl Service {
                                 log(&format!("同步：事件 {}{}{}", s.events, s.last_change.map(|c| format!("，{c}")).unwrap_or_default(),
                                     if s.problems.is_empty() { String::new() } else { format!("，问题 {}", s.problems.len()) }));
                             }
-                            core.trigger.wait(interval, &stop);
+                            request = core.trigger.wait(next_full.saturating_duration_since(std::time::Instant::now()), &stop);
                         }
                     })
                     .map_err(|e| failed(e.to_string()))?,
@@ -252,20 +269,35 @@ impl Service {
             (Some(l), Some(path)) => Some(LocalServer::start(l, path, opts.workers, core.clone()).map_err(|e| failed(e.to_string()))?),
             _ => None,
         };
-        let workflow_store=shared.clone();let workflow_stop=stop.clone();let workflow_core=core.clone();
+        // Every write to a table some background step reads wakes the thread, whichever path made it. Job rows also
+        // tell the App about progress (`jobs` events, at most one a second), so its job views need no timer.
+        {
+            let wake = core.feed.wake().clone();
+            let weak = Arc::downgrade(&core);
+            let last_progress = std::sync::atomic::AtomicI64::new(0);
+            shared.lock().map_err(|_| failed("store lock".into()))?.on_write(move |table| {
+                if crate::background::wakes_on(table) {
+                    wake.wake();
+                }
+                if table == "jobs" || table == "job_checkpoints" {
+                    let now = crate::local::now_ms();
+                    let last = last_progress.load(Ordering::Relaxed);
+                    if now - last >= 1000 && last_progress.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+                        if let Some(core) = weak.upgrade() {
+                            core.feed.announce("jobs");
+                        }
+                    }
+                }
+            });
+        }
+        let (workflow_store, workflow_stop, workflow_core) = (shared.clone(), stop.clone(), core.clone());
         let workflows = Some(std::thread::Builder::new().name("candid-workflows".into()).spawn(move || {
             crate::scheduling::background();
-            let mut worker = crate::workflows::Worker::default();
-            let mut compactor = crate::audio_compaction::Compactor::default();
-            while !workflow_stop.load(Ordering::SeqCst) {
-                let before = jobs_revision(&workflow_store);
-                worker.tick(&workflow_store, &|| workflow_core.feed.publish("data"));
-                compactor.tick(&workflow_store);
-                if jobs_revision(&workflow_store) != before { workflow_core.feed.publish("data"); }
-                if !workflow_stop.load(Ordering::SeqCst) { std::thread::park_timeout(Duration::from_secs(2)); }
-            }
+            let wake = workflow_core.feed.wake().clone();
+            let mut sleep = crate::background::WakeSleep { wake: &wake, stop: &workflow_stop };
+            crate::background::run(&mut Default::default(), &workflow_store, &wake, &mut sleep, &|| workflow_core.feed.announce("data"));
         }).map_err(|e| failed(e.to_string()))?);
-        let convert = crate::library_conversion::start(shared.clone(), stop.clone()).ok();
+        let convert = crate::library_conversion::start(shared.clone(), stop.clone(), core.conversion.clone()).ok();
         Ok(Service { workflows, convert, store: shared, endpoint, core, run_dir: opts.run_dir.clone(), server, local, stop, sync })
     }
 
@@ -278,13 +310,13 @@ impl Service {
     pub fn stop(mut self) {
         self.stop.store(true, Ordering::SeqCst);
         self.core.trigger.request();
-        if let Some(w) = &self.workflows { w.thread().unpark(); }
+        self.core.feed.wake().wake();
         if let Some(s) = self.sync.take() {
             let _ = s.join();
         }
         if let Some(w)=self.workflows.take(){let _=w.join();}
         if let Some(c) = self.convert.take() {
-            c.thread().unpark();
+            self.core.conversion.wake();
             let _ = c.join();
         }
         self.core.feed.close_all();
@@ -303,6 +335,3 @@ impl Service {
     }
 }
 
-fn jobs_revision(store: &SharedStore) -> Option<i64> {
-    store.lock().ok().and_then(|s| s.background_revision("jobs").ok())
-}

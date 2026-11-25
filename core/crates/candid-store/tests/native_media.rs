@@ -131,7 +131,7 @@ fn leased_queue_checkpoint_restart_fencing_cancel_and_result() {
     let fx = Fx::make("queue");
     let v = upload(&fx, A);
     fx.store.media_command(&v).unwrap();
-    let enqueue = json!({"action":"enqueue","kind":"speech.recognize","input_ref":A,"config_version":"synthetic/1"});
+    let enqueue = json!({"action":"enqueue","kind":"speech.recording","input_ref":A,"config_version":"synthetic/1"});
     let a = fx.store.job_command(&enqueue).unwrap();
     assert_eq!(a, fx.store.job_command(&enqueue).unwrap());
     let id = a["id"].as_str().unwrap();
@@ -159,16 +159,16 @@ fn leased_queue_checkpoint_restart_fencing_cancel_and_result() {
     assert_eq!(next["attempt"], 2);
     assert_eq!(next["checkpoint"]["part"], 3);
     assert!(fx.store.job_command(&base).is_err());
+    // Per-file results of earlier versions are refused; the recording's one job brings the transcript.
     let result = json!({"action":"result","job_id":id,"owner":"two","attempt":2,"mode":"quick","result":{"producer":{"model_id":"SYNTHETIC-STUB","revision":"fixture/1"},"segments":[{"start_seconds":0.,"end_seconds":1.,"text":"合成转写"}]}});
-    fx.store.media_command(&result).unwrap();
+    assert!(fx.store.media_command(&result).is_err());
+    let item = candid_store::testing::transcribe_recording(&fx.store, A, &[json!({"start_seconds":0.,"end_seconds":1.,"text":"合成转写"})]).unwrap();
+    assert_eq!(item["processing_status"], "ready");
     assert_eq!(
         fx.store.media_command(&json!({"q":"合成转写"})).unwrap()["items"][0]["id"],
         A
     );
-    assert_eq!(
-        fx.store.media_command(&result).unwrap()["processing_status"],
-        "ready"
-    );
+    assert_eq!(fx.store.job_command(&json!({"action":"get","id":id})).unwrap()["state"], "cancelled", "the earlier job was superseded");
     fx.store
         .media_command(&json!({"action":"recognize","id":A,"mode":"quick"}))
         .unwrap();
@@ -320,12 +320,21 @@ fn anonymous_speaker_labels_remain_scoped_to_each_physical_recording() {
     a["recording"]=json!({"recording_id":R,"segment_index":0,"sample_start":0,"sample_count":8000,"sample_rate":8000,"recording_started_at":"2026-11-12T00:00:00Z"});
     fx.store.media_command(&a).unwrap();let mut b=a.clone();b["id"]=json!(B);b["recording"]["segment_index"]=json!(1);b["recording"]["sample_start"]=json!(8000);fx.store.media_command(&b).unwrap();
     fx.store.media_command(&json!({"action":"edit","id":R,"title":"人工标题","notes":"人工备注"})).unwrap();
+    // Per-file transcripts stored by earlier versions still read with their labels scoped to each file.
     for id in [A,B] {
-        fx.store.media_command(&json!({"action":"recognize","id":id,"mode":"conversation"})).unwrap();
-        let j=fx.store.job_command(&json!({"action":"claim","kind":"speech.recognize","owner":"SYNTHETIC"})).unwrap();
-        fx.store.media_command(&json!({"action":"result","job_id":j["id"],"owner":"SYNTHETIC","attempt":j["attempt"],"mode":"conversation","result":{"producer":{"model_id":"SYNTHETIC","revision":"test/1"},"segments":[{"start_seconds":0.,"end_seconds":0.5,"text":"合成发言","speaker":"说话人1","identity":"候选人物"}]}})).unwrap();
+        fx.store.raw_db().execute("UPDATE media_objects SET metadata=json_set(metadata,'$.processing_status','ready','$.segments',json(?)) WHERE id=?",
+            &[candid_store::testing::rusqlite::types::Value::Text(json!([{"start_seconds":0.,"end_seconds":0.5,"text":"合成发言","speaker":"说话人1","identity":"候选人物"}]).to_string()),
+              candid_store::testing::rusqlite::types::Value::Text(id.into())]).unwrap();
     }
     let item=fx.store.media_item(R).unwrap();assert_eq!(item["segments"][0]["speaker"],"录音段1 · 说话人1");assert_eq!(item["segments"][1]["speaker"],"录音段2 · 说话人1");assert_eq!(item["segments"][1]["start_seconds"],1.);assert_eq!(item["segments"][1]["source_segment_id"],B);assert_eq!(item["title"],"人工标题");assert_eq!(item["notes"],"人工备注");
+    assert_eq!(item["processing_status"],"ready","every file has its transcript");
+    // The recording's one job gives one set of speakers across files; each line points at the file that holds it.
+    let item=candid_store::testing::transcribe_recording(&fx.store,R,&[
+        json!({"start_seconds":0.,"end_seconds":0.5,"text":"合成发言","speaker":"说话人 1"}),
+        json!({"start_seconds":1.,"end_seconds":1.5,"text":"合成发言","speaker":"说话人 1"})]).unwrap();
+    assert_eq!(item["segments"][0]["speaker"],"说话人 1");assert_eq!(item["segments"][1]["speaker"],"说话人 1");
+    assert_eq!(item["segments"][0]["source_segment_id"],A);assert_eq!(item["segments"][1]["source_segment_id"],B);
+    assert_eq!(item["title"],"人工标题");assert_eq!(item["notes"],"人工备注");
     assert!(fx.store.media_command(&json!({"action":"content","id":R})).is_ok());
 }
 

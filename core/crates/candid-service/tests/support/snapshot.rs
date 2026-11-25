@@ -1,6 +1,6 @@
 //! Snapshot files under `core/fixtures/`: compare, or rewrite with `UPDATE_SNAPSHOTS=1`.
 //!
-//! Values are normalised first: every UUID and every run of 24+ hex digits, or 10+ mixing digits and letters (ids,
+//! Values are normalised first: every UUID and every run of 24+ hex digits, or 10+ mixing digits and letters or following a prefix like `it-` (ids,
 //! hashes that cover ids), becomes `<id>` / `<hex>`, and `sources` lists are sorted, so a snapshot does not change
 //! from run to run (ids are random, and lists ordered by id come back in any order).
 #![allow(dead_code)]
@@ -38,7 +38,9 @@ fn normalise_str(s: &str) -> String {
             let end = (i..chars.len()).find(|&j| !is_hex(chars[j])).unwrap_or(chars.len());
             let run = &chars[i..end];
             let mixed = run.iter().any(|c| c.is_ascii_digit()) && run.iter().any(|c| c.is_ascii_alphabetic());
-            if (end - i >= 24 || (end - i >= 10 && mixed)) && (end == chars.len() || !chars[end].is_ascii_alphanumeric()) {
+            // A prefixed id (`it-…`) is random hex that can happen to be all digits (about 1 run in 100).
+            let prefixed = i >= 2 && chars[i - 1] == '-' && chars[i - 2].is_ascii_alphabetic();
+            if (end - i >= 24 || (end - i >= 10 && (mixed || prefixed))) && (end == chars.len() || !chars[end].is_ascii_alphanumeric()) {
                 out += "<hex>";
                 i = end;
                 continue;

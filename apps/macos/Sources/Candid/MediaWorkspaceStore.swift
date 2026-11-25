@@ -129,7 +129,10 @@ final class MediaWorkspaceStore {
         clockTask = Task { [weak self] in
             var lastHeard = Date()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(80))
+                // Smooth levels only while a waveform is on screen; otherwise the clock text and the silence check
+                // need one look a second.
+                let drawing = (self?.levelViewers ?? 0) > 0
+                try? await Task.sleep(for: drawing ? .milliseconds(80) : .seconds(1))
                 guard !Task.isCancelled, let self, let started = self.recordingStartedAt else { return }
                 if let failure = self.capture.recordingFailure() {
                     Task { await self.stopRecording(failure: failure) }
@@ -152,6 +155,9 @@ final class MediaWorkspaceStore {
             }
         }
     }
+
+    /// Views drawing the live microphone level on screen (see `followRecording`).
+    @ObservationIgnored var levelViewers = 0
 
     /// Roughly -44 dBFS: above a quiet room, below soft speech.
     nonisolated static let audibleLevel: Float = 0.015
@@ -288,6 +294,15 @@ final class MediaWorkspaceStore {
         guard !isDemo else { return }
         do { replace(try await client().cancelProcessing(record.id)); await refresh() }
         catch { self.error = error.localizedDescription }
+    }
+
+    /// 「现在处理」: every waiting job of this recording (and its parts) runs once, past the power gate only.
+    func runNow(_ record: MediaLibraryRecord) async {
+        guard !isDemo, let channel = TimelineService.shared.channel else { return }
+        do {
+            _ = try await channel.send("POST", "/local/jobs", body: JSONSerialization.data(withJSONObject: ["action": "run_now", "input_ref": record.id.uuidString.lowercased()])).checked()
+            await refresh()
+        } catch { self.error = error.localizedDescription }
     }
 
     func runAI(_ record: MediaLibraryRecord, step: String) async {

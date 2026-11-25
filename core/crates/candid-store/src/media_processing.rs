@@ -45,7 +45,7 @@ impl TimelineStore {
         inputs.push(id.into());
         self.db.transaction(|| {
             for input in &inputs {
-                self.db.execute("UPDATE jobs SET state='cancelled',lease_until_ms=NULL,error_code='user_cancelled',updated_ms=? WHERE input_ref=? AND state IN ('queued','running') AND kind IN ('speech.recognize','workflow.speakers','workflow.title','workflow.summary')",&[int(self.clock.now_ms()),text(input)])?;
+                self.db.execute("UPDATE jobs SET state='cancelled',lease_until_ms=NULL,error_code='user_cancelled',updated_ms=? WHERE input_ref=? AND state IN ('queued','running') AND kind IN ('speech.recording','speech.recognize','workflow.speakers','workflow.title','workflow.summary')",&[int(self.clock.now_ms()),text(input)])?;
             }
             Ok(())
         })?;
@@ -64,6 +64,7 @@ impl TimelineStore {
         }
         for input in &all {
             for kind in [
+                crate::RECORDING_JOB,
                 "speech.recognize",
                 "workflow.speakers",
                 "workflow.title",
@@ -77,7 +78,7 @@ impl TimelineStore {
             .filter(|j| {
                 matches!(
                     j["kind"].as_str(),
-                    Some("speech.recognize" | "workflow.speakers")
+                    Some("speech.recording" | "speech.recognize" | "workflow.speakers")
                 )
             })
             .cloned()
@@ -117,9 +118,11 @@ impl TimelineStore {
                 j["state"].as_str().unwrap_or("idle")
             };
             let total = recording_duration.or_else(|| p["total_seconds"].as_f64());
+            // The recording job reports seconds of the whole recording; per-file jobs of earlier versions add up.
+            let before = if j["kind"] == "speech.recognize" { completed_parts } else { 0. };
             let completed = p["completed_seconds"]
                 .as_f64()
-                .map(|c| (completed_parts + c).min(total.unwrap_or(f64::MAX)));
+                .map(|c| (before + c).min(total.unwrap_or(f64::MAX)));
             json!({"state":state,"kind":j["kind"],"reason":j["reason"],"stage":if j["kind"]=="workflow.speakers"{json!("speaker_grouping")}else{p["stage"].clone()},"created_ms":j["created_ms"],"updated_ms":p["updated_ms"].as_i64().unwrap_or(j["updated_ms"].as_i64().unwrap_or(0)),"elapsed_seconds":(self.clock.now_ms()-p["started_ms"].as_i64().unwrap_or(j["updated_ms"].as_i64().unwrap_or(self.clock.now_ms()))).max(0)/1000,"completed_seconds":completed,"total_seconds":total,"stage_seconds":(self.clock.now_ms()-p["updated_ms"].as_i64().unwrap_or(j["updated_ms"].as_i64().unwrap_or(self.clock.now_ms()))).max(0)/1000,"cancellation_supported":p["cancellation_supported"],"stop_confirmed":p["stop_confirmed"],"model_may_continue":j["state"]=="cancelled"&&j["attempts"].as_i64().unwrap_or(0)>0&&p["cancellation_supported"]!=true})
         };
         item["processing"] = chosen.map(&project).unwrap_or(Value::Null);

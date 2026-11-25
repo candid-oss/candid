@@ -50,12 +50,8 @@ struct MediaWorkspaceView: View {
             }
             await store.refresh()
         }
-        .task(id: store.hasActiveJobs) {
-            while store.hasActiveJobs {
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
-                await store.refresh()
-            }
-        }
+        // Job progress arrives as change-feed events, not from a timer.
+        .refresh(on: TimelineService.shared.jobsVersion) { if store.hasActiveJobs { await store.refresh() } }
         .task(id: store.selectedDetailKey) { await store.loadDetails() }
         // The detail side is never an empty panel while there is something to show.
         .task(id: store.records.first?.id) {

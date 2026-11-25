@@ -47,7 +47,7 @@ One model configuration (version 1: `providers`, `models`, `roles`) is saved as 
 - Only version 1 and known fields are accepted. `secret_ref` must be a keychain reference (it must not start with `sk-` and must be at most 80 characters).
 - `base_url` must be `http(s)://` and must not contain `@`, `?` or `#`.
 - `headers_json` must not contain credential headers such as `authorization`, `x-api-key` or `cookie`.
-- When the configuration changes, queued and running `workflow.*` and `speech.recognize` jobs are cancelled (`configuration_changed`).
+- When the configuration changes, queued and running `workflow.*` and `speech.recording` jobs are cancelled (`configuration_changed`).
 
 The key is handed to the core only by the app, through `POST /local/models/authorize`, into core process memory (`workflows::authorize`). It is not written to disk. When the core sends a request, it gets the key by `secret_ref`.
 
@@ -135,7 +135,7 @@ The table below follows `core/workflows/catalog.json` (the feature catalog, the 
 | Pi conversation, manual skills | `agent_chat` | User, daily-review hook | Conversation and tool results | Conversation reply | Frozen per run, see 7.2 | Interactive |
 | Screenshot excerpt (`screen-excerpt`, `screen.excerpt`) | `vision` | New content appears in a screenshot | Screenshot (scaled to WebP) plus window, URL and OCR reference; up to 3 chat frames merged | JSON: kind, title, messages, excerpt; up to 4096 tokens | 300 | P1 background |
 | Item extraction (`item-extract`, `items.extract`) | `summary` | A chat conversation is idle for 10 minutes; a recording ends; key mail (unverified) | New messages (at most 40 each time, 20 messages of earlier context, at most 15 open items, each cut to 500 characters) | JSON, up to 2048 tokens, one retry on bad JSON | 150 | P1 background |
-| Recording transcription (`transcribe`, `speech.recognize`) | `asr` / `diarization` (voice service) | After a recording is saved | Audio; when it exceeds the per-block limit it is split into blocks with checkpoints saved | Timestamped transcript and speakers; the core validates the source hash and producer | 100 | P2 background |
+| Recording transcription (`transcribe`, `speech.recording`) | `asr` / `diarization` (voice service) | After a recording ends | The whole recording in 10-minute windows (1-minute overlap), one call per window with checkpoints saved | Timestamped transcript and speakers; the core validates the source hash and producer | 100 | P2 background |
 | Recording title, summary, decisions and to-dos, tags, daily review (`title`, `summary`, `decisions`, `tags`, `daily`, `workflow.*`) | See section 3 | Title: automatic after transcription; summary: after a recording ends (turned on in settings); the rest are manual | Transcript text (rejected if over 32000 bytes) | A draft, written to the derived layer | 100 each | P2 background |
 | Screenshot text curation (`screenshot`, `workflow.screenshot`) | `vision` | Manual | One image (rejected if over 16 MiB) | A Markdown draft | 100 | P2 background |
 | Person judgment (`people-judge`, `people.judge`) | `summary` | A new alias appears that has candidate pairs | At most 10 pairs per batch, at most 5 batches queued at once; at most 4 messages per side, 80 characters each | JSON, up to 2048 tokens, one retry on bad JSON | 50 | P3 background |
@@ -178,17 +178,31 @@ For one conversation, its extraction is not triggered until its excerpt jobs are
 ### 6.1 Scheduling
 
 - The background lane is the only consumer of the job queue. One work loop takes due jobs by "priority, then creation time", pre-checks them one by one, and claims and runs the first one that can run. Screenshot excerpts are ordered by screenshot capture time, so chat messages are appended in order.
-- Priority table (`candid-store/src/job_priority.rs`, one row per job type): P1 `screen.excerpt`, `items.extract`; P2 `speech.recognize`, `workflow.*`; P3 `screen.summarize`, `people.judge`. A job type not in the table is not taken by the background lane. Interactive calls (P0) do not enter the queue.
-- The work loop does not spin. It reads the queue only when the version counter of jobs, workflow configuration or data changes, when authorization changes, or when the next due time arrives. As a fallback it checks every 30 seconds.
+- Priority table (`candid-store/src/job_priority.rs`, one row per job type): P1 `screen.excerpt`, `items.extract`; P2 `speech.recording`, `workflow.*`; P3 `screen.summarize`, `people.judge`. A job type not in the table is not taken by the background lane. Interactive calls (P0) do not enter the queue.
+- The work loop does not spin. It reads the queue only when the version counter of jobs, workflow configuration or data changes, when authorization changes, or when the next due time arrives. There is no fixed period: the background thread is woken by ingest, job, power and settings changes (`Core::wake_background`); the legacy mirroring pass has a 10-minute fallback.
 - The scans that enqueue jobs (recording, curated-layer sync, people, screenshot excerpts, items, activity blocks, automations) run before the queue is read, in the same loop round.
 - Claiming uses a lease (180 seconds) and an attempt number. After a crash, expired tasks are claimed again in the next round. When a result is submitted, the attempt number, cancellation, source revision, permission and configuration hash are checked, so a late result cannot overwrite a newer one. Completed voice blocks have checkpoints, so a restart does not charge them again.
-- Job states: `queued`, `running`, `done`, `failed`, `cancelled`. A waiting condition is not a separate state. It is `queued` plus an `error_code` (see 6.3). The same reason is logged only once and not written to the database again.
+- Job states: `queued`, `running`, `done`, `failed`, `cancelled`. A waiting condition is not a separate state. It is `queued` plus an `error_code` (see 6.4). The same reason is logged only once and not written to the database again.
 
-The background lane yielding while an interactive call runs, and pausing P2/P3 when the battery is below 20%: not implemented. The two lanes currently do not know about each other. The rules for when background jobs may run are being drafted separately.
+<a id="power"></a>
+
+### 6.2 When to spend power
+
+Any computation the user is not waiting for is background work: it runs only when spending power is allowed, runs once per input, never wakes without an event, and every run is accounted for (design and measurements: [power v1](../plans/power-v1.md), in Chinese).
+
+- **One switch, Background Processing** (top of the AI settings; `power.pace/1` in `store_meta`): Anytime (`anytime`; still waits when the Mac is hot, and acts like Power Saver in Low Power Mode), Power Saver (`saver`, the default: on battery no on-device model runs, and work resumes when plugged in), Manual (`manual`: automatic jobs are still queued but all wait until Process Now). There are no battery percentages, plugged-in durations or batches, and no per-feature power options.
+- **The platform reports, the core keeps**: the app reports through `POST /local/power` at launch, on every change (power, thermal state, Low Power Mode, wake) and whenever it reconnects to the core. A report holds until the next one, with no clock-based expiry. Before any report the state is unknown, and unknown counts as battery. Power events in the timeline stay evidence; the gate never reads them.
+- **One decision**: every background job kind registers its cost in `JOB_CLASSES` in `job_priority.rs`: heavy (`Heavy`, on-device model), light (`Light`, remote model or no model), by model (`ByModel`, decided by the role's provider). `feature_check` asks `power_allows` as its fifth condition; while the gate is closed the queue does not pick held heavy jobs. The app's own background work (`app.ocr`, `app.vision`) is registered in the same table and asks the core before each automatic run. A kind that appears in code without being registered fails the `every_job_kind_is_registered` test.
+- **Waiting reasons**: `waiting_power`, `waiting_thermal` and `waiting_manual`, shown like the waiting reasons in 6.4.
+- **Process Now** marks a waiting job as manual and queues it. It passes only the power condition, never authorization, sources or daily limits. A transcription the user asks for is also a manual run.
+- **Accounting**: each job records CPU milliseconds (core thread time plus the voice service's own `cpu_seconds`), wall milliseconds and the power state it ran on (`jobs.cpu_ms`, `wall_ms`, `power_state`). The `energy_summary` tool gives runs, CPU seconds, wall seconds and battery CPU seconds by day and job kind, plus what is waiting and why. The settings line and the hourly `core.log` line come from it; counts only.
+- **No polling**: `candid-service/tests/no_polling.rs` scans core and app sources for sleeps in loops and repeating timers; anything not in `core/fixtures/polling/allowlist.txt` (each line with its reason) fails.
+
+The background lane yielding while an interactive call runs: not implemented. The two lanes currently do not know about each other.
 
 <a id="budget"></a>
 
-### 6.2 Budget
+### 6.3 Budget
 
 | Item | Rule | Where it is stored |
 |---|---|---|
@@ -205,7 +219,7 @@ Handling after a limit is exceeded: a screenshot excerpt stays in the queue wait
 
 <a id="retry"></a>
 
-### 6.3 Failure and retry
+### 6.4 Failure and retry
 
 | Case | Handling |
 |---|---|
@@ -293,7 +307,7 @@ The rule is that the platform app does not call models directly. The current sta
 | Reduce roles to three | Not implemented | The core and the app still use `title`, `episode`, `asr`, `diarization`, and the app catalog also has `ocr`, `relevance`, `embedding`. See 3.1 |
 | The Mac App calls the provider directly from Swift for cloud speech transcription | Not implemented | It bypasses the core and does not enter `ai_calls`. This conflicts with "only the core calls models". See [Architecture](../architecture.md#debts) |
 | The Swift side keeps its own model configuration and usage log, then syncs into the core | Not implemented | There should be only one copy, in the core. See [Architecture](../architecture.md#debts) |
-| Background yields to interactive calls, pause below 20% battery | Not implemented | The rules for when background jobs may run are being drafted separately |
+| Background yields to interactive calls | Not implemented | The two lanes do not know about each other; the power gate is in 6.2 |
 | Global daily money limit for cloud (default 0) | Not implemented | Today there is only the per-role `daily_budget` |
 | 「帮我写」 (Help Me Write) "current frame excerpt" and image input for screen Q&A | Not implemented | 「帮我写」 currently reads text context only |
 | Hourly / weekly digests (`hourly-weekly`) | Not implemented | Catalog placeholder |
@@ -312,6 +326,6 @@ The rule is that the platform app does not call models directly. The current sta
 ## 10. Sources
 
 - [Timeline v1 §4.9 "Model providers, roles and usage"](timeline-v1.en.md#ai-usage): section 2 and 3.1 (the table and accounting parts).
-- [Data Layer v1 plan §4 "Model call planning"](../plans/data-layer-v1.md): section 4 (call list), section 5 (dependency order), sections 1.2 and 6.1 (scheduling), 6.2 (budget), 6.3 (failure and retry). The verification in §4.6 is folded into section 9.
+- [Data Layer v1 plan §4 "Model call planning"](../plans/data-layer-v1.md): section 4 (call list), section 5 (dependency order), sections 1.2 and 6.1 (scheduling), 6.3 (budget), 6.4 (failure and retry). The verification in §4.6 is folded into section 9.
 - [Agent Platform v1 §4 "Scheduling, cost and recovery"](agent-platform-v1.en.md): section 6 and 2.3 (idempotency, lease, reservation and settlement, cancellation).
 - [Agent Platform v1 §4.2 "Settings and management"](agent-platform-v1.en.md#ai-settings): section 7.1.

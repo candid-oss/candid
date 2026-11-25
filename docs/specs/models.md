@@ -47,7 +47,7 @@ Pi 的模型网关 `POST /local/pi/model` 不占这两条通道：按「运行�
 - 只接受版本 1 和已知字段；`secret_ref` 只能是钥匙串引用（不能以 `sk-` 开头、不超过 80 字符）；
 - `base_url` 必须是 `http(s)://`，不含 `@`、`?`、`#`；
 - `headers_json` 不得含 `authorization`、`x-api-key`、`cookie` 等凭据头；
-- 配置有变化时，取消排队中和运行中的 `workflow.*`、`speech.recognize` 作业（`configuration_changed`）。
+- 配置有变化时，取消排队中和运行中的 `workflow.*`、`speech.recording` 作业（`configuration_changed`）。
 
 密钥只由 App 通过 `POST /local/models/authorize` 交给核心进程内存（`workflows::authorize`），不落盘；核心发请求时按 `secret_ref` 取。
 
@@ -135,7 +135,7 @@ Pi 的模型网关 `POST /local/pi/model` 不占这两条通道：按「运行�
 | Pi 对话、手动技能 | `agent_chat` | 用户、日回顾钩子 | 对话与工具结果 | 对话回答 | 每次运行冻结，见 7.2 | 交互 |
 | 截图摘录（`screen-excerpt`，`screen.excerpt`） | `vision` | 截图出现新内容 | 截图（缩放为 WebP）加窗口、网址、OCR 参考；聊天类截图最多 3 帧合并 | JSON：类型、标题、消息、摘录；上限 4096 token | 300 | P1 后台 |
 | 条目抽取（`item-extract`，`items.extract`） | `summary` | 聊天对话空闲 10 分钟；录音结束；重点邮件（未验证） | 新消息（每次最多 40 条，上文 20 条，未结条目最多 15 条，每条截 500 字符） | JSON，上限 2048 token，坏 JSON 重试一次 | 150 | P1 后台 |
-| 录音转写（`transcribe`，`speech.recognize`） | `asr` / `diarization`（语音服务） | 录音保存后 | 音频；超过单块上限时分块并存检查点 | 带时间戳的转写与说话人，由核心校验来源哈希与生产者 | 100 | P2 后台 |
+| 录音转写（`transcribe`，`speech.recording`） | `asr` / `diarization`（语音服务） | 录音结束后 | 整条录音按 10 分钟窗口（重叠 1 分钟），每窗一次调用并存检查点 | 带时间戳的转写与说话人，由核心校验来源哈希与生产者 | 100 | P2 后台 |
 | 录音标题、摘要、决定与待办、标签、日回顾（`title`、`summary`、`decisions`、`tags`、`daily`，`workflow.*`） | 见第 3 节 | 标题：转写完成后自动；摘要：录音结束后（设置里开）；其余手动 | 转写文字（超过 32000 字节拒绝） | 一段草稿，进派生层 | 各 100 | P2 后台 |
 | 截图文字整理（`screenshot`，`workflow.screenshot`） | `vision` | 手动 | 一张图片（超过 16 MiB 拒绝） | Markdown 草稿 | 100 | P2 后台 |
 | 人物判断（`people-judge`，`people.judge`） | `summary` | 出现有候选对的新别名 | 每批最多 10 对，同时最多排 5 批；每边最多 4 条消息、每条 80 字符 | JSON，上限 2048 token，坏 JSON 重试一次 | 50 | P3 后台 |
@@ -178,17 +178,31 @@ OCR → 关键帧 → 截图摘录
 ### 6.1 调度
 
 - 后台通道是作业队列的唯一消费者：一个工作循环按「优先级，再按创建时间」取到期作业，逐个预检，第一个能跑的领取执行。截图摘录按截图拍摄时间排序，保证聊天消息按序追加。
-- 优先级表（`candid-store/src/job_priority.rs`，一行一个作业类型）：P1 `screen.excerpt`、`items.extract`；P2 `speech.recognize`、`workflow.*`；P3 `screen.summarize`、`people.judge`。不在表里的作业类型不会被后台通道取走。交互调用（P0）不进队列。
-- 工作循环不空转：只在作业、流程配置或数据的版本计数变化、授权变化、下一个到期时间到达时才取队列，兜底每 30 秒查一次。
+- 优先级表（`candid-store/src/job_priority.rs`，一行一个作业类型）：P1 `screen.excerpt`、`items.extract`；P2 `speech.recording`、`workflow.*`；P3 `screen.summarize`、`people.judge`。不在表里的作业类型不会被后台通道取走。交互调用（P0）不进队列。
+- 工作循环不空转：只在作业、流程配置或数据的版本计数变化、授权变化、下一个到期时间到达时才取队列，没有固定周期；后台线程由入库、作业、电源和设置变化唤醒（`Core::wake_background`），镜像旧资料的同步兜底每 10 分钟一次。
 - 触发作业入队的扫描（录音、整理层同步、人物、截图摘录、条目、活动块、自动化）在同一轮循环里先于取队列执行。
 - 领取用租约（180 秒）与尝试号；崩溃后过期任务由下一轮重领；结果提交时核对尝试号、取消、来源修订、权限与配置哈希，迟到结果不能覆盖新结果。已完成的语音分块有检查点，重启后不重复计费。
-- 作业状态：`queued`、`running`、`done`、`failed`、`cancelled`。等待条件不是单独状态，而是 `queued` 加 `error_code`（见 6.3），同一原因只记一次日志，不重复写库。
+- 作业状态：`queued`、`running`、`done`、`failed`、`cancelled`。等待条件不是单独状态，而是 `queued` 加 `error_code`（见 6.4），同一原因只记一次日志，不重复写库。
 
-后台通道在交互调用进行时让路、电池低于 20% 暂停 P2/P3：未实现；两条通道目前互不感知。后台作业何时允许运行的规则正在另行制定。
+<a id="power"></a>
+
+### 6.2 何时花电
+
+用户没在等的计算都是后台工作：只在允许花电时跑、同一份输入只跑一遍、没有事件不醒、每一笔记账（设计与实测见[功耗 v1](../plans/power-v1.md)）。
+
+- **一个开关「后台处理」**（AI 功能设置页顶部，`store_meta` 的 `power.pace/1`）：随时（`anytime`，过热时仍等待，低电量模式下按省电）、省电（`saver`，默认：用电池时不跑本机模型，接电源后自动继续）、手动（`manual`：自动作业照常登记但一律等待，点「现在处理」才跑）。没有电量百分比、插电时长、批次，也没有每个功能各自的电源选项。
+- **电源状态平台层报、核心存**：App 在启动、每次变化（电源、热状态、低电量模式、唤醒）和重新连上核心时经 `POST /local/power` 报一次；一次报告一直有效到下一次，不靠时钟过期。从未收到报告时视为未知，未知按电池处理。时间线里的电源事件仍是证据，闸门不读。
+- **一处决定**：每个后台作业种类在 `job_priority.rs` 的 `JOB_CLASSES` 登记成本：重（`Heavy`，本机模型）、轻（`Light`，远端模型或不调模型）、按模型（`ByModel`，由角色的提供方决定）。`feature_check` 以 `power_allows` 作为第五个条件；闸门关着时队列直接不取被拦的重作业。App 自己的后台工作（`app.ocr`、`app.vision`）也登记在同一张表，每次自动运行前问核心。代码里出现未登记的种类，`every_job_kind_is_registered` 测试失败。
+- **等待原因**：`waiting_power`（等待接入电源）、`waiting_thermal`（等待 Mac 降温）、`waiting_manual`（等待手动处理），沿用 6.4 的等待展示。
+- **「现在处理」**：给等待中的作业打手动标记后排队，只放行电源条件，不跳过授权、来源和每日上限。用户主动要的转写也算手动。
+- **记账**：作业记 CPU 毫秒（核心线程时间加语音服务自报的 `cpu_seconds`）、墙钟毫秒和运行时的电源状态（`jobs.cpu_ms`、`wall_ms`、`power_state`）；工具 `energy_summary` 按天和作业种类给出次数、CPU 秒、墙钟秒、电池上的 CPU 秒和等待中的数量与原因。设置页一行「今天后台计算 X 分钟，等待 N 项」与 `core.log` 每小时一行摘要都从它来，只写计数。
+- **不轮询**：`candid-service/tests/no_polling.rs` 扫描核心与 App 源码里的循环睡眠和重复定时器，不在 `core/fixtures/polling/allowlist.txt`（每行带理由）里的即失败。
+
+后台通道在交互调用进行时让路：未实现；两条通道目前互不感知。
 
 <a id="budget"></a>
 
-### 6.2 预算
+### 6.3 预算
 
 | 项 | 规则 | 存在哪里 |
 |---|---|---|
@@ -205,7 +219,7 @@ OCR → 关键帧 → 截图摘录
 
 <a id="retry"></a>
 
-### 6.3 失败与重试
+### 6.4 失败与重试
 
 | 情况 | 处理 |
 |---|---|
@@ -293,7 +307,7 @@ App 通过 `POST /local/pi/start` 开始一次运行：核心解析角色对应�
 | 角色收敛为三个 | 未实现 | 核心与 App 仍用 `title`、`episode`、`asr`、`diarization`，App 目录另有 `ocr`、`relevance`、`embedding`；见 3.1 |
 | Mac App 云端语音转写由 Swift 直连服务商 | 未实现 | 不经核心，不进 `ai_calls`；与「模型只由核心调用」不符，见[架构](../architecture.md#debts) |
 | Swift 端另存模型配置和用量日志再同步进核心 | 未实现 | 应只在核心保存一份；见[架构](../architecture.md#debts) |
-| 后台让路于交互、电池低于 20% 暂停 | 未实现 | 后台作业何时允许运行的规则正在另行制定 |
+| 后台让路于交互 | 未实现 | 两条通道互不感知；电源闸门见 6.2 |
 | 云端全局每日金额上限（默认 0） | 未实现 | 现只有按角色的 `daily_budget` |
 | 帮我写的「当前帧摘录」与屏幕问答的图像输入 | 未实现 | 帮我写目前只读文字上下文 |
 | 小时 / 周汇总（`hourly-weekly`） | 未实现 | 目录占位 |
@@ -312,6 +326,6 @@ App 通过 `POST /local/pi/start` 开始一次运行：核心解析角色对应�
 ## 10. 来源
 
 - [时间线 v1 §4.9「模型来源、角色与用量」](timeline-v1.md#ai-usage)：第 2 节、3.1（表与记账部分）。
-- [数据层 v1 计划 §4「模型调用规划」](../plans/data-layer-v1.md)：第 4 节（调用清单）、第 5 节（依赖顺序）、第 1.2 节与 6.1（调度）、6.2（预算）、6.3（失败与重试）；§4.6 验证并入第 9 节。
+- [数据层 v1 计划 §4「模型调用规划」](../plans/data-layer-v1.md)：第 4 节（调用清单）、第 5 节（依赖顺序）、第 1.2 节与 6.1（调度）、6.3（预算）、6.4（失败与重试）；§4.6 验证并入第 9 节。
 - [智能平台 v1 §4「调度、成本与恢复」](agent-platform-v1.md)：第 6 节与 2.3（幂等、租约、预留与结算、取消）。
 - [智能平台 v1 §4.2「设置与管理」](agent-platform-v1.md#ai-settings)：第 7.1 节。

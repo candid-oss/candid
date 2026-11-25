@@ -143,7 +143,8 @@ struct TimelineHomeView: View {
         .onChange(of: interactions.entries, initial: true) { _, _ in rebuildPromptMarks() }
         .onChange(of: interactions.sources) { _, _ in rebuildPromptMarks() }
         .task(id: playing) { await playback() }
-        .task(id: timelineVisible) { if timelineVisible { await tickClock() } }
+        // The "now" end of today's timeline moves only while it is on screen and following the present.
+        .task(id: [timelineVisible, followingNow, isToday]) { if timelineVisible && followingNow && isToday { await tickClock() } }
         .task(id: media?.records.count ?? -1) { if let media, media.records.isEmpty { await media.refresh() } }
         .confirmCapsule(L("删除这段活动？"), isPresented: $confirmingDelete, message: L("删除这段活动中的全部记录和截图。已导出的副本不受影响。"), action: deleteActivity)
         .confirmCapsule(L("删除这条资料？"), isPresented: Binding(get: { deletingMedia != nil }, set: { if !$0 { deletingMedia = nil } }), message: L("这会删除资料库里的记录和对应的识别结果。"), action: deleteMedia)
@@ -224,15 +225,18 @@ struct TimelineHomeView: View {
             guard timelineVisible else { return }
             do { try await Task.sleep(for: .milliseconds(180)) } catch { return }
             var loadedVersion: Int?
-            while !Task.isCancelled {
-                let version = TimelineService.shared.dataVersion
-                if loadedVersion != version {
-                    await interactions.refresh(day: session.selectedDate, search: session.searchText)
-                    if interactions.error == nil { loadedVersion = version }
+            var lastLoad: ContinuousClock.Instant?
+            // Woken by the change feed only. Capture and OCR can publish several changes per second: reload at most
+            // every 5 seconds, without reloading unchanged pages or cancelling an in-flight paged query.
+            for await version in TimelineService.shared.changes() {
+                guard loadedVersion != version else { continue }
+                if let lastLoad, case let wait = lastLoad + .seconds(5) - ContinuousClock.now, wait > .zero {
+                    do { try await Task.sleep(for: wait) } catch { return }
                 }
-                // Capture and OCR can publish several changes per second. Coalesce them without
-                // reloading unchanged pages or continually cancelling an in-flight paged query.
-                do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                let current = TimelineService.shared.dataVersion
+                lastLoad = ContinuousClock.now
+                await interactions.refresh(day: session.selectedDate, search: session.searchText)
+                if interactions.error == nil { loadedVersion = current }
             }
         }
     }

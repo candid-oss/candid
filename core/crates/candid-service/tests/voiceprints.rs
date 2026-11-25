@@ -21,7 +21,7 @@ fn sample_ready() -> bool {
 fn start(url: &str) -> (Service, PathBuf, PathBuf, String) {
     let dir = std::env::temp_dir().join(format!("vp-{}", &uuid_v4()[..8]));
     let socket = dir.join("run/core.sock");
-    let mut o = ServeOptions::new(dir.join("root"), dir.join("run"));
+    let mut o = ServeOptions::new(dir.join("root"), dir.join("run")); o.power = Some(true);
     o.socket = Some(socket.clone());
     let svc = Service::start(&o, |_| {}).unwrap();
     assert_eq!(
@@ -696,13 +696,10 @@ fn labelling_a_speaker_in_a_recording_saves_samples_from_its_longest_line() {
         let mut c = config(&url);
         c["roles"].as_array_mut().unwrap().push(json!({"role":"asr","model":{"provider_id":"voice","model_id":"SYNTHETIC"}}));
         s.model_command(&json!({"action":"save","config":c})).unwrap();
-        s.media_command(&json!({"action":"recognize","id":id})).unwrap();
-        let job = s.job_command(&json!({"action":"claim","kind":"speech.recognize","owner":"SYNTHETIC","lease_ms":180000})).unwrap();
-        let r = s.workflow_prepare(&job).unwrap();
-        s.workflow_complete(&r, &json!({"producer":{"model_id":"SYNTHETIC","revision":"fixture/1"},"segments":[
-            {"start_seconds":0.1,"end_seconds":0.4,"text":"SYNTHETIC a","speaker":"说话人 1"},
-            {"start_seconds":0.6,"end_seconds":0.7,"text":"SYNTHETIC b","speaker":"说话人 1"},
-            {"start_seconds":1.0,"end_seconds":1.3,"text":"SYNTHETIC c","speaker":"说话人 2"}]})).unwrap();
+        candid_store::testing::transcribe_recording(&s, &id, &[
+            json!({"start_seconds":0.1,"end_seconds":0.4,"text":"SYNTHETIC a","speaker":"说话人 1"}),
+            json!({"start_seconds":0.6,"end_seconds":0.7,"text":"SYNTHETIC b","speaker":"说话人 1"}),
+            json!({"start_seconds":1.0,"end_seconds":1.3,"text":"SYNTHETIC c","speaker":"说话人 2"})]).unwrap();
     }
     let server = std::thread::spawn(move || {
         let mut seen = vec![];
@@ -758,11 +755,8 @@ fn rematch_names_earlier_recordings_from_the_current_library() {
         let mut c = config(&url);
         c["roles"].as_array_mut().unwrap().push(json!({"role":"asr","model":{"provider_id":"voice","model_id":"SYNTHETIC"}}));
         s.model_command(&json!({"action":"save","config":c})).unwrap();
-        s.media_command(&json!({"action":"recognize","id":id})).unwrap();
-        let job = s.job_command(&json!({"action":"claim","kind":"speech.recognize","owner":"SYNTHETIC","lease_ms":180000})).unwrap();
-        let r = s.workflow_prepare(&job).unwrap();
-        s.workflow_complete(&r, &json!({"producer":{"model_id":"SYNTHETIC","revision":"fixture/1"},"segments":[
-            {"start_seconds":0.1,"end_seconds":0.4,"text":"SYNTHETIC a","speaker":"说话人 1","voice_ref":"SYNTHETIC-ref"}]})).unwrap();
+        candid_store::testing::transcribe_recording(&s, &id, &[
+            json!({"start_seconds":0.1,"end_seconds":0.4,"text":"SYNTHETIC a","speaker":"说话人 1","voice_ref":"SYNTHETIC-ref"})]).unwrap();
     }
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();

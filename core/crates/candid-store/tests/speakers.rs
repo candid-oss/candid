@@ -12,18 +12,14 @@ fn recording() -> (Fx, String) {
     fx.store.media_command(&json!({"action":"import","id":id,"filename":"PUBLIC.wav","kind":"audio","source":"import","path":path,"occurred_at":"2026-11-12T00:00:00Z"})).unwrap();
     let c = json!({"version":1,"providers":[{"provider_id":"local","name":"SYNTHETIC","api":"openai-chat","base_url":"http://127.0.0.1:1/v1","enabled":true,"destination":"on_device"}],"models":[{"provider_id":"local","model_id":"SYNTHETIC"}],"roles":[{"role":"asr","model":{"provider_id":"local","model_id":"SYNTHETIC"}}]});
     fx.store.model_command(&json!({"action":"save","config":c})).unwrap();
-    fx.store.media_command(&json!({"action":"recognize","id":id})).unwrap();
-    let job = fx.store.job_command(&json!({"action":"claim","kind":"speech.recognize","owner":"SYNTHETIC","lease_ms":180000})).unwrap();
-    let r = fx.store.workflow_prepare(&job).unwrap();
     let line = |a: f64, who: &str, m: Value| json!({"start_seconds":a,"end_seconds":a+0.4,"text":format!("SYNTHETIC {who}"),"speaker":who,"match":m});
-    let out = json!({"producer":{"model_id":"SYNTHETIC","revision":"fixture/1"},"segments":[
+    candid_store::testing::transcribe_recording(&fx.store, &id, &[
         line(0.0, "说话人 1", json!({"status":"matched","person_id":"v-zhang","name":"张伟","score":0.86,"margin":0.3})),
         line(0.5, "说话人 2", json!({"status":"unmatched","person_id":"v-li","name":"李娜","score":0.68,"margin":0.03})),
         line(1.0, "说话人 3", json!({"status":"unmatched","person_id":"v-wang","name":"王芳","score":0.41,"margin":0.2})),
         line(1.5, "说话人 1", json!({"status":"matched","person_id":"v-zhang","name":"张伟","score":0.86,"margin":0.3})),
         json!({"start_seconds":2.0,"end_seconds":2.4,"text":"SYNTHETIC four","speaker":"说话人 4","voice_ref":"ref-four"}),
-    ]});
-    fx.store.workflow_complete(&r, &out).unwrap();
+    ]).unwrap();
     (fx, id)
 }
 
@@ -124,60 +120,38 @@ fn titles_of_recordings_with_speakers_show_and_survive_labelling() {
     assert_eq!(queued, 0, "a label does not ask for a new title");
 }
 
-fn reconciliation(fx:&Fx,id:&str)->(Value,Value) {
+/// The recording's one job, claimed and prepared, with the diarization service in the model setup.
+fn recording_job(fx:&Fx,id:&str)->Value {
     let mut c=fx.store.model_config().unwrap();
+    c["roles"].as_array_mut().unwrap().retain(|r|r["role"]!="diarization");
     c["roles"].as_array_mut().unwrap().push(json!({"role":"diarization","model":{"provider_id":"local","model_id":"SYNTHETIC"}}));
     fx.store.model_command(&json!({"action":"save","config":c})).unwrap();
-    let enqueued=fx.store.enqueue_recording_speakers(id).unwrap();
-    assert_eq!(fx.store.enqueue_recording_speakers(id).unwrap()["id"],enqueued["id"]);
+    let enqueued=fx.store.enqueue_recording(id,"conversation").unwrap();
+    assert_eq!(fx.store.enqueue_recording(id,"conversation").unwrap()["id"],enqueued["id"]);
+    let enqueued=if enqueued["state"]=="queued" {enqueued} else {fx.store.job_command(&json!({"action":"restart","id":enqueued["id"]})).unwrap()};
     let job=fx.store.job_command(&json!({"action":"claim","id":enqueued["id"],"owner":"SYNTHETIC","lease_ms":180000})).unwrap();
-    let r=fx.store.workflow_prepare(&job).unwrap();
-    let assignments:Vec<_>=(0..5).map(|i|json!({"index":i,"speaker":if i==4{"unresolved"}else if i==0||i==3{"recording-speaker:A"}else{"recording-speaker:B"},"label":if i==4{"未确定说话人"}else if i==0||i==3{"说话人 1"}else{"说话人 2"},"correction_key":if i==0||i==3{"说话人 1"}else{"说话人 2"},"voice_ref":if i==4{Value::Null}else{json!("SYNTHETIC-ref")},"match":null})).collect();
-    let out=json!({"format":"recording-speakers/1","revision":r["input"]["revision"],"policy":r["input"]["policy"],"assignments":assignments,"speaker_count":2,"unresolved_segments":1,"voice_refs":["SYNTHETIC-ref"],"producer":{"model_id":"SYNTHETIC","model_revision":"fixture/1"}});
-    (r,out)
+    fx.store.workflow_prepare(&job).unwrap()
 }
 #[test]
-fn whole_recording_clustering_is_idempotent_and_preserves_original_text_times_and_names() {
-    let (fx,id)=recording();
-    fx.store.label_speaker(&json!({"id":id,"speaker":"说话人 1","name":"SYNTHETIC Human"})).unwrap();
-    let before=fx.store.media_item(&id).unwrap();
-    let (r,out)=reconciliation(&fx,&id);
-    let item=fx.store.recording_speakers_complete(&r,&out).unwrap();
-    assert_eq!(item["speaker_grouping"]["speaker_count"],2);
-    assert_eq!(item["speakers"].as_array().unwrap().len(),2);
-    assert!(item["segments"][4]["speaker"].is_null());
-    assert_eq!(item["segments"][0]["speaker_name"],"SYNTHETIC Human");
-    for (a,b) in before["segments"].as_array().unwrap().iter().zip(item["segments"].as_array().unwrap()) {
-        for key in ["text","start_seconds","end_seconds"] {assert_eq!(a[key],b[key]);}
-    }
-    assert_eq!(fx.store.recording_speakers_complete(&r,&out).unwrap()["segments"],item["segments"]);
-    assert_eq!(fx.store.recording_speaker_input(&id).unwrap()["revision"],r["input"]["revision"]);
-    fx.store.media_command(&json!({"action":"delete","id":id})).unwrap();
-    assert!(fx.store.voice_refs_to_forget(None).unwrap().contains(&"SYNTHETIC-ref".into()));
-    assert!(fx.store.recording_speakers_complete(&r,&out).is_err());
-}
-#[test]
-fn speaker_clustering_refuses_late_cancelled_replies_and_changed_human_labels() {
-    let (fx,id)=recording();let (r,out)=reconciliation(&fx,&id);
+fn recording_job_refuses_late_cancelled_replies_and_changed_human_labels() {
+    let (fx,id)=recording();let (r,out)=whole_recording(&fx,&id);
     fx.store.label_speaker(&json!({"id":id,"speaker":"说话人 2","name":"SYNTHETIC new answer"})).unwrap();
-    assert!(fx.store.recording_speakers_complete(&r,&out).is_err());
+    assert!(fx.store.recording_complete(&r,&out).is_err());
     fx.store.job_command(&json!({"action":"cancel","id":r["job"]["id"]})).unwrap();
-    assert!(fx.store.recording_speakers_complete(&r,&out).is_err());
+    assert!(fx.store.recording_complete(&r,&out).is_err());
     assert!(fx.store.workflow_command(&json!({"action":"speaker_policy","id":id,"policy":{"version":1,"preset":"INVALID","max_speakers":0}})).is_err());
 }
 #[test]
-fn speaker_clustering_rejects_duplicate_intervals_and_revoked_sources() {
-    let (fx,id)=recording();let (r,mut out)=reconciliation(&fx,&id);
-    out["assignments"][4]["index"]=json!(0);
-    assert!(fx.store.recording_speakers_complete(&r,&out).is_err());
+fn recording_job_refuses_revoked_sources() {
+    let (fx,id)=recording();let (r,out)=whole_recording(&fx,&id);
     let source=fx.store.sources().unwrap().into_iter().find(|s|s.kind=="media.import").unwrap();
     fx.store.set_source_status(&source.source_id,"revoked",None).unwrap();
-    assert!(fx.store.recording_speaker_input(&id).is_err());
-    assert!(fx.store.recording_speakers_complete(&r,&out).is_err());
+    assert!(fx.store.recording_input(&id).is_err());
+    assert!(fx.store.recording_complete(&r,&out).is_err());
 }
 
 fn whole_recording(fx:&Fx,id:&str)->(Value,Value) {
-    let (r,_)=reconciliation(fx,id);
+    let r=recording_job(fx,id);
     let line=|a:f64,b:f64,text:&str,who:&str,correction:&str,m:Value|json!({"start_seconds":a,"end_seconds":b,"text":text,"speaker":format!("recording-speaker:{who}"),"label":if who=="A"{"说话人 1"}else{"说话人 2"},"voice_ref":format!("SYNTHETIC-ref-{who}"),"match":m,"correction_key":correction});
     let out=json!({"format":"recording-speakers/2","revision":r["input"]["revision"],"segments":[
         line(0.0,1.2,"SYNTHETIC 整段第一句","A","说话人 1",Value::Null),
@@ -192,7 +166,7 @@ fn whole_recording_result_replaces_the_transcript_and_keeps_earlier_names() {
     let (fx,id)=recording();
     fx.store.label_speaker(&json!({"id":id,"speaker":"说话人 1","name":"SYNTHETIC Human"})).unwrap();
     let (r,out)=whole_recording(&fx,&id);
-    let item=fx.store.recording_speakers_complete(&r,&out).unwrap();
+    let item=fx.store.recording_complete(&r,&out).unwrap();
     let texts:Vec<_>=item["segments"].as_array().unwrap().iter().map(|s|s["text"].as_str().unwrap().to_string()).collect();
     assert_eq!(texts,["SYNTHETIC 整段第一句","SYNTHETIC 整段第二句","SYNTHETIC 没有声音证据的一句"]);
     assert_eq!(item["speaker_grouping"]["version"],2);
@@ -202,10 +176,10 @@ fn whole_recording_result_replaces_the_transcript_and_keeps_earlier_names() {
     assert_eq!(item["segments"][1]["speaker_status"],"auto");
     assert!(item["segments"][2]["speaker"].is_null());
     assert_eq!(item["segments"][0]["source_segment_id"],json!(id));
-    // The job depends on the per-file transcripts, so the replaced transcript does not ask for another run.
-    assert_eq!(fx.store.recording_speaker_input(&id).unwrap()["revision"],r["input"]["revision"]);
-    assert_eq!(fx.store.enqueue_recording_speakers(&id).unwrap()["id"],r["job"]["id"]);
-    assert_eq!(fx.store.recording_speakers_complete(&r,&out).unwrap()["segments"],item["segments"]);
+    // The job depends on the audio, so the replaced transcript does not ask for another run.
+    assert_eq!(fx.store.recording_input(&id).unwrap()["revision"],r["input"]["revision"]);
+    assert_eq!(fx.store.enqueue_recording(&id,"conversation").unwrap()["id"],r["job"]["id"]);
+    assert_eq!(fx.store.recording_complete(&r,&out).unwrap()["segments"],item["segments"]);
     // A name given on the new speakers sticks.
     fx.store.label_speaker(&json!({"id":id,"speaker":"recording-speaker:B","name":"SYNTHETIC Second"})).unwrap();
     assert_eq!(fx.store.media_item(&id).unwrap()["segments"][1]["speaker_name"],"SYNTHETIC Second");
@@ -218,16 +192,16 @@ fn whole_recording_result_is_checked() {
     let (fx,id)=recording();
     let (r,out)=whole_recording(&fx,&id);
     let mut bad=out.clone();bad["speaker_count"]=json!(3);
-    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
+    assert!(fx.store.recording_complete(&r,&bad).is_err());
     let mut bad=out.clone();bad["voice_refs"]=json!(["SYNTHETIC-ref-A"]);
-    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
+    assert!(fx.store.recording_complete(&r,&bad).is_err());
     let mut bad=out.clone();bad["segments"][1]["end_seconds"]=json!(0.5);
-    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
+    assert!(fx.store.recording_complete(&r,&bad).is_err());
     let mut bad=out.clone();bad["segments"][0]["start_seconds"]=json!(1.5);
-    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err(),"lines are in time order");
+    assert!(fx.store.recording_complete(&r,&bad).is_err(),"lines are in time order");
     let mut bad=out.clone();bad["revision"]=json!("0".repeat(64));
-    assert!(fx.store.recording_speakers_complete(&r,&bad).is_err());
-    assert!(fx.store.recording_speakers_complete(&r,&out).is_ok());
+    assert!(fx.store.recording_complete(&r,&bad).is_err());
+    assert!(fx.store.recording_complete(&r,&out).is_ok());
 }
 
 #[test]

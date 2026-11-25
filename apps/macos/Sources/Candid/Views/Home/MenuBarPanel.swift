@@ -132,6 +132,7 @@ struct MenuBarPanel: View {
                     }
                 }
                 LiveWaveform(levels: media.recordingLevels, color: .red, quiet: media.microphoneQuiet).frame(height: 18)
+                    .onAppear { media.levelViewers += 1 }.onDisappear { media.levelViewers -= 1 }
                 if media.microphoneQuiet {
                     Text(L("检查麦克风是否静音，或在系统设置的声音里选对输入设备。")).typography(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

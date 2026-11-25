@@ -2,7 +2,7 @@
 
 [中文](storage.md) · **English**
 
-**Status**: Partly implemented. The service, data root, events, threads, blobs, text chunks, search index, jobs, changes and deletion are implemented, and the schema version is 12. Vector search and portable package export are not implemented.
+**Status**: Partly implemented. The service, data root, events, threads, blobs, text chunks, search index, jobs, changes and deletion are implemented, and the schema version is 13. Vector search and portable package export are not implemented.
 
 This spec defines the **storage skeleton** of the timeline library: who holds the database, what is in the data root, the common conventions, and the duties and invariants of sources, events, threads, blobs, text chunks, the search index, jobs, changes and deletion. It does not define the curated layer and derived layer (see [Curation](curation.en.md)), model providers and usage (see [Models](models.en.md)), clients and audit (see [Query interface](query.en.md)), connectors and the ingest protocol (see [Connectors](connectors.en.md)), or layering and the storage budget (see [Data model](data-model.en.md)).
 
@@ -99,15 +99,15 @@ Rules:
 
 ## 4. Schema overview and sources
 
-The runtime schema follows the DDL in `core/crates/candid-store/src/schema.rs` (the main part) and in `durable.rs`, `performance.rs`, `agents/checkpoints.rs` and `curated.rs`. `core/fixtures/schema-v*.sql` are snapshots of old versions used by upgrade tests. The current schema version is `SCHEMA_VERSION = 12`, recorded in `PRAGMA user_version` and `store.json`.
+The runtime schema follows the DDL in `core/crates/candid-store/src/schema.rs` (the main part) and in `durable.rs`, `performance.rs`, `agents/checkpoints.rs` and `curated.rs`. `core/fixtures/schema-v*.sql` are snapshots of old versions used by upgrade tests. The current schema version is `SCHEMA_VERSION = 13`, recorded in `PRAGMA user_version` and `store.json`.
 
 ### 4.0 Schema upgrades
 
-- The upgrade chain v1 → … → v12 runs automatically when the library is opened. Each step is one transaction, and a failure rolls back the whole step. The database commit comes before the atomic replacement of `store.json`. `store_meta.schema.upgrade` (for example `11:12`) lets an interrupted replacement resume only that step. Any other version mismatch is refused.
+- The upgrade chain v1 → … → v13 runs automatically when the library is opened. Each step is one transaction, and a failure rolls back the whole step. The database commit comes before the atomic replacement of `store.json`. `store_meta.schema.upgrade` (for example `11:12`) lets an interrupted replacement resume only that step. Any other version mismatch is refused.
 - Tables whose columns or constraints change are rebuilt as "create new table, copy, drop old table, rename". The target DDL is taken from the current `schema.rs`.
 - When a kind, an enum value or a table is added, the version is raised and an upgrade test is added at the same time (including failure rollback and resuming after interruption).
 
-Version history: v2 adds `ai.prompt`, `ai.work` and `agent_event_revisions`; v3 the durable queue and media tables (`durable.rs`); v4 mail and browser-history source kinds, the `quoted` field, the `source_deleted` tombstone reason, and `browser.visit`; v5 the derived-layer `digests`, `entities`, `entity_aliases`, `entity_mentions` and `jobs.feature`; v6 query indexes and the `background_revisions` change counter; v7 the source `mac.system_audio`; v8 the two Agent session checkpoint tables and the media projection change counter; v9 removes the write-only screen-episode revisions, and episode inputs are stored as references; v10 changes evidence locators to `screen-selector/2` (restored on read); v11 the curated-layer tables (see [Curation](curation.en.md)); v12 the Agent session and item tables (see [Curation](curation.en.md), [People and items](people-items.en.md)).
+Version history: v2 adds `ai.prompt`, `ai.work` and `agent_event_revisions`; v3 the durable queue and media tables (`durable.rs`); v4 mail and browser-history source kinds, the `quoted` field, the `source_deleted` tombstone reason, and `browser.visit`; v5 the derived-layer `digests`, `entities`, `entity_aliases`, `entity_mentions` and `jobs.feature`; v6 query indexes and the `background_revisions` change counter; v7 the source `mac.system_audio`; v8 the two Agent session checkpoint tables and the media projection change counter; v9 removes the write-only screen-episode revisions, and episode inputs are stored as references; v10 changes evidence locators to `screen-selector/2` (restored on read); v11 the curated-layer tables (see [Curation](curation.en.md)); v13 the energy ledger on jobs (`cpu_ms`, `wall_ms`, `power_state`, `manual`); v12 the Agent session and item tables (see [Curation](curation.en.md), [People and items](people-items.en.md)).
 
 After the v9 and v10 upgrades, `VACUUM` runs once. The old `ai.turn`, `ai_session` and the old source kinds `ai.codex` and `ai.claude_code` are kept only for compatibility. New connectors do not produce them.
 
@@ -362,7 +362,6 @@ Before the switch, the core refuses the app's desktop batches (409 `cutover_pend
 | Final Chinese search approach | Partly implemented | Now trigram plus limited literal matching over 5000 chunks. Whether to switch to a two-character split column is to be decided by comparing on a mixed Chinese-English question set |
 | `focus_distance` threshold and ranking weights | In design | Defaults are in Section 10; to be compared against real windows |
 | SQLite `synchronous` level and write cost | In design | Now `FULL`; to be measured over a long period |
-| Hub library periodic mirror | Unverified | See Section 12.1 |
 | Removal of the old desktop ledger migration and reconciliation code | Not implemented | The code is still there |
 
 **Export mapping** (not implemented): the plan is to export the library content as a portable package (scopes `agent_text`, `evidence_selected`, `full_owned`). The package can be read without this service and without any model. Import stages first and then validates, writes idempotently by `(source_id, source_key)` and `(artifact_id, revision)`, and puts conflicts in the conflict area without overwriting existing data.

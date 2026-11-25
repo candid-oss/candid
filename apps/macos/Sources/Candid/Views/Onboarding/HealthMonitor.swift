@@ -6,7 +6,9 @@ import SwiftUI
 
 /// Standing check of what keeps Candid working: permissions still granted (macOS may take Screen Recording back
 /// after an update), the core connected, screenshot storage below its limit, chosen models reachable.
-/// Permission and core checks are cheap and run every 20 s; models are probed every 5 minutes.
+/// Nothing polls: the list is rebuilt whenever something it reads changes (capture settings, the core's phase,
+/// storage use), and permissions and models are checked again when the user comes back to the Mac or to Candid
+/// (granting happens in System Settings; models at most every 5 minutes).
 @MainActor @Observable final class HealthMonitor {
     static let shared = HealthMonitor()
 
@@ -27,20 +29,37 @@ import SwiftUI
     private(set) var checkedModels: Date?
     @ObservationIgnored private var models: Item?
     @ObservationIgnored private weak var session: DesktopSession?
-    @ObservationIgnored private var loop: Task<Void, Never>?
+    @ObservationIgnored private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
     func start(session: DesktopSession) {
         self.session = session
-        guard loop == nil, !ProcessInfo.processInfo.arguments.contains("--qa-snapshot-dir") else { return }
-        loop = Task { [weak self] in
-            var tick = 0
-            while !Task.isCancelled {
-                if tick % 15 == 0 { await self?.probeModels() }
-                self?.refresh()
-                tick += 1
-                try? await Task.sleep(for: .seconds(20))
-            }
+        guard observers.isEmpty, !ProcessInfo.processInfo.arguments.contains("--qa-snapshot-dir") else { return }
+        track()
+        Task { await probeModels(); refresh() }
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.screensDidWakeNotification] {
+            observers.append((workspace, workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.systemChanged() }
+            }))
         }
+        let app = NotificationCenter.default
+        observers.append((app, app.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.systemChanged() }
+        }))
+    }
+
+    /// Rebuilds the list now and again whenever an observable value it read changes.
+    private func track() {
+        withObservationTracking { refresh() } onChange: { [weak self] in
+            Task { @MainActor in self?.track() }
+        }
+    }
+
+    /// Back at the Mac or in Candid: permissions have no change notification, so read them again; probe the models
+    /// when the last probe is over 5 minutes old.
+    private func systemChanged() {
+        refresh()
+        if checkedModels.map({ Date().timeIntervalSince($0) > 300 }) ?? true { Task { await probeModels(); refresh() } }
     }
 
     func recheck() { Task { await probeModels(); refresh() } }

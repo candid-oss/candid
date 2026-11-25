@@ -11,7 +11,8 @@ use std::time::Duration;
 const BATCH: usize = 64;
 /// Between images, so capture and the App stay responsive on a busy machine.
 const PAUSE: Duration = Duration::from_millis(5);
-const IDLE_CHECK: Duration = Duration::from_secs(30 * 60);
+/// The fallback between looks when nothing woke the thread.
+const IDLE_CHECK: Duration = Duration::from_secs(24 * 3600);
 
 /// Converts one batch on `workers` threads (decode and encode without the store lock; each swap takes it briefly).
 /// Returns how many screenshots were replaced and whether more remain.
@@ -53,18 +54,16 @@ pub fn default_workers() -> usize {
     std::thread::available_parallelism().map(|n| (n.get() / 2).max(1)).unwrap_or(1)
 }
 
-pub(crate) fn start(store: SharedStore, stop: Arc<AtomicBool>) -> std::io::Result<std::thread::JoinHandle<()>> {
+/// Converts what is there, then sleeps until `wake` (a mirroring pass that imported something: old JPEGs only
+/// arrive from the legacy ledger or Hub) or a day passes.
+pub(crate) fn start(store: SharedStore, stop: Arc<AtomicBool>, wake: Arc<crate::background::Wake>) -> std::io::Result<std::thread::JoinHandle<()>> {
     std::thread::Builder::new().name("candid-convert".into()).spawn(move || {
         crate::scheduling::background();
         let _ = lock(&store).queue_legacy_wav_compaction();
         while !stop.load(Ordering::SeqCst) {
             let (_, more) = screenshot_pass(&store, BATCH, default_workers(), PAUSE, &stop);
             if !more {
-                // Wait in short slices: a stop's unpark can be consumed by the scoped workers' own parking.
-                let until = std::time::Instant::now() + IDLE_CHECK;
-                while !stop.load(Ordering::SeqCst) && std::time::Instant::now() < until {
-                    std::thread::park_timeout(Duration::from_secs(1));
-                }
+                wake.wait(IDLE_CHECK, &stop);
             }
         }
     })

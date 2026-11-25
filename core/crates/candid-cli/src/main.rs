@@ -21,8 +21,12 @@ const USAGE: &str = "用法:
   candid <工具> [--参数 值 ...]        调用一个工具，输出 JSON
   candid <工具> --json '{...}'        用 JSON 传参数
   candid serve --root <数据根目录>     不带界面运行时间线服务（回环 HTTP，写 endpoint.json 与 cli.token）
-        [--port 0] [--run-dir 目录] [--ledger 桌面账本目录] [--hub Hub目录] [--sync-interval 30] [--workers 2]
+        [--port 0] [--run-dir 目录] [--ledger 桌面账本目录] [--hub Hub目录] [--sync-interval 600] [--workers 2]
         [--socket 本地通道路径] [--parent-pid App进程号]   作为 App 的辅助进程运行时使用
+        [--power ac|battery]          没有 App 上报时声明电源状态（默认未知，按电池处理）
+  candid power status                后台处理档位与电源状态（经 App 核心的本地通道）
+  candid power pace <anytime|saver|manual>   设置后台处理：随时 / 省电（默认）/ 手动
+  candid energy summary [--start today] [--end now]   后台计算的能耗账（即 energy_summary 工具）
   candid encode-webp --width W --height H [--stride 每行字节] [--quality 60]
                                      从标准输入读 BGRA 像素，向标准输出写 WebP（App 截图用）
 
@@ -114,6 +118,11 @@ fn serve(args: &[String]) {
             "--socket" => opts.socket = Some(PathBuf::from(value())),
             "--parent-pid" => opts.parent_pid = Some(value().parse().unwrap_or_else(|_| fail("--parent-pid 需要整数", 2))),
             "--cli-path" => opts.cli_path = Some(value()),
+            "--power" => opts.power = Some(match value().as_str() {
+                "ac" => true,
+                "battery" => false,
+                _ => fail("--power 只能是 ac 或 battery", 2),
+            }),
             "--once" => once = true,
             other => fail(&format!("serve 没有参数 {other}\n\n{USAGE}"), 2),
         }
@@ -144,15 +153,76 @@ fn serve(args: &[String]) {
     if let Some(socket) = &opts.socket {
         log(&format!("本地通道：{}", socket.display()));
     }
+    wait_for_stop(opts.parent_pid);
+    service.stop();
+}
+
+/// Blocks until SIGINT/SIGTERM or until the App that launched us exits. On macOS the kernel tells us (kqueue), so
+/// the idle core never wakes for this; elsewhere it checks every 200 ms.
+#[cfg(target_os = "macos")]
+fn wait_for_stop(parent: Option<i32>) {
+    let event = |ident: usize, filter: i16, flags: u16, fflags: u32| libc::kevent { ident, filter, flags, fflags, data: 0, udata: std::ptr::null_mut() };
+    // SAFETY: a kqueue we own; the events name our own signals and the parent's pid.
+    unsafe {
+        let kq = libc::kqueue();
+        if kq < 0 {
+            return wait_for_stop_polling(parent);
+        }
+        let mut changes = vec![event(libc::SIGINT as usize, libc::EVFILT_SIGNAL, libc::EV_ADD, 0), event(libc::SIGTERM as usize, libc::EVFILT_SIGNAL, libc::EV_ADD, 0)];
+        if let Some(p) = parent {
+            changes.push(event(p as usize, libc::EVFILT_PROC, libc::EV_ADD | libc::EV_ONESHOT, libc::NOTE_EXIT));
+        }
+        libc::kevent(kq, changes.as_ptr(), changes.len() as i32, std::ptr::null_mut(), 0, std::ptr::null());
+        loop {
+            // Checked after registering, so an exit just before it is not missed.
+            if parent.is_some_and(|p| libc::getppid() != p) {
+                log("启动它的 App 已退出，核心随之停止。");
+                break;
+            }
+            if STOP.load(Ordering::SeqCst) {
+                break;
+            }
+            let mut out = event(0, 0, 0, 0);
+            // Blocks with no timeout; a signal also interrupts it (EINTR), and the loop checks again.
+            libc::kevent(kq, std::ptr::null(), 0, &mut out, 1, std::ptr::null());
+        }
+        libc::close(kq);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn wait_for_stop(parent: Option<i32>) {
+    wait_for_stop_polling(parent)
+}
+
+fn wait_for_stop_polling(parent: Option<i32>) {
     while !STOP.load(Ordering::SeqCst) {
         // SAFETY: getppid has no preconditions.
-        if opts.parent_pid.is_some_and(|p| unsafe { libc::getppid() } != p) {
+        if parent.is_some_and(|p| unsafe { libc::getppid() } != p) {
             log("启动它的 App 已退出，核心随之停止。");
             break;
         }
         std::thread::sleep(Duration::from_millis(200));
     }
-    service.stop();
+}
+
+/// `power status` and `power pace <p>`: the running core's power gate, through its local channel in the run
+/// directory (the App's core, or `candid serve --socket`). Printed as JSON.
+fn power(args: &[String]) {
+    let body = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["status"] => serde_json::json!({"action": "status"}),
+        ["pace", pace] if candid_store::power::PACES.contains(pace) => serde_json::json!({"action": "set_pace", "pace": pace}),
+        _ => fail(&format!("用法：candid power status | candid power pace <anytime|saver|manual>\n\n{USAGE}"), 2),
+    };
+    let socket = candid_service::local::default_socket(&RunDirectory::path(&env()));
+    match candid_service::local_request(&socket, "POST", "/local/power", body.to_string().as_bytes()) {
+        Ok((200, data)) => {
+            let v: Value = serde_json::from_slice(&data).unwrap_or(Value::Null);
+            println!("{}", json::pretty(&v));
+        }
+        Ok((_, data)) => fail(&String::from_utf8_lossy(&data), 1),
+        Err(e) => fail(&format!("连不上核心的本地通道（{}）：{e}。请先打开 Candid，或用 candid serve --socket 启动。", socket.display()), 1),
+    }
 }
 
 /// `encode-webp`: raw BGRA on stdin, WebP on stdout. The App calls it per screenshot (data model v1 §9.1); it opens
@@ -215,11 +285,14 @@ fn main() {
             shell.run(stdin.lock(), std::io::stdout());
         }
         "serve" => serve(&argv[1..]),
+        "power" => power(&argv[1..]),
         "encode-webp" => encode_webp(&argv[1..]),
         "backup" | "restore" | "move-root" => std::process::exit(migrate::run(command, &argv[1..])),
         name => {
+            // `candid energy summary` is the `energy_summary` tool.
+            let (name, rest) = if name == "energy" && argv.get(1).map(String::as_str) == Some("summary") { ("energy_summary", &argv[2..]) } else { (name, &argv[1..]) };
             let Some(tool) = catalog::tool(name) else { fail(&format!("没有这个工具：{name}\n\n{USAGE}"), 2) };
-            let body = arguments(&tool, &argv[1..]);
+            let body = arguments(&tool, rest);
             let result = ServiceClient::discover(&env()).and_then(|c| c.call(tool.name, &body));
             match result {
                 Ok(data) => {

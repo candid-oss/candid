@@ -1092,3 +1092,27 @@ fn reply_reads_forward_from_the_prompt_line_in_a_long_session() {
     req.cursor = None;
     assert!(w.store.agent_call(&req, &w.client).map(|v| v["messages"][0]["text"] != "SYNTHETIC question").unwrap_or(true));
 }
+
+#[test]
+fn watcher_reported_files_sync_alone_and_new_files_are_found_by_folder_time() {
+    let w = World::new();
+    let a = "claude_code";
+    w.write(a, &[header(a), msg(a, 1, "u1", "user", json!("SYNTHETIC first prompt"))]);
+    w.save(&w.consent(a));
+    w.sync();
+    let prompts = || w.count("SELECT COUNT(*) FROM events WHERE kind='ai.prompt'");
+    assert_eq!(prompts(), 1);
+    // The App's folder watcher reports one changed file: only that file is read.
+    w.append(a, msg(a, 3, "u2", "user", json!("SYNTHETIC second prompt")));
+    let r = w.store.sync_agent_files(&[w.path(a), w.dir.join("elsewhere/other.jsonl")]).unwrap();
+    assert_eq!(r["issues"], json!([]), "{r}");
+    assert!(r["revised"].as_u64().unwrap() > 0, "the follow-up was read: {r}");
+    // Paths outside every consented folder change nothing.
+    let r = w.store.sync_agent_files(&[w.dir.join("elsewhere/other.jsonl")]).unwrap();
+    assert_eq!((r["inserted"].as_u64(), r["revised"].as_u64()), (Some(0), Some(0)));
+    // A new file in a folder that was listed before: the folder's time moved, so the fallback pass lists again.
+    let second = w.dir.join(a).join("second.jsonl");
+    fs::write(&second, [header(a), msg(a, 5, "u3", "user", json!("SYNTHETIC other session"))].iter().map(|l| format!("{l}\n")).collect::<String>()).unwrap();
+    w.sync();
+    assert_eq!(w.count("SELECT COUNT(*) FROM source_cursors WHERE stream LIKE 'file:%second.jsonl'"), 1, "the new file was listed and read");
+}

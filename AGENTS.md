@@ -48,6 +48,20 @@ Candid 是本地优先的 macOS 采集与上下文底座。仓库的主人只做
 - **不在功能改动里顺手格式化整个文件**（全仓库还没有统一跑过 `cargo fmt`）。
 - **不为了让测试通过而放松断言、加跳过或删测试。**
 
+## 后台作业与功耗
+
+功耗是核心问题（[功耗 v1](docs/plans/power-v1.md)）。用户没在等的计算都是后台工作：只在允许花电时跑、同一份输入只跑一遍、没有事件不醒、每一笔记账。
+
+- **新增后台作业只加一行登记。** 每个作业种类（核心作业，以及 App 侧以 `app.` 开头的后台工作）都在
+  `core/crates/candid-store/src/job_priority.rs` 的 `JOB_CLASSES` 登记成本（`Heavy` / `Light` / `ByModel`）、执行方和优先级；
+  闸门、队列顺序和记账随之生效。代码里出现未登记的种类，`every_job_kind_is_registered` 测试失败。
+- **「能不能花电」只问一处。** 核心里经 `feature_check` → `power_allows`，App 里经 `POST /local/power {"action":"allows"}`；
+  不另写电量、插电、批次之类的判断。用户只看到一个开关「后台处理」：随时 / 省电（默认）/ 手动。
+- **新增或修改任何自动后台作业，提交说明里必须回答三问**：谁触发（哪个事件，不允许是定时器）、何时允许跑（成本类别：重、轻、交互）、
+  花多少（lifecycle 里该作业的 CPU 基线）。
+- 同一份输入不过两遍重模型；不新增固定周期循环；后台线程与进程声明低优先级；作业记 CPU 时间而不只记墙钟（`jobs.cpu_ms`，`energy_summary` 可查）。
+- 测试里的模型桩在本机回环上，算「重」：测试默认声明接电源（`tests/common/mod.rs` 的 `open`、`ServeOptions.power`），测闸门的测试自己改。
+
 ## 真实数据
 
 真实资料库（`~/Library/Application Support/Candid/timeline/`）**只能在副本上试**：先复制到临时目录，用

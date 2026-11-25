@@ -37,7 +37,8 @@ struct DesktopTimelineVisibility: NSViewRepresentable {
     /// are not always re-sent after sleep, screen lock or unlock, which used to
     /// leave the timeline paused after opening the lid. Besides window
     /// notifications it re-checks on wake/unlock/activation (now and a moment
-    /// later, as occlusion lags), and polls slowly while it believes it is hidden.
+    /// later, as occlusion lags), and after it comes to believe it is hidden re-checks a few times with growing gaps
+    /// (5 s doubling to about 5 minutes in all), then waits for the next notification: a hidden window costs nothing.
     @MainActor final class Coordinator: NSObject {
         private static let logger = Logger(subsystem: "io.github.candid-oss.candid", category: "TimelineVisibility")
         var onChange: @MainActor (Bool) -> Void
@@ -96,6 +97,7 @@ struct DesktopTimelineVisibility: NSViewRepresentable {
         }
 
         @objc private func windowChanged(_ notification: Notification) {
+            hiddenWatch?.cancel(); hiddenWatch = nil
             if notification.name == NSWindow.willCloseNotification { windowClosing = true }
             // SwiftUI can reopen the same NSWindow and coordinator after closing it.
             if [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification,
@@ -122,6 +124,7 @@ struct DesktopTimelineVisibility: NSViewRepresentable {
 
         /// Wake, unlock or activation: check now, and again once occlusion settles.
         func systemChanged() {
+            hiddenWatch?.cancel(); hiddenWatch = nil
             refreshVisibility()
             recheck?.cancel()
             recheck = Task { @MainActor [weak self, settleDelay] in
@@ -152,17 +155,21 @@ struct DesktopTimelineVisibility: NSViewRepresentable {
             }
         }
 
-        /// Safety net for missed notifications; idle while visible.
+        /// Safety net for missed notifications: a handful of re-checks with doubling gaps after the window is seen as
+        /// hidden, never a steady poll; idle while visible. Each window or system notification starts it afresh.
         private func watchWhileHidden(_ hidden: Bool) {
             guard hidden else { hiddenWatch?.cancel(); hiddenWatch = nil; return }
             guard hiddenWatch == nil else { return }
             hiddenWatch = Task { @MainActor [weak self, hiddenPollInterval] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: hiddenPollInterval)
+                var gap = hiddenPollInterval
+                for _ in 0..<6 {
+                    try? await Task.sleep(for: gap)
                     guard !Task.isCancelled, let self else { return }
                     self.refreshVisibility()
-                    if self.desiredVisibility { self.hiddenWatch = nil; return }
+                    if self.desiredVisibility { break }
+                    gap *= 2
                 }
+                self?.hiddenWatch = nil
             }
         }
     }

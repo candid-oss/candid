@@ -53,6 +53,7 @@ Start with the one-page documents, then go to the spec for the part you are chan
 | 计划 | 内容 |
 |---|---|
 | [数据层对照实验](plans/data-layer-lab.md) | 在真实数据副本上对比截图读取与整条数据层的效果 |
+| [功耗 v1](plans/power-v1.md) | 后台工作何时允许花电：一个开关、一处决定、不轮询、有账；代码已合并，待真实使用核对 |
 | [AI 功能 v1](plans/ai-v1-plan.md) | 搬迁对照页：内容已迁入规格、版本记录和待办 |
 | [数据层规划 v1](plans/data-layer-v1.md) | 搬迁对照页：内容已迁入规格、决定流水和待办 |
 

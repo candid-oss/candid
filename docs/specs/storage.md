@@ -2,7 +2,7 @@
 
 **中文** · [English](storage.en.md)
 
-**状态**：部分实现。服务、数据根目录、事件、线程、原件、文字段落、检索索引、作业、变更与删除均已实现，表结构版本为 12；向量检索、可迁移包导出等未实现。
+**状态**：部分实现。服务、数据根目录、事件、线程、原件、文字段落、检索索引、作业、变更与删除均已实现，表结构版本为 13；向量检索、可迁移包导出等未实现。
 
 本文规定时间线库的**存储骨架**：谁持有数据库、数据根目录里有什么、通用约定，以及来源、事件、线程、原件、文字段落、检索索引、作业、变更和删除的职责与不变量。不规定整理层与派生层（见[整理层](curation.md)）、模型来源与用量（见[模型](models.md)）、访问方与审计（见[查询接口](query.md)）、连接器与入库协议（见[连接器](connectors.md)）、分层与存储预算（见[数据模型](data-model.md)）。
 
@@ -103,11 +103,11 @@
 
 ### 4.0 表结构升级
 
-- 升级链 v1 → … → v12 在打开库时自动执行，每一步一个事务，失败整体回滚；数据库提交先于 `store.json` 的原子替换，`store_meta.schema.upgrade`（如 `11:12`）让被中断的替换只续做那一步，其他版本不一致一律拒绝。
+- 升级链 v1 → … → v13 在打开库时自动执行，每一步一个事务，失败整体回滚；数据库提交先于 `store.json` 的原子替换，`store_meta.schema.upgrade`（如 `11:12`）让被中断的替换只续做那一步，其他版本不一致一律拒绝。
 - 改列或约束的表按「建新表、复制、删旧表、改名」重建，目标 DDL 取自当前 `schema.rs`。
 - 新增 kind、枚举取值或表时同时升版本并补升级测试（含失败回滚与中断续跑）。
 
-版本沿革：v2 增加 `ai.prompt`、`ai.work` 与 `agent_event_revisions`；v3 持久队列与媒体表（`durable.rs`）；v4 邮件、浏览器历史来源种类、`quoted` 字段、`source_deleted` 墓碑原因、`browser.visit`；v5 派生层的 `digests`、`entities`、`entity_aliases`、`entity_mentions` 与 `jobs.feature`；v6 查询索引与 `background_revisions` 变更计数；v7 来源 `mac.system_audio`；v8 Agent 会话检查点两表与媒体投影变更计数；v9 删除只写不读的截屏片段修订、片段输入改存引用；v10 证据定位改为 `screen-selector/2`（读取时还原）；v11 整理层表（见[整理层](curation.md)）；v12 Agent 会话与条目表（见[整理层](curation.md)、[人物与条目](people-items.md)）。
+版本沿革：v2 增加 `ai.prompt`、`ai.work` 与 `agent_event_revisions`；v3 持久队列与媒体表（`durable.rs`）；v4 邮件、浏览器历史来源种类、`quoted` 字段、`source_deleted` 墓碑原因、`browser.visit`；v5 派生层的 `digests`、`entities`、`entity_aliases`、`entity_mentions` 与 `jobs.feature`；v6 查询索引与 `background_revisions` 变更计数；v7 来源 `mac.system_audio`；v8 Agent 会话检查点两表与媒体投影变更计数；v9 删除只写不读的截屏片段修订、片段输入改存引用；v10 证据定位改为 `screen-selector/2`（读取时还原）；v11 整理层表（见[整理层](curation.md)）；v13 作业能耗账（`jobs.cpu_ms` 等四列）；v12 Agent 会话与条目表（见[整理层](curation.md)、[人物与条目](people-items.md)）。
 
 v9、v10 升级后执行一次 `VACUUM`。旧 `ai.turn`、`ai_session` 与旧来源种类 `ai.codex`、`ai.claude_code` 仅为兼容保留，新连接器不产生。
 
@@ -362,7 +362,6 @@ Mac 桌面采集直接写入本库，原桌面账本只在切换时读一次。�
 | 中文检索方案定稿 | 部分实现 | 现为 trigram 加 5000 段受限字面匹配；是否改为二字切分列，待用中英混合问题集比较 |
 | `focus_distance` 阈值与排序权重 | 设计中 | 默认见第 10 节；待用真实窗口对比 |
 | SQLite `synchronous` 级别与写入开销 | 设计中 | 现为 `FULL`；待长期测量 |
-| Hub 资料库周期镜像 | 未验证 | 见第 12.1 节 |
 | 旧桌面账本迁移与对账代码删除 | 未实现 | 代码仍在 |
 
 **导出映射**（未实现）：计划把库内容导出为可迁移包（范围 `agent_text`、`evidence_selected`、`full_owned`），包不需要本服务和任何模型即可阅读；导入先暂存再校验，按 `(source_id, source_key)` 与 `(artifact_id, revision)` 幂等写入，冲突进入冲突区，不覆盖已有数据。

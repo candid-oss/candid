@@ -2,29 +2,38 @@
 //! §9.4: `.m4a`, mono, 48 kbps, the part's own sample rate). Encoding and verification run without the store lock;
 //! the store swaps the original only if the part is still idle, and deletes the WAV.
 use crate::router::{lock, SharedStore};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Quiet time after the last import or job before a part counts as processed.
 pub const GRACE: Duration = Duration::from_secs(10 * 60);
 const PER_PASS: usize = 8;
-const INTERVAL: Duration = Duration::from_secs(60);
 
-#[derive(Default)]
+/// One pass at a time. When it runs is decided by the background loop (`background.rs`: once at start, then once
+/// `GRACE` after media or jobs last changed, on the store clock); this only runs a pass and says when parts left
+/// waiting out their grace period become due, so the loop can sleep until then.
 pub(crate) struct Compactor {
-    last: Option<Instant>,
-    /// The one-time compression of derived JSON originals rides on the same background tick.
-    json: crate::json_compaction::Converter,
+    /// Whether some WAV may still be compacted. Until the first pass we do not know, so it starts true. When it is
+    /// false only a new audio original can bring work, so the loop watches the media tables alone, not every job.
+    pub waiting: bool,
+}
+
+impl Default for Compactor {
+    fn default() -> Self {
+        Compactor { waiting: true }
+    }
 }
 
 impl Compactor {
-    /// At most once a minute, a few parts per pass.
-    pub fn tick(&mut self, store: &SharedStore) {
-        self.json.tick(store);
-        if self.last.is_some_and(|t| t.elapsed() < INTERVAL) {
-            return;
+    /// Runs one pass; returns the store-clock time a further pass is due, if any.
+    pub fn run(&mut self, store: &SharedStore) -> Option<i64> {
+        let done = pass(store, GRACE, PER_PASS);
+        let s = lock(store);
+        let (next, waiting) = s.media_compaction_next_ms(GRACE.as_millis() as i64).unwrap_or((None, true));
+        self.waiting = waiting;
+        if done >= PER_PASS {
+            return Some(s.clock.now_ms());
         }
-        self.last = Some(Instant::now());
-        let _ = pass(store, GRACE, PER_PASS);
+        next
     }
 }
 

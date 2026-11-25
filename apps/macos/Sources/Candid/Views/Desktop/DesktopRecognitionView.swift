@@ -217,47 +217,15 @@ struct DesktopRecognitionOptions: View {
                     }
                 }
             }
-            powerGroup(kind)
+            if let reason = session.powerWait[kind] {
+                InlineMessage(kind: .note, text: L("%@；在「AI 功能 → 后台处理」里调整何时处理。", BackgroundPower.label(reason)))
+            }
         }
-        .onAppear(perform: session.refreshPower)
     }
 
     @ViewBuilder private func timingGroup(_ kind: DesktopRecognitionKind) -> some View {
-        let policy = session.policy(kind)
         SettingsGroup(title: L("处理时机")) {
             SwitchRow(title: L("也处理已有截图"), isOn: binding(\.includeHistory, for: kind))
-            if policy.mode == .batch {
-                HairlineDivider()
-                SettingRow(title: L("间隔")) {
-                    StepperControl(text: L("每 %@ 分钟", policy.batchIntervalMinutes), value: binding(\.batchIntervalMinutes, for: kind), range: 1...720)
-                }
-                HairlineDivider()
-                SettingRow(title: L("每批最多")) {
-                    StepperControl(text: L("%@ 张", policy.batchLimit), value: binding(\.batchLimit, for: kind), range: 1...100)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder private func powerGroup(_ kind: DesktopRecognitionKind) -> some View {
-        let policy = session.policy(kind)
-        SettingsGroup(title: L("省电条件")) {
-            SwitchRow(title: L("仅接入外部电源时处理"), detail: L("这些条件也适用于手动识别。"), isOn: binding(\.requireExternalPower, for: kind))
-            if policy.requireExternalPower {
-                HairlineDivider()
-                SettingRow(title: L("插电后等待")) {
-                    StepperControl(text: policy.pluggedMinutes == 0 ? L("不等待") : L("%@ 分钟", policy.pluggedMinutes),
-                                   value: binding(\.pluggedMinutes, for: kind), range: 0...120)
-                }
-            }
-            HairlineDivider()
-            SettingRow(title: L("最低电量"), detail: L("没有内置电池的 Mac 跳过这项。")) {
-                StepperControl(text: policy.minimumBatteryPercent == 0 ? L("不限") : "\(policy.minimumBatteryPercent)%",
-                               value: binding(\.minimumBatteryPercent, for: kind), range: 0...100, step: 5)
-            }
-            HairlineDivider()
-            SwitchRow(title: L("低电量模式时暂停"), isOn: binding(\.pauseInLowPower, for: kind))
-            if let block = session.powerBlocks[kind] { InlineMessage(kind: .note, text: block).padding(.vertical, Space.xs) }
         }
     }
 

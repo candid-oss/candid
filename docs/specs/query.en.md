@@ -2,7 +2,7 @@
 
 [中文](query.md) · **English**
 
-**Status**: Partly implemented. The 22 external tools, the four access methods, scope filtering, audit and proposals are implemented. A separate `raw` grant for the curated layer, time-limited media URLs and proposal expiry are not implemented.
+**Status**: Partly implemented. The 23 external tools, the four access methods, scope filtering, audit and proposals are implemented. A separate `raw` grant for the curated layer, time-limited media URLs and proposal expiry are not implemented.
 
 This spec defines how external AI and the app read the timeline: the tool list, shared rules, access methods and authentication, clients and scope, audit (access_log), and proposals.
 It does not define how the data the tools read is produced (see [Curated Layer](curation.en.md) and [Storage](storage.en.md)). It does not define who runs an approved proposal or the workflows (see [Workflows](workflows.en.md)). It does not define connectors (see [Connectors](connectors.en.md)).
@@ -12,7 +12,7 @@ Tool parameters and descriptions follow the snapshots and are not copied here: [
 
 ## 1. Overview
 
-The timeline service exposes one set of **tools** (22). Tool names and parameters are identical across the four access methods. Each call first resolves the client, then filters in SQL by the client's scope, then ranks and cuts snippets, and finally writes one audit record.
+The timeline service exposes one set of **tools** (23). Tool names and parameters are identical across the four access methods. Each call first resolves the client, then filters in SQL by the client's scope, then ranks and cuts snippets, and finally writes one audit record.
 
 | Method | Who uses it | See |
 |---|---|---|
@@ -44,7 +44,7 @@ All tools follow these rules:
 
 ## 3. Tool List
 
-22 in total, in the same order as the snapshot. Layers: **curated content** (reads the curated layer; use first), **raw records** (reads events and indexes), **writes and proposals**, **status and usage**.
+23 in total, in the same order as the snapshot. Layers: **curated content** (reads the curated layer; use first), **raw records** (reads events and indexes), **writes and proposals**, **status and usage**.
 
 | Tool | One-line purpose | Layer |
 |---|---|---|
@@ -69,6 +69,7 @@ All tools follow these rules:
 | `media` | Fetch a screenshot or recording blob (no access by default; needs the client's `media` scope) | Raw records |
 | `status` | Whether this library and each source are healthy and recording; call it first when unsure the data is complete | Status and usage |
 | `usage` | Number of AI calls, tokens and cost inside Candid (actual and estimated values are kept apart); with `include_external`, computes external agent usage live | Status and usage |
+| `energy_summary` | The energy ledger of background computing: runs, CPU seconds, wall seconds and battery CPU seconds by day and job kind, plus how many jobs are waiting and why | Status and usage |
 | `propose` | Submit a proposal; it only enters the pending list (the only write tool, MCP annotation `readOnlyHint: false`) | Writes and proposals |
 
 Key points (behavior; details follow the snapshots and tests):
@@ -122,7 +123,7 @@ Written into the MCP server instructions (`instructions` of `initialize`) and ea
 Rules:
 
 - Paths such as `/local/…` (admin, change push, health check, ingest) and `/health` are always refused on loopback HTTP (403 `local_only`), whatever the token. The full list is in the [Appendix](#local-channel).
-- `/v1/<tool>` on loopback HTTP and on the local channel runs the same code (`run_tool`), so scope filtering and audit are the same. Loopback HTTP accepts only the 22 external tools. The app's own `app_*` read tools and the agent write tools are not in the external catalog; calling them on the local channel with a token returns 403 `internal_only`.
+- `/v1/<tool>` on loopback HTTP and on the local channel runs the same code (`run_tool`), so scope filtering and audit are the same. Loopback HTTP accepts only the 23 external tools. The app's own `app_*` read tools and the agent write tools are not in the external catalog; calling them on the local channel with a token returns 403 `internal_only`.
 - A token is shown only once at registration, and only its SHA-256 is stored. After a client is revoked its token fails at once (401), and a call by a known client after revocation writes `client_revoked`.
 - Clients are registered in Settings → "External Access" (`POST /local/clients`): one token per tool, with the Claude Code command, the Codex config and generic JSON given together. The default scope at registration is in [Section 6](#clients).
 - The environment variables `CANDID_TOKEN`, `CANDID_ENDPOINT` and `CANDID_RUN_DIR` override the token, address and run directory. The command line and the MCP shell connect according to the app's "network proxy" setting (system proxy by default, with a no-proxy option), and `CANDID_PROXY` can override it.
@@ -215,7 +216,7 @@ The local channel (`/local/…`, plus `/health` and `/v1/…`) is served only on
 
 | Path | Method | One-line purpose |
 |---|---|---|
-| `/v1/<22 tools>` | POST | Query tools; no token means the app, a token means that client |
+| `/v1/<23 tools>` | POST | Query tools; no token means the app, a token means that client |
 | `/v1/app_*` (10: `app_person_correct`, `app_people_candidates`, `app_activities`, `app_activity`, `app_media`, `app_recognition`, `app_pending_recognition`, `app_ocr`, `app_retention_count`, `app_day_counts`) | POST | Read and write tools for the app's own use; internal clients only |
 | `/v1/<agent write tools>` (6, see Section 8) | POST | Agent write tools; the app uses no token, Pi uses its own run token |
 | `/health` | GET | Process, library and endpoint identity |
@@ -237,6 +238,7 @@ The local channel (`/local/…`, plus `/health` and `/v1/…`) is served only on
 | `/local/agents/consent` | POST | Save an agent's grant (can delete stored content at the same time) |
 | `/local/agents/query` | POST | Live-read AI sessions as the app (same as the `agent` tool) |
 | `/local/connectors` | GET / POST | Connector management (list, grant, update, revoke, sync, secrets, levels) |
+| `/local/power` | POST | Power reports, the Background Processing pace, status, and the gate and accounting for the platform layer's own background work (see [Models](models.en.md#power)) |
 | `/local/media` | POST | Media management commands (app) |
 | `/local/jobs` | POST | Job management commands (app) |
 | `/local/records` | POST | Record management; with a token only `action=query` is allowed |
@@ -253,7 +255,7 @@ The local channel (`/local/…`, plus `/health` and `/v1/…`) is served only on
 | `/local/pi/run` | GET | Current run state |
 | `/local/pi/model` | POST | Pi's model gateway: one chat completion with the model frozen for the run; accepts only Pi's run token |
 
-There are 33 `/local/…` paths (including `/local/events`), plus the three groups `/health` and `/v1/…`. Known gap: the command-type endpoints (`/local/models`, `/local/workflows`, `/local/automation`, `/local/screen`, `/local/media`, `/local/jobs`, `/local/records`, `/local/voiceprints`, `/local/connectors`) dispatch by `action`, and the action lists are in their own code and not listed here.
+There are 34 `/local/…` paths (including `/local/events`), plus the three groups `/health` and `/v1/…`. Known gap: the command-type endpoints (`/local/models`, `/local/workflows`, `/local/automation`, `/local/screen`, `/local/media`, `/local/jobs`, `/local/records`, `/local/voiceprints`, `/local/connectors`) dispatch by `action`, and the action lists are in their own code and not listed here.
 
 <a id="code"></a>
 
@@ -281,7 +283,7 @@ There are 33 `/local/…` paths (including `/local/events`), plus the three grou
 
 | Item | Status | Notes |
 |---|---|---|
-| Snapshot guard for the `/local/` endpoint list | Not implemented | Only the 22 external tools have snapshots (`mcp-tools.json`, `candid-tools.txt`). The local channel paths, methods and the `action` of each command have no written contract, and Section 9 is compiled by hand from the code. A path-list snapshot and a routing test should be added |
+| Snapshot guard for the `/local/` endpoint list | Not implemented | Only the 23 external tools have snapshots (`mcp-tools.json`, `candid-tools.txt`). The local channel paths, methods and the `action` of each command have no written contract, and Section 9 is compiled by hand from the code. A path-list snapshot and a routing test should be added |
 | A separate `raw` grant for the curated layer | Not implemented | The design once said "only the curated layer is open by default; the raw layer needs a separate `raw` grant, and `evidence` needs it". `ClientScope` has no `raw` switch; `evidence` is bound by `text`, `derived` and the source scope like the other tools |
 | Raw event IDs not exposed directly to AI | Not implemented | The design once said curated-layer objects carry only their own `id` and a source note. Today a message's `ref` is the id of the underlying event, and `evidence` returns event summaries |
 | Demote the old raw tools to a capability under `evidence` | Not implemented | `search`, `timeline`, `context`, `get_event` and others are still in the external catalog; their priority is lowered only by the server instructions and the call order |

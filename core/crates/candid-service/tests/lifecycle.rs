@@ -10,7 +10,7 @@ mod support;
 #[path = "support/snapshot.rs"]
 mod snapshot;
 
-use candid_service::{workflows, McpShell, ToolCallError};
+use candid_service::{background, McpShell, ToolCallError};
 use candid_store::testing::RowExt;
 use candid_store::*;
 use serde_json::{json, Value};
@@ -39,6 +39,9 @@ fn lifecycle_three_days_through_the_real_worker() {
     };
     let root = std::env::temp_dir().join(format!("candid-lifecycle-{}", &uuid_v4()[..8]));
     let store = TimelineStore::open(&root, "candid/lifecycle-test", true, clock).unwrap();
+    // Plugged in for the whole run (a declared state does not go stale as the clock jumps); the power gate has its
+    // own test below.
+    store.power_declare(Some(true)).unwrap();
     let source = store.register_source("mac.desktop", "SYNTHETIC Mac", &SourcePolicy::new(true, true)).unwrap();
     let client = store.register_client("SYNTHETIC agent", "mcp", &ClientScope::unbounded(), None).unwrap().client_id;
     store.model_command(&json!({"action": "save", "config": model_config(&stub.base_url())})).unwrap();
@@ -49,7 +52,10 @@ fn lifecycle_three_days_through_the_real_worker() {
     }
     store.workflow_command(&json!({"action": "features", "config": features})).unwrap();
     let store: workflows_store::Shared = Arc::new(Mutex::new(store));
-    drain(&store);
+    // The service's own background worker: it runs only the steps whose inputs changed or came due, so draining with
+    // it also checks that every step declares what it reads.
+    let mut worker = background::Background::default();
+    drain(&store, &mut worker);
     assert!(stub.calls().is_empty(), "nothing to do before any data");
 
     // Each record arrives at its own time (clock = record time + 30 s) and the worker drains the queue after each,
@@ -63,18 +69,18 @@ fn lifecycle_three_days_through_the_real_worker() {
             let expected = batch.events.len();
             let r = store.lock().unwrap().ingest(&batch).unwrap();
             assert_eq!(r.inserted, expected, "day {}: {r:?}", i + 1);
-            drain(&store);
+            drain(&store, &mut worker);
         }
         now.store(local_ms(day, "18:00"), Ordering::SeqCst);
-        drain(&store);
+        drain(&store, &mut worker);
         now.fetch_add(15 * 60_000, Ordering::SeqCst);
-        drain(&store);
+        drain(&store, &mut worker);
     }
     // KNOWN BUG (found by this test, 2026-11-25): `people_judge_scan` remembers a state that does not change when
     // new aliases appear, so candidates that show up after its first run are never queued. Forget that state once so
     // the judge step is still exercised; harmless once the scan is fixed (answered pairs are not asked again).
     store.lock().unwrap().raw_db().execute("DELETE FROM store_meta WHERE key='people.judge.scan/1'", &[]).unwrap();
-    drain(&store);
+    drain(&store, &mut worker);
     let calls = stub.calls();
     let unmatched: Vec<&Value> = calls.iter().filter(|c| c["reply"].is_null()).collect();
     assert!(unmatched.is_empty(), "model requests without a fixed reply in replies.json:\n{}", serde_json::to_string_pretty(&unmatched).unwrap());
@@ -153,14 +159,156 @@ fn lifecycle_three_days_through_the_real_worker() {
     }
     snaps.expect_only("lifecycle/snapshots/model-calls", &produced);
 
+    // 8. Idle: an hour of virtual time with no input wakes the worker at most 7 times and writes nothing.
+    let wake = Arc::new(background::Wake::default());
+    {
+        let wake = wake.clone();
+        store.lock().unwrap().on_write(move |table| if background::wakes_on(table) { wake.wake() });
+    }
+    let (calls_before, writes_before, statements_before) = {
+        let s = store.lock().unwrap();
+        (stub.calls().len(), s.write_count(), s.statement_count())
+    };
+    let mut idle = VirtualHour { now: now.clone(), end: now.load(Ordering::SeqCst) + 3_600_000, wakes: 0 };
+    background::run(&mut worker, &store, &wake, &mut idle, &|| {});
+    assert!(idle.wakes <= 7, "idle hour woke the worker {} times", idle.wakes);
+    assert_eq!(store.lock().unwrap().write_count(), writes_before, "idle hour wrote to the library: {:?}", store.lock().unwrap().write_counts());
+    assert_eq!(stub.calls().len(), calls_before, "idle hour called the model");
+    assert_eq!(store.lock().unwrap().statement_count(), statements_before, "an idle wake ran SQL: steps must check their in-memory write revisions first");
+
     stub.stop();
     let _ = std::fs::remove_dir_all(&root);
     snaps.finish();
     assert!(started.elapsed() < Duration::from_secs(30), "lifecycle took {:?}", started.elapsed());
 }
 
+/// The power gate on fixture day 1 (power v1 §3.7): on battery in 省电 every job that would run the model on this Mac
+/// (the stub is loopback) waits with `waiting_power` and the model is never called; 「现在处理」 runs one job anyway
+/// but still stops at the daily limit; in 手动 every automatic job waits with `waiting_manual`; once the Mac reports
+/// external power, everything completes. Each run carries its wall time and the power state it ran on.
+#[test]
+fn lifecycle_power_gate_holds_local_model_work_until_plugged_in() {
+    let world: Value = serde_json::from_slice(&std::fs::read(snapshot::fixtures_dir().join("lifecycle/world.json")).unwrap()).unwrap();
+    let days: Vec<String> = world["days"].as_array().unwrap().iter().map(|d| d.as_str().unwrap().to_string()).collect();
+    let stub = Stub::start();
+    let now = Arc::new(AtomicI64::new(local_ms(&days[0], "06:00")));
+    let clock = {
+        let now = now.clone();
+        Clock::with(move || now.load(Ordering::SeqCst), Zone::named("Asia/Shanghai").unwrap())
+    };
+    let root = std::env::temp_dir().join(format!("candid-lifecycle-power-{}", &uuid_v4()[..8]));
+    let store = TimelineStore::open(&root, "candid/lifecycle-test", true, clock).unwrap();
+    let source = store.register_source("mac.desktop", "SYNTHETIC Mac", &SourcePolicy::new(true, true)).unwrap();
+    store.model_command(&json!({"action": "save", "config": model_config(&stub.base_url())})).unwrap();
+    let mut features = store.feature_settings().unwrap();
+    for f in ["screen-excerpt", "screen-episodes", "people-judge", "item-extract"] {
+        features["items"][f]["enabled"] = json!(true);
+        features["items"][f]["sources"] = json!(["*"]);
+    }
+    store.workflow_command(&json!({"action": "features", "config": features.clone()})).unwrap();
+    // On battery, default pace (省电). The report holds until the next one, however far the clock moves.
+    let status = store.power_command(&json!({"action": "report", "external_power": false, "battery_percent": 80, "low_power_mode": false, "thermal": "nominal", "idle_seconds": 0})).unwrap();
+    assert_eq!((status["pace"].as_str(), status["power_state"].as_str(), status["reason"].as_str()), (Some("saver"), Some("battery"), Some("waiting_power")));
+    let store: workflows_store::Shared = Arc::new(Mutex::new(store));
+    let mut worker = background::Background::default();
+    let db = |sql: &str| -> Vec<String> { store.lock().unwrap().raw_db().query(sql, &[], |r| r.text(0)).unwrap() };
+    let excerpt_job = |shot: &str| -> String {
+        db(&format!("SELECT j.job_id FROM jobs j JOIN events e ON e.event_id=j.input_ref WHERE j.kind='screen.excerpt' AND e.source_key='{shot}'")).remove(0)
+    };
+
+    let image = snapshot::fixtures_dir().join("lifecycle/screenshot.jpg");
+    let mut shots = 0;
+    let batches = day_batches(&world, 1, &days, &source, &image, &store.lock().unwrap());
+    for (at, batch) in batches {
+        now.store(at + 30_000, Ordering::SeqCst);
+        let shot = batch.events.iter().find(|e| e.kind == "screen.shot").map(|e| e.source_key.clone());
+        store.lock().unwrap().ingest(&batch).unwrap();
+        drain(&store, &mut worker);
+        let Some(shot) = shot else { continue };
+        shots += 1;
+        let job = excerpt_job(&shot);
+        // Chat frames wait a moment for the next frame before they are due; held either way.
+        assert!(["queued:", "queued:waiting_power"].contains(&db(&format!("SELECT state||':'||COALESCE(error_code,'') FROM jobs WHERE job_id='{job}'"))[0].as_str()));
+        // 「现在处理」 passes the power gate only.
+        store.lock().unwrap().job_command(&json!({"action": "run_now", "id": job})).unwrap();
+        drain(&store, &mut worker);
+        if shots == 1 {
+            assert_eq!(db(&format!("SELECT state||':'||manual||':'||power_state||':'||(wall_ms IS NOT NULL) FROM jobs WHERE job_id='{job}'")), ["done:1:battery:1"]);
+            assert_eq!(stub.calls().len(), 1);
+            // One excerpt call used today: a limit of one leaves nothing for the next manual run.
+            let mut limited = features.clone();
+            limited["items"]["screen-excerpt"]["daily_calls"] = json!(1);
+            store.lock().unwrap().workflow_command(&json!({"action": "features", "config": limited})).unwrap();
+        } else {
+            assert_eq!(db(&format!("SELECT state||':'||manual||':'||COALESCE(error_code,'') FROM jobs WHERE job_id='{job}'")), ["queued:1:waiting_feature_budget"]);
+            assert_eq!(stub.calls().len(), 1, "the daily limit holds a manual run too");
+        }
+    }
+    assert_eq!(shots, 2);
+    now.store(local_ms(&days[0], "18:00"), Ordering::SeqCst);
+    drain(&store, &mut worker);
+    now.fetch_add(15 * 60_000, Ordering::SeqCst);
+    drain(&store, &mut worker);
+    assert_eq!(stub.calls().len(), 1, "nothing else ran on battery");
+    let waiting = db("SELECT kind||':'||COALESCE(error_code,'') FROM jobs WHERE state='queued' AND manual=0 ORDER BY kind");
+    assert!(waiting.iter().any(|w| w.starts_with("screen.summarize:")), "activity blocks were queued: {waiting:?}");
+    assert!(waiting.iter().all(|w| w.ends_with(":waiting_power")), "{waiting:?}");
+
+    // 手动: every automatic job waits for 「现在处理」.
+    store.lock().unwrap().power_command(&json!({"action": "set_pace", "pace": "manual"})).unwrap();
+    drain(&store, &mut worker);
+    let manual = db("SELECT COALESCE(error_code,'') FROM jobs WHERE state='queued' AND manual=0");
+    assert!(!manual.is_empty() && manual.iter().all(|r| r == "waiting_manual"), "{manual:?}");
+    assert_eq!(stub.calls().len(), 1);
+
+    // Back to 省电, plugged in, the daily limit restored: everything completes.
+    {
+        let s = store.lock().unwrap();
+        s.power_command(&json!({"action": "set_pace", "pace": "saver"})).unwrap();
+        s.workflow_command(&json!({"action": "features", "config": features})).unwrap();
+        let status = s.power_command(&json!({"action": "report", "external_power": true, "battery_percent": 81, "low_power_mode": false, "thermal": "nominal", "idle_seconds": 0})).unwrap();
+        assert_eq!((status["heavy_allowed"].as_bool(), status["changed"].as_bool()), (Some(true), Some(true)));
+    }
+    drain(&store, &mut worker);
+    let calls = stub.calls();
+    assert!(calls.iter().all(|c| !c["reply"].is_null()), "unmatched model requests: {calls:?}");
+    assert!(calls.len() > 2, "{} calls", calls.len());
+    assert_eq!(db("SELECT kind||':'||state||':'||COALESCE(error_code,'') FROM jobs WHERE state NOT IN ('done','cancelled')"), Vec::<String>::new());
+    assert_eq!(db("SELECT COUNT(*) FROM jobs WHERE state='done' AND power_state='ac' AND wall_ms IS NOT NULL AND cpu_ms IS NOT NULL"), [(calls.len() - 1).to_string()]);
+    // The ledger has every run; nothing waits any more.
+    let client = store.lock().unwrap().register_client("SYNTHETIC agent", "mcp", &ClientScope::unbounded(), None).unwrap().client_id;
+    let summary = store.lock().unwrap().energy_summary(&json!({"start": days[0]}), &client).unwrap();
+    let runs: i64 = summary["days"].as_array().unwrap().iter().map(|d| d["runs"].as_i64().unwrap()).sum();
+    assert_eq!((runs, summary["waiting"]["total"].as_i64()), (calls.len() as i64, Some(0)), "{summary}");
+    stub.stop();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// Sleeps on a virtual clock: each sleep moves the clock by the timeout and counts as one wake.
+struct VirtualHour {
+    now: Arc<AtomicI64>,
+    end: i64,
+    wakes: usize,
+}
+
+impl background::Sleep for VirtualHour {
+    fn sleep(&mut self, timeout: Duration) -> bool {
+        let now = self.now.load(Ordering::SeqCst);
+        if now >= self.end || self.wakes >= 1000 {
+            return false;
+        }
+        let next = (now + timeout.as_millis() as i64).min(self.end);
+        self.now.store(next, Ordering::SeqCst);
+        if next >= self.end {
+            return false;
+        }
+        self.wakes += 1;
+        true
+    }
+}
+
 /// Runs the background worker until a tick changes nothing: no new model call, no job changing state.
-fn drain(store: &workflows_store::Shared) {
+fn drain(store: &workflows_store::Shared, worker: &mut background::Background) {
     let state = || -> Vec<String> {
         let s = store.lock().unwrap();
         s.raw_db().query("SELECT job_id||state||attempts||COALESCE(error_code,'') FROM jobs ORDER BY job_id", &[], |r| r.text(0)).unwrap()
@@ -168,7 +316,7 @@ fn drain(store: &workflows_store::Shared) {
     let mut last = state();
     let mut quiet = 0;
     for _ in 0..200 {
-        workflows::tick(store, &|| {});
+        while worker.pass(store, 0, &|| {}) {}
         let now = state();
         quiet = if now == last { quiet + 1 } else { 0 };
         last = now;

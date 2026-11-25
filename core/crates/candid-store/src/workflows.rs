@@ -8,6 +8,14 @@ use serde_json::{json, Value};
 pub const CATALOG: &str = include_str!("../../../workflows/catalog.json");
 pub const OUTPUT_SCHEMA: &str = include_str!("../../../workflows/outputs.schema.json");
 pub const PROMPTS: &str = include_str!("../../../workflows/prompts.json");
+
+/// What `workflow_scan` remembers between passes: which recordings it last saw in which state.
+#[derive(Default)]
+pub(crate) struct RecordingScan {
+    retired: bool,
+    global: String,
+    seen: std::collections::HashMap<String, String>,
+}
 fn bad(s: &str) -> TimelineError {
     TimelineError::InvalidInput(s.into())
 }
@@ -215,7 +223,7 @@ impl TimelineStore {
                 self.db.execute("INSERT INTO ai_roles(role,provider_id,model_id,fallback_json,limits_json) VALUES(?,?,?,?,?)",&[text(a["role"].as_str().unwrap_or("")),crate::db::opt_text(model["provider_id"].as_str()),crate::db::opt_text(model["model_id"].as_str()),text(a.get("fallback_json").unwrap_or(&json!([])).to_string()),text(a.get("limits_json").unwrap_or(&json!({})).to_string())])?;}
                 self.wf_put("models.config/1",c)
                 })?;
-                    self.db.execute("UPDATE jobs SET state='cancelled',lease_until_ms=NULL,error_code='configuration_changed' WHERE state IN ('queued','running') AND (kind LIKE 'workflow.%' OR kind='speech.recognize')",&[])?;
+                    self.db.execute("UPDATE jobs SET state='cancelled',lease_until_ms=NULL,error_code='configuration_changed' WHERE state IN ('queued','running') AND (kind LIKE 'workflow.%' OR kind GLOB 'speech.*')",&[])?;
                 }
                 Ok(c.clone())
             }
@@ -284,7 +292,7 @@ impl TimelineStore {
                 Ok(json!({"saved":true}))
             }
             "speaker_policy" => self.save_recording_speaker_policy(v["id"].as_str().unwrap_or(""), &v["policy"]),
-            "speakers" => self.enqueue_recording_speakers(v["id"].as_str().unwrap_or("")),
+            "speakers" => self.rerun_recording(v["id"].as_str().unwrap_or(""), None),
             "settings" => {
                 let c = &v["settings"];
                 if c["version"] != 1 {
@@ -292,7 +300,7 @@ impl TimelineStore {
                 }
                 self.wf_put("workflows.settings/1", c)?;
                 if c["automatic"] == false {
-                    self.db.execute("UPDATE jobs SET state='cancelled',lease_until_ms=NULL,error_code='automatic_disabled' WHERE kind='speech.recognize' AND state IN ('queued','running')",&[])?;
+                    self.db.execute("UPDATE jobs SET state='cancelled',lease_until_ms=NULL,error_code='automatic_disabled' WHERE kind GLOB 'speech.*' AND state IN ('queued','running')",&[])?;
                 }
                 if c["summary"] == false {
                     self.db.execute("UPDATE jobs SET state='cancelled',lease_until_ms=NULL,error_code='automatic_disabled' WHERE kind='workflow.summary' AND state IN ('queued','running')",&[])?;
@@ -409,69 +417,98 @@ impl TimelineStore {
         ]))?);
         self.job_command(&json!({"action":"enqueue","kind":format!("workflow.{step}"),"input_ref":id,"config_version":format!("fixed/1:{version}")}))
     }
+    /// Queues what recordings need: one transcription job after a recording stops, then title and summary.
+    /// Only recordings whose fingerprint changed since the last scan are loaded; a change of settings, model setup
+    /// or sources re-examines all of them. Nothing is queued while a recording is still running.
     pub fn workflow_scan(&self) -> Result<()> {
-        let stamp = (self.background_revision("workflows")?, self.clock.now_ms().div_euclid(60000));
+        let stamp = (self.background_revision("workflows")?, 0);
+        let forced = self.workflow_scan_stamp.get().is_none();
         if self.workflow_scan_stamp.get() == Some(stamp) { return Ok(()); }
+        let mut scan = self.recording_scan.borrow_mut();
+        if !scan.retired {
+            let retired = self.retire_recording_jobs()?;
+            if retired > 0 { eprintln!("录音：取消旧版分段与说话人作业 {retired} 个，改为每条录音一个作业"); }
+            scan.retired = true;
+        }
         let settings = self.wf_get("workflows.settings/1")?;
         // New recordings are transcribed with speakers unless turned off (user decision 2026-11-13: matching and
         // naming happen on their own; every automatic step stays switchable).
         let automatic = settings["automatic"] != false;
         // Titles for transcribed recordings are on unless turned off (user decision 2026-11-12).
         let titles = settings["titles"] != false;
-        if !automatic && !titles && settings["summary"] != true {
+        let summary = settings["summary"] == true;
+        if !automatic && !titles && !summary {
             self.workflow_scan_stamp.set(Some(stamp));
             return Ok(());
         }
-        let items = self.media_command(&json!({"action":"list","limit":1000}))?;
-        for item in items["items"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter(|i| i["kind"] == "audio")
-        {
-            let id = item["id"].as_str().unwrap_or("");
-            if self.workflow_source(id).is_err() {
-                continue;
-            }
-            let mut parts = self.media_part_ids(id)?;
-            if parts.is_empty() {
-                parts.push(id.into());
-            }
-            for part in parts {
-                let m = self.media_raw(&part)?;
-                if automatic
-                    && self.feature_source_allowed("transcribe", item)
-                    && m["processing_status"] != "ready"
-                {
-                    let mode = settings["mode"].as_str().unwrap_or("conversation");
-                    self.job_command(&json!({"action":"enqueue","kind":"speech.recognize","input_ref":part,"config_version":format!("external-api/1:{mode}")}))?;
-                }
-            }
-            if item["recording_state"] != "recording"
-                && item["processing_status"] == "ready"
-                && !item["segments"].as_array().is_none_or(|s| s.is_empty())
-            {
-                if automatic && self.voiceprint_provider().is_ok() && self.feature_source_allowed("transcribe",item) && item["segments"].as_array().is_some_and(|a|a.iter().any(|s|s["speaker"].is_string())) {
-                    let _=self.enqueue_recording_speakers(id);
-                }
-                if titles
-                    && self.feature_source_allowed("title", item)
-                    && self.workflow_drafts(id)?["title"]["source_revision"]
-                        != json!(crate::speakers::segments_revision(&item["segments"]))
-                {
-                    self.workflow_enqueue(id, "title", item)?;
-                }
-                if settings["summary"] == true && self.feature_source_allowed("summary", item) {
-                    self.workflow_enqueue(id, "summary", item)?;
-                }
+        let global = sha256_hex(&serde_json::to_vec(&json!([settings, self.model_config()?, self.feature_settings()?,
+            self.db.query("SELECT kind,status,policy_json FROM sources ORDER BY rowid", &[], |r| json!([r.text(0), r.text(1), r.text(2)]))?]))?);
+        if forced || scan.global != global {
+            scan.global = global;
+            scan.seen.clear();
+        }
+        let mode = settings["mode"].as_str().filter(|m| ["quick", "conversation"].contains(m)).unwrap_or("conversation");
+        for (id, fingerprint) in self.recording_fingerprints(None)? {
+            if scan.seen.get(&id) == Some(&fingerprint) { continue; }
+            if self.workflow_scan_recording(&id, mode, automatic, titles, summary).is_ok() {
+                // What this pass queued is part of the fingerprint; record the state after it.
+                if let Some((_, after)) = self.recording_fingerprints(Some(&id))?.pop() { scan.seen.insert(id, after); }
             }
         }
-        self.workflow_scan_stamp.set(Some((self.background_revision("workflows")?, stamp.1)));
+        self.workflow_scan_stamp.set(Some((self.background_revision("workflows")?, 0)));
+        Ok(())
+    }
+    /// `(recording id, fingerprint)` from indexed columns only: files, edit state, deletion, the recording's jobs
+    /// and its stored result. No transcript or metadata is decoded.
+    fn recording_fingerprints(&self, only: Option<&str>) -> Result<Vec<(String, String)>> {
+        let sql = format!("WITH rec(id) AS (SELECT id FROM media_objects WHERE id NOT IN (SELECT id FROM media_parts) AND json_extract(metadata,'$.kind')='audio' UNION SELECT DISTINCT recording_id FROM media_parts)
+            SELECT r.id, concat_ws('|',
+                (SELECT COUNT(*)||'.'||COALESCE(MAX(rowid),0) FROM media_parts WHERE recording_id=r.id),
+                (SELECT length(metadata)||'.'||digest FROM media_objects WHERE id=r.id),
+                (SELECT state||'.'||length(title) FROM media_edits WHERE id=r.id),
+                (SELECT 1 FROM media_deleted WHERE id=r.id),
+                (SELECT group_concat(kind||'.'||state||'.'||config_version) FROM jobs WHERE input_ref=r.id AND kind IN ('{}','workflow.title','workflow.summary')),
+                (SELECT length(value) FROM store_meta WHERE key='workflows.speakers.result/1:'||r.id))
+            FROM rec r {}", crate::RECORDING_JOB, if only.is_some() { "WHERE r.id=?" } else { "" });
+        let params = only.map(|id| vec![text(id)]).unwrap_or_default();
+        self.db.query(&sql, &params, |r| (r.text(0), r.text(1)))
+    }
+    fn workflow_scan_recording(&self, id: &str, mode: &str, automatic: bool, titles: bool, summary: bool) -> Result<()> {
+        let item = self.workflow_source(id)?;
+        if item["kind"] != "audio" || item["recording_state"] == "recording" { return Ok(()); }
+        // The app links a capture file before it reports the recording's state; until it says stopped or
+        // interrupted, a recording made of capture files counts as still running.
+        if item["recording_parts"].as_array().is_some_and(|p| !p.is_empty())
+            && self.db.first("SELECT state FROM media_edits WHERE id=?", &[text(id)], |r| r.text(0))?.is_none() { return Ok(()); }
+        if item["processing_status"] != "ready" {
+            if automatic && self.feature_source_allowed("transcribe", &item) {
+                self.enqueue_recording(id, mode)?;
+            }
+            return Ok(());
+        }
+        if item["segments"].as_array().is_none_or(|s| s.is_empty()) { return Ok(()); }
+        if titles
+            && self.feature_source_allowed("title", &item)
+            && self.workflow_drafts(id)?["title"]["source_revision"] != json!(crate::speakers::segments_revision(&item["segments"]))
+        {
+            self.workflow_enqueue(id, "title", &item)?;
+        }
+        if summary && self.feature_source_allowed("summary", &item) {
+            self.workflow_enqueue(id, "summary", &item)?;
+        }
         Ok(())
     }
     /// Returns a short-lived immutable request; the caller releases the database mutex before HTTP.
+    /// While it runs, `feature_check` knows the job's kind and manual flag and asks the power gate with them.
     pub fn workflow_prepare(&self, job: &Value) -> Result<Value> {
-        if job["kind"] == "workflow.speakers" {return self.recording_speakers_prepare(job);}
+        let previous = self.preparing.replace(Some((job["kind"].as_str().unwrap_or("").to_string(), job["manual"] == true)));
+        let result = self.workflow_prepare_inner(job);
+        *self.preparing.borrow_mut() = previous;
+        result
+    }
+
+    fn workflow_prepare_inner(&self, job: &Value) -> Result<Value> {
+        if job["kind"] == crate::RECORDING_JOB {return self.recording_prepare(job);}
         if job["kind"] == "screen.summarize" { return self.screen_prepare(job); }
         if job["kind"] == crate::screen_excerpt::JOB_KIND { return self.excerpt_prepare(job); }
         if job["kind"] == "people.judge" { return self.people_judge_prepare(job); }
@@ -479,9 +516,7 @@ impl TimelineStore {
         let id = job["input_ref"].as_str().unwrap_or("");
         let item = self.workflow_source(id)?;
         let kind = job["kind"].as_str().unwrap_or("");
-        let speech = kind == "speech.recognize";
-        if !speech
-            && ![
+        if ![
                 "workflow.title",
                 "workflow.summary",
                 "workflow.decisions",
@@ -493,18 +528,8 @@ impl TimelineStore {
         {
             return Err(bad("未知固定流程"));
         }
-        let step = kind.strip_prefix("workflow.").unwrap_or("transcribe");
-        let mode = job["config_version"]
-            .as_str()
-            .and_then(|s| s.strip_prefix("external-api/1:"))
-            .unwrap_or("quick");
-        let role = if speech {
-            if mode == "conversation" {
-                "diarization"
-            } else {
-                "asr"
-            }
-        } else if step == "screenshot" {
+        let step = kind.strip_prefix("workflow.").unwrap_or("title");
+        let role = if step == "screenshot" {
             "vision"
         } else if ["summary", "decisions", "daily"].contains(&step) {
             "summary"
@@ -588,15 +613,10 @@ impl TimelineStore {
         {
             return Err(bad("waiting_authorization"));
         }
-        if speech && a["limits_json"]["daily_budget"].is_number() {
-            return Err(bad("waiting_budget_cost_unknown"));
-        }
         let revision = crate::speakers::segments_revision(&item["segments"]);
-        if !speech {
-            let current = self.workflow_enqueue(id, step, &item)?;
-            if current["id"] != job["id"] {
-                return Err(bad("source_or_configuration_changed"));
-            }
+        let current = self.workflow_enqueue(id, step, &item)?;
+        if current["id"] != job["id"] {
+            return Err(bad("source_or_configuration_changed"));
         }
         let prompt = a["prompt"]
             .as_str()
@@ -638,11 +658,9 @@ impl TimelineStore {
         } else {
             None
         };
-        if !speech {
-            self.workflow_budget(&c, a, prompt.len() + content.len())?;
-        }
+        self.workflow_budget(&c, a, prompt.len() + content.len())?;
         Ok(
-            json!({"job":job,"provider":p,"assignment":a,"config_revision":sha256_hex(&serde_json::to_vec(&c)?),"source_revision":revision,"feature_revision":sha256_hex(&serde_json::to_vec(&self.feature_settings()?["items"][step])?),"step":step,"mode":mode,"speech":speech,"path":if speech{Some(self.media_path(id)?)}else{None},"digest":if speech{Some(crate::sha256_hex_file(&self.media_path(id)?)?)}else{None},"prompt":prompt,"content":content,"messages":messages}),
+            json!({"job":job,"provider":p,"assignment":a,"config_revision":sha256_hex(&serde_json::to_vec(&c)?),"source_revision":revision,"feature_revision":sha256_hex(&serde_json::to_vec(&self.feature_settings()?["items"][step])?),"step":step,"speech":false,"prompt":prompt,"content":content,"messages":messages}),
         )
     }
     fn workflow_feature_reply_allowed(&self, r: &Value, item: &Value) -> Result<()> {
@@ -666,13 +684,13 @@ impl TimelineStore {
         if sha256_hex(&serde_json::to_vec(&self.model_config()?)?) != r["config_revision"] {
             return Err(bad("configuration_changed"));
         }
-        // Speaker grouping depends on the per-file transcripts, not on the transcript it projects itself.
-        let revision = if r["reconcile_speakers"] == true {
-            self.recording_speaker_input(job["input_ref"].as_str().unwrap_or(""))?["revision"].clone()
+        // The recording job depends on the audio, not on the transcript it produces.
+        let revision = if r["recording"] == true {
+            self.recording_input(job["input_ref"].as_str().unwrap_or(""))?["revision"].clone()
         } else {
             json!(crate::speakers::segments_revision(&item["segments"]))
         };
-        if r["speech"] != true && revision != r["source_revision"] {
+        if revision != r["source_revision"] {
             return Err(bad("source_changed"));
         }
         self.workflow_feature_reply_allowed(r, &item)?;
@@ -745,8 +763,8 @@ impl TimelineStore {
         if sha256_hex(&serde_json::to_vec(&self.model_config()?)?) != r["config_revision"] {
             return Err(bad("configuration_changed"));
         }
-        if r["speech"] == true {
-            return self.media_command(&json!({"action":"result","job_id":job["id"],"attempt":job["attempt"],"owner":job["owner"],"mode":r["mode"],"result":output}));
+        if r["recording"] == true {
+            return self.recording_complete(r, output);
         }
         if crate::speakers::segments_revision(&item["segments"]) != r["source_revision"] {
             return Err(bad("source_changed"));

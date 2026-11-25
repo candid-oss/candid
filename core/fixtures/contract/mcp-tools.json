@@ -774,6 +774,26 @@
     {
       "annotations": {
         "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Candid 后台计算的能耗账：按天和作业种类给出次数、CPU 秒、墙钟秒、用电池时的 CPU 秒，以及现在等待中的作业数量和原因（如 waiting_power 等待接入电源）。只有计数，没有内容。默认今天。时间可写 RFC 3339、YYYY-MM-DD，或 today、yesterday、now、-2h、-30m 这类相对写法，按用户本机时区解析。",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "string"
+          },
+          "start": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "energy_summary"
+    },
+    {
+      "annotations": {
+        "openWorldHint": false,
         "readOnlyHint": false
       },
       "description": "提交一个提案（如新建提醒、修正片段），只进入待批准列表，用户批准前不会执行。附上作为依据的 event_id。",

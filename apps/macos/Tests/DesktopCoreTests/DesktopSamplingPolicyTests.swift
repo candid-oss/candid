@@ -94,7 +94,6 @@ struct DesktopSamplingPolicyTests {
         var custom = old; custom.minimumCaptureInterval = 1; custom.periodicInterval = 5
         custom.samplingOptions.minimumContentInterval = 1; custom.samplingOptions.imageFallbackInterval = 5
         custom.samplingOptions.contentCapacity = 60; custom.samplingOptions.imageCapacity = 60
-        custom.samplingOptions.conserveBattery = false
         #expect(try JSONDecoder().decode(DesktopPreferences.self, from: JSONEncoder().encode(custom)) == custom)
         var invalid = custom.samplingOptions; invalid.imageFallbackInterval = .infinity
         #expect(!invalid.isValid)
