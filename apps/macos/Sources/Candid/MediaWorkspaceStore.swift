@@ -272,13 +272,13 @@ final class MediaWorkspaceStore {
         catch { self.error = error.localizedDescription }
     }
 
-    func recognize(_ record: MediaLibraryRecord, mode: MediaLibraryRecord.Mode) async {
+    func recognize(_ id: UUID, mode: MediaLibraryRecord.Mode) async {
         guard !isDemo else { error = L("合成样例不能重新识别。"); return }
         guard !busy else { return }
         busy = true; error = nil
         defer { busy = false }
         do {
-            let updated = try await client().recognize(record.id, mode: mode)
+            let updated = try await client().recognize(id, mode: mode)
             replace(updated)
             await refresh()
         } catch { self.error = error.localizedDescription }

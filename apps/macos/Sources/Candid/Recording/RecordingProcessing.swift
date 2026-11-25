@@ -37,6 +37,9 @@ struct RecordingProcessingView: View {
     let store: MediaWorkspaceStore
     @ViewState private var stopping = false
     private var active: Bool { item.processing?.isActive == true || item.processingStatus.isActive }
+    private var retrying: Bool {
+        item.processingMode != nil || !item.segments.isEmpty || item.processingStatus == .failed || item.processing?.state == "cancelled"
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s) {
             HStack(spacing: Space.s) {
@@ -73,7 +76,7 @@ struct RecordingProcessingView: View {
             }
             HStack(spacing: Space.s) {
                 ForEach(MediaLibraryRecord.Mode.allCases) { mode in
-                    QuietButton(title: mode == .quick ? L("单人转写") : L("多人识别")) { Task { await store.recognize(item, mode: mode) } }
+                    QuietButton(title: mode.transcriptionTitle(retrying: retrying)) { Task { await store.recognize(item.id, mode: mode) } }
                         .disabled(store.isDemo || store.busy || active)
                         .accessibilityIdentifier("media-recognize-" + mode.rawValue)
                 }

@@ -4,15 +4,16 @@ import SwiftUI
 import Testing
 @testable import Candid
 
-@MainActor @Test func workflowControlsRenderRealStatesWithoutVisualChanges() async throws {
+@MainActor @Test func manualWorkflowRendersSelectedMediaAndDraft() async throws {
     let directory = URL(fileURLWithPath: "/tmp/pa-workflows-render")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let model = WorkflowControlModel()
-    model.definitions = [.init(id: "recording", title: "录音整理", implemented: true), .init(id: "daily", title: "录音日回顾", implemented: true)]
-    model.jobs = [.init(id: "SYNTHETIC-1", kind: "speech.recognize", input_ref: "SYNTHETIC", state: "running"), .init(id: "SYNTHETIC-2", kind: "workflow.title", input_ref: "SYNTHETIC", state: "queued", error_code: "waiting_model"), .init(id: "SYNTHETIC-3", kind: "workflow.summary", input_ref: "SYNTHETIC", state: "failed", error_code: "http_429")]
+    model.media = [.init(id: "synthetic", title: "SYNTHETIC recording", filename: "test.wav", kind: "audio")]
+    model.selectedID = "synthetic"
+    model.drafts = ["summary": .init(text: "SYNTHETIC summary")]
     _ = NSApplication.shared
     for dark in [false, true] {
-        let content = AIControlPanels(workflows: model).workflowControls.padding(24)
+        let content = ManualWorkflowView(workflows: model, refreshOnAppear: false).padding(24)
             .frame(width: 940, height: 760, alignment: .topLeading)
             .environment(\.colorScheme, dark ? .dark : .light)
             .background(dark ? Color.black : Color.white)

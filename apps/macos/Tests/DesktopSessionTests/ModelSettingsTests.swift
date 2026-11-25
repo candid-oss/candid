@@ -36,6 +36,37 @@ import Testing
         #expect(restored.config == model.config)
     }
 
+    @Test func recordingModesPreservePolicyAndPersistThroughReload() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("workflow-modes-" + UUID().uuidString)
+        defer { TestCore.finish(root) }
+        let core = try await TestCore.ready(root)
+        let model = WorkflowControlModel(channel: { core.channel })
+        await model.refresh(includeActivity: false)
+
+        #expect(model.processingMode("transcribe") == .automatic)
+        #expect(model.processingMode("title") == .automatic)
+        #expect(model.processingMode("summary") == .manual)
+        var policy = try #require(model.featureSettings.items["transcribe"])
+        policy.daily_calls = 37
+        policy.allow_remote = false
+        policy.sources = ["mac_microphone"]
+        await model.setPolicy("transcribe", policy)
+
+        let modes: [WorkflowControlModel.ProcessingMode] = [.off, .manual, .off, .automatic]
+        for mode in modes {
+            await model.setProcessingMode("transcribe", mode)
+            #expect(model.error == nil)
+            let restored = WorkflowControlModel(channel: { core.channel })
+            await restored.refresh(includeActivity: false)
+            #expect(restored.processingMode("transcribe") == mode)
+            #expect(restored.featureSettings.items["transcribe"]?.allow_remote == false)
+            #expect(restored.featureSettings.items["transcribe"]?.daily_calls == 37)
+            #expect(restored.featureSettings.items["transcribe"]?.sources == ["mac_microphone"])
+            #expect(restored.processingMode("title") == .automatic)
+            #expect(restored.processingMode("summary") == .manual)
+        }
+    }
+
     @Test func rendersSettingsAndChooserWithSyntheticData() async throws {
         _ = NSApplication.shared
         var config = AIRuntime.syntheticSample
@@ -52,27 +83,29 @@ import Testing
         }
         let runtime = AIRuntime(store: InMemoryProviderConfigStore(config), secrets: InMemorySecretStore(), sink: usage)
         let model = ModelSettingsModel(runtime: runtime); await model.loadUsage(days: 7)
-        let controls = WorkflowControlModel()
-        controls.features = [
-            .init(id: "transcribe", title: "录音转写与说话人", mode: "core", implemented: true, trigger: "录音保存后", role: "diarization", job_kind: "speech.recognize"),
-            .init(id: "screen-episodes", title: "屏幕片段整理", mode: "core", implemented: false, trigger: "片段结束后", role: "episode"),
-            .init(id: "daily-review", title: "日回顾", mode: "agent", implemented: false, trigger: "每天 21:00 · 仅手动", role: "agent_chat")
-        ]
-        controls.featureSettings.items["transcribe"] = .init(enabled: true, sources: ["import"], allow_remote: false, daily_calls: 100)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("workflow-render-" + UUID().uuidString)
+        defer { TestCore.finish(root) }
+        let core = try await TestCore.ready(root)
+        let controls = WorkflowControlModel(channel: { core.channel })
+        await controls.refresh(includeActivity: false)
+        #expect(controls.error == nil)
+        let recognition = DesktopRecognitionSession()
         for dark in [false, true] {
             let contents: [(String, AnyView)] = [
-                ("sources", AnyView(ModelSettingsView(model: model, refreshOnAppear: false))),
-                ("roles", AnyView(ModelSettingsView(model: model, initialTab: "roles", refreshOnAppear: false))),
+                ("sources", AnyView(AIFunctionSettingsView(model: controls, models: model, initialTab: .sources, refreshOnAppear: false))),
+                ("model-editor", AnyView(AIWorkspaceSheet(title: "图像理解") {
+                    ModelRoleEditor(model: model, info: ModelRoleInfo.info("vision")!, promptOpen: true)
+                })),
                 ("chooser", AnyView(RoleModelChooser(model: model, info: ModelRoleInfo.info("vision")!, close: {}).padding(24))),
-                ("ai-functions", AnyView(AIFunctionSettingsView(model: controls, refreshOnAppear: false)))
+                ("ai-functions", AnyView(AIFunctionSettingsView(model: controls, models: model, recognition: recognition, refreshOnAppear: false)))
             ]
             for (name, content) in contents {
                 let view = NSHostingView(rootView: content
-                    .frame(width: 760, height: 900, alignment: .topLeading)
+                    .frame(width: 654, height: 700, alignment: .topLeading)
                     .environment(\.colorScheme, dark ? .dark : .light)
                     .environment(\.visualStyle, .flat)
                     .background(dark ? Color(white: 0.12) : Color(white: 0.96)))
-                view.frame = NSRect(x: 0, y: 0, width: 760, height: 900)
+                view.frame = NSRect(x: 0, y: 0, width: 654, height: 700)
                 let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
                 window.contentView = view

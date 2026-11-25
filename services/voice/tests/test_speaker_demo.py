@@ -10,6 +10,7 @@ pytest.importorskip("scipy")
 pytest.importorskip("onnxruntime", reason="Install requirements-speaker.txt for the speaker demo")
 pytest.importorskip("mlx_audio", reason="Install requirements-speaker.txt for the speaker demo")
 from asr.speaker_pipeline import SpeakerPipeline, clean_intervals, public_result
+from asr.speaker_models import TokenLimit
 from asr.speaker_store import SpeakerStore
 
 
@@ -146,3 +147,25 @@ def test_multichunk_offsets_and_cross_chunk_voice_stitching(tmp_path):
     assert len(result["speakers"]) == 2
     assert [s["start_s"] for s in result["segments"]] == [0, 5, 10, 15]
     assert [s["speaker_id"] for s in result["segments"]] == ["speaker_01", "speaker_02"] * 2
+
+
+def test_token_limit_retries_both_halves_and_preserves_offsets(tmp_path):
+    class DenseSpeech(FakeModels):
+        durations = []
+
+        def transcribe(self, audio):
+            duration = len(audio) / 16000
+            self.durations.append(duration)
+            if duration > 10:
+                raise TokenLimit("too dense")
+            return [{"start": 1, "end": 10, "speaker_id": "S01", "text": "speech"}]
+
+    path = tmp_path / "dense.wav"
+    sf.write(path, np.full(40 * 16000, 0.1), 16000)
+    models = DenseSpeech()
+    result = SpeakerPipeline(SpeakerStore(tmp_path / "db"), models).analyze(path)
+    assert models.durations == [40, 20, 10, 10, 20, 10, 10]
+    assert [(s["start_s"], s["end_s"]) for s in result["segments"]] == [
+        (1, 10), (11, 20), (21, 30), (31, 40)
+    ]
+    assert len({s["speaker_id"] for s in result["segments"]}) == 1

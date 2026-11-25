@@ -2,73 +2,32 @@ import AIProviders
 import CandidLocalization
 import SwiftUI
 
-/// Roles grouped by what they do. Each row picks a built-in engine or a model, may add fallbacks (only to the
-/// same or a more local destination), and unfolds its prompt in place.
-struct ModelRolesView: View {
-    let model: ModelSettingsModel
-    @Binding var qaRequest: String?
-    @ViewState private var editingPrompt: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 26) {
-            ForEach([ModelRoleInfo.Group.perception, .understanding], id: \.self) { group in
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(group.rawValue).typography(.secondary, .semibold).foregroundStyle(.secondary).padding(.bottom, 4)
-                    ForEach(ModelRoleInfo.catalog.filter { $0.group == group }) { info in
-                        RoleRow(model: model, info: info, editingPrompt: $editingPrompt)
-                        HairlineDivider()
-                    }
-                }
-            }
-            Text(L("回退只会换到同样或更本地的来源：本机角色不会悄悄改用云端。"))
-                .typography(.secondary).foregroundStyle(.secondary)
-        }
-        .animation(Motion.spring, value: editingPrompt)
-        .onChange(of: qaRequest) { _, request in
-            if let request, request.hasPrefix("modelprompt ") { editingPrompt = String(request.dropFirst(12)); qaRequest = nil }
-        }
-    }
-}
-
-private struct RoleRow: View {
+struct ModelRoleEditor: View {
     let model: ModelSettingsModel
     let info: ModelRoleInfo
-    @Binding var editingPrompt: String?
+    @ViewState var promptOpen = false
     @ViewState private var draft = ""
     @ViewState private var choosing = false
     @ViewState private var fallbackOpen = false
 
     private var assignment: RoleAssignment? { model.config.assignment(info.id) }
     private var primary: AIModel? { assignment?.model.flatMap { model.config.model($0) } }
-    /// The engine in effect: the chosen one, or the role's default when no model is chosen.
-    private var engine: BuiltinEngine? {
-        guard assignment?.model == nil else { return nil }
-        return info.engines.first { $0.id == assignment?.engine } ?? info.defaultEngine
-    }
-    private var promptOpen: Bool { editingPrompt == info.id }
+    private var engine: BuiltinEngine? { model.builtinEngine(for: info) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .center, spacing: Space.s) {
-                VStack(alignment: .leading, spacing: Space.xxs) {
-                    HStack(spacing: Space.xs) {
-                        Text(info.title).typography(.headline)
-                        if !info.inUse { Tag(text: L("尚未使用")) }
-                    }
-                    Text(info.detail).typography(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                picker
+            Text(info.detail).typography(.secondary).foregroundStyle(.secondary)
+            if !info.inUse { Tag(text: L("尚未使用")) }
+            SettingRow(title: L("模型")) { picker }
+            if info.hasPrompt || primary != nil {
                 HStack(spacing: Space.xs) {
                     if info.hasPrompt {
-                        IconChipButton(title: L("编辑") + info.title + L("提示词"), symbol: "text.quote") {
-                            if promptOpen { editingPrompt = nil } else { draft = model.prompt(for: info.id); editingPrompt = info.id }
-                        }
-                    } else { Color.clear.frame(width: ControlHeight.button, height: ControlHeight.button) }
+                        ChipButton(title: L("提示词"), systemImage: "text.quote", emphasized: promptOpen) { promptOpen.toggle() }
+                    }
                     if primary != nil {
-                        IconChipButton(title: L("设置") + info.title + L("回退"), symbol: "arrow.triangle.branch") { fallbackOpen.toggle() }
-                    } else { Color.clear.frame(width: ControlHeight.button, height: ControlHeight.button) }
-                }.frame(width: ControlHeight.button * 2 + Space.xs)
-
+                        ChipButton(title: L("回退模型"), systemImage: "arrow.triangle.branch", emphasized: fallbackOpen) { fallbackOpen.toggle() }
+                    }
+                }
             }
             if choosing {
                 RoleModelChooser(model: model, info: info) { choosing = false }
@@ -82,27 +41,24 @@ private struct RoleRow: View {
                     PromptEditor(defaultText: PromptCatalog.defaultPrompt(info.id), presets: PromptCatalog.presets(info.id),
                                  text: $draft,
                                  actions: [.init(title: L("保存"), primary: true) { text in
-                                     model.setPrompt(text, for: info.id); editingPrompt = nil
+                                     model.setPrompt(text, for: info.id)
+                                     if model.error == nil { promptOpen = false }
                                  }],
-                                 onCancel: { editingPrompt = nil })
+                                 onCancel: { promptOpen = false })
                 }
                 .padding(.top, 4)
             }
         }
         .padding(.vertical, 13)
         .animation(Motion.snappy, value: assignment)
-        .onChange(of: editingPrompt) { _, open in if open == info.id && draft.isEmpty { draft = model.prompt(for: info.id) } }
+        .onChange(of: promptOpen, initial: true) { _, open in
+            if open { draft = model.prompt(for: info.id) }
+        }
     }
 
     private func name(_ ref: ModelRef) -> String {
         let provider = model.config.provider(ref.providerID)?.name ?? "?"
         return "\(provider) · \(model.config.model(ref)?.displayName ?? ref.modelID)"
-    }
-
-    private var current: String {
-        if let ref = assignment?.model { return name(ref) }
-        if let engine { return engine.title + (assignment?.engine == nil ? L("（默认）") : "") }
-        return L("未选择")
     }
 
     private var picker: some View {
